@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  body {
+    @apply bg-white text-gray-900 text-sm;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  }
+}
+
+/* TipTap editor */
+.tiptap {
+  outline: none;
+  min-height: 400px;
+  padding: 0.5rem 0;
+}
+
+.tiptap > * + * {
+  margin-top: 0.5em;
+}
+
+.tiptap h1 {
+  @apply text-2xl font-bold text-gray-900;
+}
+.tiptap h2 {
+  @apply text-xl font-semibold text-gray-800 mt-6 mb-2;
+}
+.tiptap h3 {
+  @apply text-lg font-semibold text-gray-700 mt-4 mb-1;
+}
+
+.tiptap p {
+  @apply leading-relaxed;
+}
+
+.tiptap ul {
+  @apply list-disc pl-6 my-2;
+}
+.tiptap ol {
+  @apply list-decimal pl-6 my-2;
+}
+.tiptap li {
+  @apply my-0.5;
+}
+.tiptap li p {
+  @apply my-0;
+}
+
+.tiptap blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-3;
+}
+
+.tiptap code {
+  @apply bg-gray-100 text-pink-600 rounded px-1 py-0.5 text-xs font-mono;
+}
+
+.tiptap pre {
+  @apply bg-gray-900 text-gray-100 rounded-lg p-4 my-3 overflow-x-auto;
+}
+.tiptap pre code {
+  @apply bg-transparent text-gray-100 p-0;
+}
+
+.tiptap hr {
+  @apply border-t border-gray-200 my-4;
+}
+
+.tiptap mark {
+  @apply bg-yellow-200 rounded px-0.5;
+}
+
+.tiptap strong {
+  @apply font-bold;
+}
+
+.tiptap em {
+  @apply italic;
+}
+
+.tiptap u {
+  @apply underline;
+}
+
+.tiptap s {
+  @apply line-through;
+}
+
+/* Task lists */
+.tiptap ul[data-type="taskList"] {
+  @apply list-none pl-0;
+}
+
+.tiptap ul[data-type="taskList"] li {
+  @apply flex items-start gap-2 my-1;
+}
+
+.tiptap ul[data-type="taskList"] li label {
+  @apply flex-shrink-0 mt-0.5;
+}
+
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+  @apply w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer;
+}
+
+.tiptap ul[data-type="taskList"] li div {
+  @apply flex-1;
+}
+
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  @apply line-through text-gray-400;
+}
+
+/* Placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  @apply text-gray-400 float-left h-0 pointer-events-none;
+  content: attr(data-placeholder);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Transitions */
+.panel-transition {
+  transition: width 150ms ease, opacity 150ms ease;
+}
+
+/* Selection in editor for task creation */
+.tiptap .selection-highlight {
+  @apply bg-blue-100;
+}
+
+/* Images */
+.tiptap img {
+  @apply max-w-full rounded-lg my-3 border border-gray-200;
+  display: block;
+}
+
+.tiptap img.ProseMirror-selectednode {
+  @apply outline outline-2 outline-blue-400;
+}
