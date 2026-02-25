@@ -1,87 +1,111 @@
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { X } from 'lucide-react';
+import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search } from 'lucide-react';
 
 export function TabBar() {
-  const openTabs = useStore((s) => s.openTabs);
-  const activeTabId = useStore((s) => s.activeTabId);
   const activeProjectId = useStore((s) => s.activeProjectId);
+  const activeTabId = useStore((s) => s.activeTabId);
   const suppliers = useStore((s) => s.suppliers);
   const projects = useStore((s) => s.projects);
-  const setActiveTab = useStore((s) => s.setActiveTab);
-  const closeTab = useStore((s) => s.closeTab);
+  const activeView = useStore((s) => s.activeView);
+  const previousView = useStore((s) => s.previousView);
+  const setActiveView = useStore((s) => s.setActiveView);
+  const goBackToPreviousView = useStore((s) => s.goBackToPreviousView);
+  const toggleSearch = useStore((s) => s.toggleSearch);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const activeSupplier = activeTabId && activeTabId !== INTERNAL_TAB_ID
+    ? suppliers.find((s) => s.id === activeTabId)
+    : null;
+  const isInternal = activeTabId === INTERNAL_TAB_ID;
 
-  if (openTabs.length === 0) return null;
+  const showBackButton = activeView === 'notes' && previousView === 'dashboard';
 
   return (
-    <div className="flex items-center border-b border-gray-200 bg-gray-50/80 overflow-x-auto flex-shrink-0">
-      {activeProject && (
-        <div className="flex items-center gap-1.5 px-3 py-2 border-r border-gray-200 flex-shrink-0">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: activeProject.color }} />
-          <span className="text-xs font-medium text-gray-500">{activeProject.name}</span>
+    <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50/80 px-3 py-1.5 flex-shrink-0 h-10">
+      {/* Left: back button or breadcrumb */}
+      {showBackButton ? (
+        <button
+          onClick={goBackToPreviousView}
+          className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Dashboard
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
+          {activeProject ? (
+            <>
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: activeProject.color }}
+              />
+              <span className="font-medium truncate max-w-[120px]" title={activeProject.name}>
+                {activeProject.name}
+              </span>
+            </>
+          ) : (
+            <span className="text-gray-400 italic">No project</span>
+          )}
+
+          {(activeSupplier || isInternal) && (
+            <>
+              <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
+              {activeSupplier ? (
+                <>
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: activeSupplier.color }}
+                  />
+                  <span className="truncate max-w-[120px]" title={activeSupplier.name}>
+                    {activeSupplier.name}
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-400">Internal</span>
+              )}
+            </>
+          )}
         </div>
       )}
-      {openTabs.map((tabId, idx) => {
-        const isActive = tabId === activeTabId;
 
-        if (tabId === INTERNAL_TAB_ID) {
-          return (
-            <div
-              key={tabId}
-              className={`group flex items-center gap-1.5 px-4 py-2 cursor-pointer border-r border-gray-200 min-w-0 max-w-[200px] transition-colors ${
-                isActive
-                  ? 'bg-white border-b-2 -mb-px relative z-10'
-                  : 'hover:bg-gray-100 text-gray-500'
-              }`}
-              style={isActive ? { borderBottomColor: '#6366f1' } : undefined}
-              onClick={() => setActiveTab(tabId)}
-              title={`Internal (Ctrl+${idx + 1})`}
-            >
-              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-gray-400" />
-              <span className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>Internal</span>
-              <button
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded-sm transition-opacity flex-shrink-0 ml-1"
-                onClick={(e) => { e.stopPropagation(); closeTab(tabId); }}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          );
-        }
+      {/* Right: search + view toggle */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button
+          onClick={toggleSearch}
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Search (Ctrl+Shift+F)"
+        >
+          <Search className="w-3.5 h-3.5" />
+        </button>
 
-        const supplier = suppliers.find((s) => s.id === tabId);
-        if (!supplier) return null;
-
-        return (
-          <div
-            key={tabId}
-            className={`group flex items-center gap-1.5 px-4 py-2 cursor-pointer border-r border-gray-200 min-w-0 max-w-[200px] transition-colors ${
-              isActive
-                ? 'bg-white border-b-2 border-b-transparent -mb-px relative z-10'
-                : 'hover:bg-gray-100 text-gray-500'
+        <div className="flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
+          <button
+            onClick={() => setActiveView('notes')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              activeView === 'notes'
+                ? 'bg-gray-100 text-gray-800'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
-            style={isActive ? { borderBottomColor: supplier.color } : undefined}
-            onClick={() => setActiveTab(tabId)}
-            title={`${supplier.name} (Ctrl+${idx + 1})`}
+            title="Notes view"
           >
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: supplier.color }}
-            />
-            <span className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>{supplier.name}</span>
-            <button
-              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded-sm transition-opacity flex-shrink-0 ml-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tabId);
-              }}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        );
-      })}
+            <FileText className="w-3.5 h-3.5" />
+            Notes
+          </button>
+          <button
+            onClick={() => setActiveView('dashboard')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              activeView === 'dashboard'
+                ? 'bg-gray-100 text-gray-800'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            title="Dashboard view"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            Dashboard
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

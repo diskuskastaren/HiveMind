@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
 import type { TaskStatus, Priority } from '../types';
@@ -12,6 +12,8 @@ import {
   Filter,
   Zap,
   Bookmark,
+  FileText,
+  Pencil,
 } from 'lucide-react';
 
 function detectActionLines(html: string): string[] {
@@ -54,18 +56,26 @@ export function RightPanel() {
   const activeNoteId = useStore((s) => s.activeNoteId);
 
   const tasks = useStore((s) => s.tasks);
+  const notes = useStore((s) => s.notes);
   const decisions = useStore((s) => s.decisions);
   const addTask = useStore((s) => s.addTask);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const addDecision = useStore((s) => s.addDecision);
+  const updateDecision = useStore((s) => s.updateDecision);
   const deleteDecision = useStore((s) => s.deleteDecision);
+  const editingDecisionId = useStore((s) => s.editingDecisionId);
+  const setEditingDecision = useStore((s) => s.setEditingDecision);
+  const navigateToNote = useStore((s) => s.navigateToNote);
 
   const activeNoteContent = useStore((s) => s.notes.find((n) => n.id === s.activeNoteId)?.content || '');
 
   const [quickTask, setQuickTask] = useState('');
   const [quickDecision, setQuickDecision] = useState('');
+  const [editDecisionText, setEditDecisionText] = useState('');
+  const decisionEditRef = useRef<HTMLInputElement>(null);
+
   const [filterMode, setFilterMode] = useState<'note' | 'supplier'>('supplier');
 
   const detectedActions = useMemo(() => detectActionLines(activeNoteContent), [activeNoteContent]);
@@ -75,7 +85,12 @@ export function RightPanel() {
   const supplierTasks = tasks
     .filter((t) => t.projectId === activeProjectId && t.supplierId === contextSupplierId)
     .filter((t) => (filterMode === 'note' && activeNoteId ? t.noteId === activeNoteId : true))
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      const aDone = a.status === 'done' ? 1 : 0;
+      const bDone = b.status === 'done' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return b.createdAt - a.createdAt;
+    });
 
   const supplierDecisions = decisions
     .filter((d) => d.projectId === activeProjectId && d.supplierId === contextSupplierId)
@@ -93,7 +108,7 @@ export function RightPanel() {
       priority: 'medium',
       owner: '',
       dueDate: '',
-      tags: [],
+      description: '',
     });
     setQuickTask('');
   };
@@ -190,7 +205,7 @@ export function RightPanel() {
                             priority: 'medium',
                             owner: '',
                             dueDate: '',
-                            tags: [],
+                            description: '',
                           });
                         }
                       }}
@@ -202,7 +217,9 @@ export function RightPanel() {
               </div>
             )}
 
-            {supplierTasks.map((task) => (
+            {supplierTasks.map((task) => {
+              const taskNote = notes.find((n) => n.id === task.noteId);
+              return (
               <div
                 key={task.id}
                 className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
@@ -229,6 +246,19 @@ export function RightPanel() {
                     {task.owner && <span className="text-[10px] text-gray-400">@{task.owner}</span>}
                     {task.dueDate && <span className="text-[10px] text-gray-400">{task.dueDate}</span>}
                   </div>
+                  {filterMode === 'supplier' && taskNote && (
+                    <button
+                      className="flex items-center gap-1 mt-1 text-[10px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToNote(task.noteId);
+                      }}
+                      title="Go to source note"
+                    >
+                      <FileText className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">{taskNote.title || 'Untitled note'}</span>
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button
@@ -259,7 +289,8 @@ export function RightPanel() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             {supplierTasks.length === 0 && (
               <p className="text-xs text-gray-400 text-center py-6">
@@ -288,23 +319,66 @@ export function RightPanel() {
               </button>
             </div>
 
-            {supplierDecisions.map((d) => (
-              <div key={d.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50">
-                <Lightbulb className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm">{d.text}</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">
-                    {format(new Date(d.createdAt), 'MMM d, HH:mm')}
+            {supplierDecisions.map((d) => {
+              const isEditing = editingDecisionId === d.id;
+              return (
+                <div key={d.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50">
+                  <Lightbulb className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    {isEditing ? (
+                      <input
+                        ref={decisionEditRef}
+                        autoFocus
+                        type="text"
+                        value={editDecisionText}
+                        onChange={(e) => setEditDecisionText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editDecisionText.trim()) {
+                            updateDecision(d.id, { text: editDecisionText.trim() });
+                            setEditingDecision(null);
+                          }
+                          if (e.key === 'Escape') setEditingDecision(null);
+                        }}
+                        onBlur={() => {
+                          if (editDecisionText.trim()) updateDecision(d.id, { text: editDecisionText.trim() });
+                          setEditingDecision(null);
+                        }}
+                        className="w-full text-sm px-1.5 py-1 border border-green-300 rounded focus:outline-none focus:ring-1 focus:ring-green-400"
+                      />
+                    ) : (
+                      <div
+                        className="text-sm cursor-pointer hover:text-gray-600"
+                        onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
+                        title="Click to edit"
+                      >
+                        {d.text}
+                      </div>
+                    )}
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {format(new Date(d.createdAt), 'MMM d, HH:mm')}
+                    </div>
                   </div>
+                  {!isEditing && (
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
+                        title="Edit decision"
+                      >
+                        <Pencil className="w-3 h-3 text-gray-400" />
+                      </button>
+                      <button
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        onClick={() => deleteDecision(d.id)}
+                        title="Delete decision"
+                      >
+                        <Trash2 className="w-3 h-3 text-gray-400" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <button
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity flex-shrink-0"
-                  onClick={() => deleteDecision(d.id)}
-                >
-                  <Trash2 className="w-3 h-3 text-gray-400" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
 
             {supplierDecisions.length === 0 && (
               <p className="text-xs text-gray-400 text-center py-6">No decisions captured yet.</p>

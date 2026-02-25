@@ -21,6 +21,7 @@ export interface Note {
   projectIds: string[];
   supplierIds: string[];
   internal?: boolean;
+  archived?: boolean;
   title: string;
   content: string;
   attendees: string;
@@ -38,7 +39,7 @@ export interface Task {
   priority: Priority;
   owner: string;
   dueDate: string;
-  tags: string[];
+  description: string;
   createdAt: number;
   isFollowUp?: boolean;
 }
@@ -64,3 +65,5 @@ export interface Decision {
 export type RightPanelTab = 'tasks' | 'decisions';
 export type TaskStatus = 'open' | 'doing' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
+export type ActiveView = 'notes' | 'dashboard';
+export type DashboardSection = 'tasks' | 'decisions' | 'followups';

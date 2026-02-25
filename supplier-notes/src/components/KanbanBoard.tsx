@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import type { TaskStatus, Priority } from '../types';
-import { X, GripVertical, ChevronRight } from 'lucide-react';
+import { X, GripVertical, ChevronRight, FileText } from 'lucide-react';
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'open', label: 'Open', color: 'border-gray-300' },
@@ -23,6 +23,7 @@ export function KanbanBoard() {
   const updateTask = useStore((s) => s.updateTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const toggleKanban = useStore((s) => s.toggleKanban);
+  const navigateToNote = useStore((s) => s.navigateToNote);
 
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
@@ -115,6 +116,7 @@ export function KanbanBoard() {
                         const supplier = task.supplierId ? suppliers.find((s) => s.id === task.supplierId) : null;
                         const project = projects.find((p) => p.id === task.projectId);
 
+                      const note = notes.find((n) => n.id === task.noteId);
                       return (
                         <div
                           key={task.id}
@@ -170,6 +172,19 @@ export function KanbanBoard() {
                                   <span className="text-[10px] text-gray-400">{task.dueDate}</span>
                                 )}
                               </div>
+                              {note && (
+                                <button
+                                  className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigateToNote(task.noteId);
+                                  }}
+                                  title="Go to source note"
+                                >
+                                  <FileText className="w-3 h-3 flex-shrink-0" />
+                                  <span className="truncate">{note.title || 'Untitled note'}</span>
+                                </button>
+                              )}
                             </div>
                             {/* Move buttons for accessibility */}
                             <div className="flex flex-col gap-0.5">

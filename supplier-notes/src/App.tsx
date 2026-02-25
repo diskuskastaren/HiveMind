@@ -7,7 +7,7 @@ import { RightPanel } from './components/RightPanel';
 import { FollowUpsPanel } from './components/FollowUpsPanel';
 import { CommandPalette } from './components/CommandPalette';
 import { TaskModal } from './components/TaskModal';
-import { KanbanBoard } from './components/KanbanBoard';
+import { Dashboard } from './components/Dashboard';
 import { NextMeetingPrep } from './components/NextMeetingPrep';
 import { SearchModal } from './components/SearchModal';
 import { getSeedData } from './utils/seed';
@@ -108,10 +108,10 @@ export default function App() {
   const rightPanelOpen = useStore((s) => s.rightPanelOpen);
   const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
-  const kanbanOpen = useStore((s) => s.kanbanOpen);
   const nextMeetingPrepSupplierId = useStore((s) => s.nextMeetingPrepSupplierId);
   const editingTaskId = useStore((s) => s.editingTaskId);
   const activeTabId = useStore((s) => s.activeTabId);
+  const activeView = useStore((s) => s.activeView);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -122,8 +122,8 @@ export default function App() {
         if (s.editingTaskId) { s.setEditingTask(null); return; }
         if (s.commandPaletteOpen) { s.toggleCommandPalette(); return; }
         if (s.searchOpen) { s.toggleSearch(); return; }
-        if (s.kanbanOpen) { s.toggleKanban(); return; }
         if (s.nextMeetingPrepSupplierId) { s.setNextMeetingPrepSupplier(null); return; }
+        if (s.activeView === 'dashboard') { s.setActiveView('notes'); return; }
         return;
       }
 
@@ -194,20 +194,23 @@ export default function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TabBar />
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          <div className="flex flex-1 overflow-hidden min-h-0">
-            <div className="flex-1 overflow-hidden relative">
-              {activeNoteId ? <NoteEditor /> : <EmptyState />}
+        {activeView === 'dashboard' ? (
+          <Dashboard />
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <div className="flex flex-1 overflow-hidden min-h-0">
+              <div className="flex-1 overflow-hidden relative">
+                {activeNoteId ? <NoteEditor /> : <EmptyState />}
+              </div>
+              {rightPanelOpen && activeTabId && <RightPanel />}
             </div>
-            {rightPanelOpen && activeTabId && <RightPanel />}
+            <FollowUpsPanel />
           </div>
-          <FollowUpsPanel />
-        </div>
+        )}
       </div>
 
       {commandPaletteOpen && <CommandPalette />}
       {searchOpen && <SearchModal />}
-      {kanbanOpen && <KanbanBoard />}
       {nextMeetingPrepSupplierId && <NextMeetingPrep />}
       {editingTaskId && <TaskModal />}
     </div>

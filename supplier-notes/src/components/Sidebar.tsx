@@ -18,6 +18,8 @@ import {
   Link2,
   Unlink,
   Settings,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -30,6 +32,7 @@ export function Sidebar() {
   const [linkMenuOpen, setLinkMenuOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [suppliersCollapsed, setSuppliersCollapsed] = useState(false);
+  const [archivedNotesExpanded, setArchivedNotesExpanded] = useState(false);
   const [editingProject, setEditingProject] = useState(false);
   const [editProjectName, setEditProjectName] = useState('');
   const supplierInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +59,7 @@ export function Sidebar() {
   const addInternalNote = useStore((s) => s.addInternalNote);
   const setActiveNote = useStore((s) => s.setActiveNote);
   const deleteNote = useStore((s) => s.deleteNote);
+  const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const setNextMeetingPrepSupplier = useStore((s) => s.setNextMeetingPrepSupplier);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -74,14 +78,17 @@ export function Sidebar() {
 
   const isInternalTab = activeTabId === INTERNAL_TAB_ID;
 
-  const activeNotes = activeTabId && activeProjectId
+  const allContextNotes = activeTabId && activeProjectId
     ? isInternalTab
       ? notes.filter((n) => n.internal && n.projectIds.includes(activeProjectId)).sort((a, b) => b.createdAt - a.createdAt)
       : notes.filter((n) => n.supplierIds.includes(activeTabId) && n.projectIds.includes(activeProjectId)).sort((a, b) => b.createdAt - a.createdAt)
     : [];
 
+  const activeNotes = allContextNotes.filter((n) => !n.archived);
+  const archivedNotes = allContextNotes.filter((n) => n.archived);
+
   const internalNoteCount = activeProjectId
-    ? notes.filter((n) => n.internal && n.projectIds.includes(activeProjectId)).length
+    ? notes.filter((n) => n.internal && !n.archived && n.projectIds.includes(activeProjectId)).length
     : 0;
 
   const activeSupplier = isInternalTab ? null : suppliers.find((s) => s.id === activeTabId);
@@ -232,7 +239,10 @@ export function Sidebar() {
                   }
                   if (e.key === 'Escape') setEditingProject(false);
                 }}
-                onBlur={() => setEditingProject(false)}
+                onBlur={() => {
+                  if (editProjectName.trim()) updateProject(activeProject.id, { name: editProjectName.trim() });
+                  setEditingProject(false);
+                }}
                 className="flex-1 px-2 py-0.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             ) : (
@@ -444,21 +454,86 @@ export function Sidebar() {
                           <div className="text-xs text-gray-400 truncate mt-0.5">{htmlPreview(n.content)}</div>
                         )}
                       </div>
-                      <button
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm('Delete this note and all its linked tasks and decisions?')) deleteNote(n.id);
-                        }}
-                      >
-                        <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
-                      </button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <button
+                          className="p-0.5 hover:bg-gray-200 rounded"
+                          onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
+                          title="Archive note"
+                        >
+                          <Archive className="w-3 h-3 text-gray-400 hover:text-amber-500" />
+                        </button>
+                        <button
+                          className="p-0.5 hover:bg-gray-200 rounded"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm('Delete this note and all its linked tasks and decisions?')) deleteNote(n.id);
+                          }}
+                          title="Delete note"
+                        >
+                          <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  {activeNotes.length === 0 && (
+                  {activeNotes.length === 0 && archivedNotes.length === 0 && (
                     <p className="text-xs text-gray-400 px-3 py-2">No notes yet. Create one above.</p>
                   )}
+                  {activeNotes.length === 0 && archivedNotes.length > 0 && (
+                    <p className="text-xs text-gray-400 px-3 py-2">All notes are archived.</p>
+                  )}
                 </div>
+
+                {/* Archived notes section */}
+                {archivedNotes.length > 0 && (
+                  <div className="mt-2">
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-gray-400 hover:text-gray-600 w-full transition-colors"
+                      onClick={() => setArchivedNotesExpanded((v) => !v)}
+                    >
+                      {archivedNotesExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      <Archive className="w-3 h-3" />
+                      {archivedNotes.length} archived
+                    </button>
+                    {archivedNotesExpanded && (
+                      <div className="space-y-0.5">
+                        {archivedNotes.map((n) => (
+                          <div
+                            key={n.id}
+                            className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 transition-colors opacity-60 ${
+                              activeNoteId === n.id ? 'bg-blue-50 border border-blue-100 opacity-100' : ''
+                            }`}
+                            onClick={() => setActiveNote(n.id)}
+                          >
+                            <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate text-gray-500">{n.title || 'Untitled'}</div>
+                              <div className="text-xs text-gray-400">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
+                            </div>
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                              <button
+                                className="p-0.5 hover:bg-gray-200 rounded"
+                                onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
+                                title="Unarchive note"
+                              >
+                                <ArchiveRestore className="w-3 h-3 text-gray-400 hover:text-blue-500" />
+                              </button>
+                              <button
+                                className="p-0.5 hover:bg-gray-200 rounded"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm('Delete this note and all its linked tasks and decisions?')) deleteNote(n.id);
+                                }}
+                                title="Delete note"
+                              >
+                                <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </>

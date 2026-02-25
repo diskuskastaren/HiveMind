@@ -243,7 +243,7 @@ export function NoteEditor() {
   }, [activeNoteId, editor]);
 
   useEffect(() => {
-    if (activeNoteId) {
+    if (activeNoteId && note && !note.title) {
       requestAnimationFrame(() => titleRef.current?.focus());
     }
   }, [activeNoteId]);
@@ -265,7 +265,7 @@ export function NoteEditor() {
           priority: 'medium',
           owner: '',
           dueDate: '',
-          tags: [],
+          description: '',
         });
         setRightPanelTab('tasks');
       }
@@ -314,7 +314,7 @@ export function NoteEditor() {
       priority: 'medium',
       owner: '',
       dueDate: '',
-      tags: [],
+      description: '',
     });
     setRightPanelTab('tasks');
   };

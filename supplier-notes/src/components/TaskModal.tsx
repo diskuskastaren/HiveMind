@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/store';
 import type { TaskStatus, Priority } from '../types';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, FileText } from 'lucide-react';
 
 export function TaskModal() {
   const editingTaskId = useStore((s) => s.editingTaskId);
@@ -11,13 +11,14 @@ export function TaskModal() {
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
+  const navigateToNote = useStore((s) => s.navigateToNote);
 
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<TaskStatus>('open');
   const [priority, setPriority] = useState<Priority>('medium');
   const [owner, setOwner] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [tags, setTags] = useState('');
+  const [description, setDescription] = useState('');
 
   useEffect(() => {
     if (task) {
@@ -26,15 +27,16 @@ export function TaskModal() {
       setPriority(task.priority);
       setOwner(task.owner);
       setDueDate(task.dueDate);
-      setTags(task.tags.join(', '));
+      setDescription(task.description ?? '');
     }
   }, [task]);
+
+  const projects = useStore((s) => s.projects);
 
   if (!editingTaskId || !task) return null;
 
   const note = notes.find((n) => n.id === task.noteId);
   const supplier = suppliers.find((s) => s.id === task.supplierId);
-  const projects = useStore((s) => s.projects);
   const project = projects.find((p) => p.id === task.projectId);
 
   const save = () => {
@@ -44,10 +46,7 @@ export function TaskModal() {
       priority,
       owner,
       dueDate,
-      tags: tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
+      description,
     });
     setEditingTask(null);
   };
@@ -98,17 +97,30 @@ export function TaskModal() {
         </div>
 
         {/* Source info */}
-        {supplier && (
-          <div className="text-xs text-gray-400 mb-4 flex items-center gap-2">
-            {project && (
-              <span className="px-1.5 py-0.5 rounded-full" style={{ backgroundColor: project.color + '20', color: project.color }}>
-                {project.name}
-              </span>
-            )}
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: supplier.color }} />
-            {supplier.name} · {note?.title || 'Untitled note'}
-          </div>
-        )}
+        <div className="text-xs text-gray-400 mb-4 flex items-center gap-2 flex-wrap">
+          {project && (
+            <span className="px-1.5 py-0.5 rounded-full" style={{ backgroundColor: project.color + '20', color: project.color }}>
+              {project.name}
+            </span>
+          )}
+          {supplier && (
+            <>
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: supplier.color }} />
+              <span>{supplier.name}</span>
+              <span className="text-gray-300">·</span>
+            </>
+          )}
+          {note && (
+            <button
+              onClick={() => navigateToNote(task.noteId)}
+              className="flex items-center gap-1 text-blue-500 hover:text-blue-700 hover:underline transition-colors"
+              title="Go to source note"
+            >
+              <FileText className="w-3 h-3" />
+              {note.title || 'Untitled note'}
+            </button>
+          )}
+        </div>
 
         <div className="space-y-3">
           <div>
@@ -169,13 +181,13 @@ export function TaskModal() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Tags (comma separated)</label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="quality, pricing, timeline…"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add more detail about this task…"
+              rows={4}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
             />
           </div>
         </div>

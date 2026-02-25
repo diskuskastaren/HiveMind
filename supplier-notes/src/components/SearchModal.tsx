@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
-import { Search, X, FileText, CheckSquare, Lightbulb } from 'lucide-react';
+import { Search, X, FileText, CheckSquare, Lightbulb, Archive } from 'lucide-react';
 
 interface SearchResult {
   type: 'note' | 'task' | 'decision';
@@ -14,6 +14,7 @@ interface SearchResult {
   title: string;
   detail: string;
   date: number;
+  archived?: boolean;
 }
 
 export function SearchModal() {
@@ -34,6 +35,7 @@ export function SearchModal() {
   const setEditingTask = useStore((s) => s.setEditingTask);
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
   const setActiveProject = useStore((s) => s.setActiveProject);
+  const setActiveView = useStore((s) => s.setActiveView);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -67,6 +69,7 @@ export function SearchModal() {
             title: n.title || 'Untitled',
             detail: text.slice(0, 100),
             date: n.updatedAt,
+            archived: n.archived,
           });
         }
       });
@@ -74,7 +77,7 @@ export function SearchModal() {
 
     if (filterType === 'all' || filterType === 'task') {
       tasks.forEach((t) => {
-        if (t.title.toLowerCase().includes(q) || t.owner.toLowerCase().includes(q) || t.tags.some((tag) => tag.toLowerCase().includes(q))) {
+        if (t.title.toLowerCase().includes(q) || t.owner.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q)) {
           all.push({
             type: 'task',
             id: t.id,
@@ -141,6 +144,7 @@ export function SearchModal() {
       openTab(INTERNAL_TAB_ID);
     }
 
+    setActiveView('notes');
     if (result.type === 'note') {
       setActiveNote(result.id);
     } else if (result.type === 'task') {
@@ -230,7 +234,15 @@ export function SearchModal() {
                   >
                     <span className="mt-0.5">{ICONS[r.type]}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm">{r.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-sm ${r.archived ? 'text-gray-400' : ''}`}>{r.title}</span>
+                        {r.archived && (
+                          <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200 flex-shrink-0">
+                            <Archive className="w-2.5 h-2.5" />
+                            archived
+                          </span>
+                        )}
+                      </div>
                       {r.detail && <div className="text-xs text-gray-400 truncate">{r.detail}</div>}
                     </div>
                     <div className="text-right flex-shrink-0">

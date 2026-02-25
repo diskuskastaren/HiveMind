@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Project, Supplier, Note, Task, Decision, FollowUp, RightPanelTab } from '../types';
+import type { Project, Supplier, Note, Task, Decision, FollowUp, RightPanelTab, ActiveView, DashboardSection } from '../types';
 import { getTemplateContent } from '../utils/templates';
 
 export const INTERNAL_TAB_ID = '__internal__';
@@ -67,6 +67,10 @@ interface AppState {
   kanbanOpen: boolean;
   nextMeetingPrepSupplierId: string | null;
   editingTaskId: string | null;
+  editingDecisionId: string | null;
+  activeView: ActiveView;
+  previousView: ActiveView | null;
+  dashboardSection: DashboardSection;
 
   addProject: (name: string) => string;
   updateProject: (id: string, updates: Partial<Project>) => void;
@@ -95,6 +99,7 @@ interface AppState {
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   setEditingTask: (id: string | null) => void;
+  toggleArchiveNote: (id: string) => void;
 
   addFollowUp: (followUp: Omit<FollowUp, 'id' | 'createdAt'>) => string;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
@@ -103,6 +108,7 @@ interface AppState {
   addDecision: (decision: Omit<Decision, 'id' | 'createdAt'>) => string;
   updateDecision: (id: string, updates: Partial<Decision>) => void;
   deleteDecision: (id: string) => void;
+  setEditingDecision: (id: string | null) => void;
 
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
@@ -110,6 +116,10 @@ interface AppState {
   toggleSearch: () => void;
   toggleKanban: () => void;
   setNextMeetingPrepSupplier: (id: string | null) => void;
+  navigateToNote: (noteId: string) => void;
+  setActiveView: (view: ActiveView) => void;
+  setDashboardSection: (section: DashboardSection) => void;
+  goBackToPreviousView: () => void;
 
   importData: (data: ExportData) => void;
   getExportData: () => ExportData;
@@ -135,6 +145,10 @@ export const useStore = create<AppState>()(
       kanbanOpen: false,
       nextMeetingPrepSupplierId: null,
       editingTaskId: null,
+      editingDecisionId: null,
+      activeView: 'notes' as ActiveView,
+      previousView: null,
+      dashboardSection: 'tasks' as DashboardSection,
 
       // --- Projects ---
 
@@ -283,7 +297,7 @@ export const useStore = create<AppState>()(
           if (supplierId === INTERNAL_TAB_ID) {
             const tabs = s.openTabs.includes(INTERNAL_TAB_ID) ? s.openTabs : [...s.openTabs, INTERNAL_TAB_ID];
             const internalNotes = s.notes
-              .filter((n) => n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
+              .filter((n) => n.internal && !n.archived && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
               .sort((a, b) => b.updatedAt - a.updatedAt);
             return { openTabs: tabs, activeTabId: INTERNAL_TAB_ID, activeNoteId: internalNotes[0]?.id || null };
           }
@@ -291,7 +305,7 @@ export const useStore = create<AppState>()(
           if (!supplier) return {};
           const tabs = s.openTabs.includes(supplierId) ? s.openTabs : [...s.openTabs, supplierId];
           const supplierNotes = s.notes
-            .filter((n) => n.supplierIds.includes(supplierId) && n.projectIds.includes(s.activeProjectId!))
+            .filter((n) => !n.archived && n.supplierIds.includes(supplierId) && n.projectIds.includes(s.activeProjectId!))
             .sort((a, b) => b.updatedAt - a.updatedAt);
           return {
             openTabs: tabs,
@@ -310,8 +324,8 @@ export const useStore = create<AppState>()(
             nextTab = tabs[Math.min(idx, tabs.length - 1)] || null;
             if (nextTab) {
               const notes = nextTab === INTERNAL_TAB_ID
-                ? s.notes.filter((n) => n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
-                : s.notes.filter((n) => n.supplierIds.includes(nextTab!) && n.projectIds.includes(s.activeProjectId!));
+                ? s.notes.filter((n) => !n.archived && n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
+                : s.notes.filter((n) => !n.archived && n.supplierIds.includes(nextTab!) && n.projectIds.includes(s.activeProjectId!));
               nextNote = notes.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id || null;
             } else {
               nextNote = null;
@@ -323,8 +337,8 @@ export const useStore = create<AppState>()(
       setActiveTab: (supplierId) =>
         set((s) => {
           const notes = supplierId === INTERNAL_TAB_ID
-            ? s.notes.filter((n) => n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
-            : s.notes.filter((n) => n.supplierIds.includes(supplierId) && n.projectIds.includes(s.activeProjectId!));
+            ? s.notes.filter((n) => !n.archived && n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
+            : s.notes.filter((n) => !n.archived && n.supplierIds.includes(supplierId) && n.projectIds.includes(s.activeProjectId!));
           return { activeTabId: supplierId, activeNoteId: notes.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id || null };
         }),
 
@@ -399,6 +413,25 @@ export const useStore = create<AppState>()(
 
       setEditingTask: (id) => set({ editingTaskId: id }),
 
+      toggleArchiveNote: (id) =>
+        set((s) => {
+          const note = s.notes.find((n) => n.id === id);
+          if (!note) return {};
+          const archiving = !note.archived;
+          // If archiving the currently active note, move to next non-archived note in context
+          let nextNote = s.activeNoteId;
+          if (archiving && s.activeNoteId === id) {
+            const sameContext = s.activeTabId === INTERNAL_TAB_ID
+              ? s.notes.filter((n) => n.id !== id && !n.archived && n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))
+              : s.notes.filter((n) => n.id !== id && !n.archived && s.activeTabId && n.supplierIds.includes(s.activeTabId) && s.activeProjectId && n.projectIds.includes(s.activeProjectId));
+            nextNote = sameContext.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id || null;
+          }
+          return {
+            notes: s.notes.map((n) => n.id === id ? { ...n, archived: !n.archived } : n),
+            activeNoteId: nextNote,
+          };
+        }),
+
       // --- Follow-ups ---
 
       addFollowUp: (followUp) => {
@@ -425,6 +458,8 @@ export const useStore = create<AppState>()(
 
       deleteDecision: (id) => set((s) => ({ decisions: s.decisions.filter((d) => d.id !== id) })),
 
+      setEditingDecision: (id) => set({ editingDecisionId: id }),
+
       // --- UI ---
 
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
@@ -433,6 +468,31 @@ export const useStore = create<AppState>()(
       toggleSearch: () => set((s) => ({ searchOpen: !s.searchOpen })),
       toggleKanban: () => set((s) => ({ kanbanOpen: !s.kanbanOpen })),
       setNextMeetingPrepSupplier: (id) => set({ nextMeetingPrepSupplierId: id }),
+      setActiveView: (view) => set({ activeView: view, previousView: null }),
+      setDashboardSection: (section) => set({ dashboardSection: section }),
+      goBackToPreviousView: () =>
+        set((s) => ({ activeView: s.previousView ?? 'notes', previousView: null })),
+
+      navigateToNote: (noteId) =>
+        set((s) => {
+          const note = s.notes.find((n) => n.id === noteId);
+          if (!note) return {};
+          const projectId = note.projectIds[0] ?? s.activeProjectId;
+          const supplierId = note.internal || note.supplierIds.length === 0
+            ? INTERNAL_TAB_ID
+            : note.supplierIds[0];
+          const openTabs = s.openTabs.includes(supplierId) ? s.openTabs : [...s.openTabs, supplierId];
+          return {
+            activeProjectId: projectId,
+            openTabs,
+            activeTabId: supplierId,
+            activeNoteId: noteId,
+            kanbanOpen: false,
+            editingTaskId: null,
+            previousView: s.activeView !== 'notes' ? s.activeView : s.previousView,
+            activeView: 'notes',
+          };
+        }),
 
       // --- Import / Export ---
 
