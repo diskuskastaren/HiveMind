@@ -240,7 +240,7 @@ export function RightPanel() {
                     {task.title}
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${PRIORITY_COLORS[task.priority]}`}>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${PRIORITY_COLORS[task.priority]}`}>
                       {task.priority}
                     </span>
                     {task.owner && <span className="text-[10px] text-gray-400">@{task.owner}</span>}

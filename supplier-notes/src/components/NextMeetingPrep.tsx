@@ -74,7 +74,7 @@ export function NextMeetingPrep() {
               <span className="text-sm text-gray-500">{supplier.name}</span>
               {project && (
                 <span
-                  className="text-xs px-1.5 py-0.5 rounded-full"
+                  className="text-xs px-1.5 py-0.5 rounded"
                   style={{ backgroundColor: project.color + '20', color: project.color }}
                 >
                   {project.name}

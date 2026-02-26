@@ -99,7 +99,7 @@ export function TaskModal() {
         {/* Source info */}
         <div className="text-xs text-gray-400 mb-4 flex items-center gap-2 flex-wrap">
           {project && (
-            <span className="px-1.5 py-0.5 rounded-full" style={{ backgroundColor: project.color + '20', color: project.color }}>
+            <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: project.color + '20', color: project.color }}>
               {project.name}
             </span>
           )}
@@ -161,13 +161,19 @@ export function TaskModal() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Owner</label>
-              <input
-                type="text"
+              <select
                 value={owner}
                 onChange={(e) => setOwner(e.target.value)}
-                placeholder="Name…"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Unassigned</option>
+                <option value="Internal">Internal</option>
+                {suppliers
+                  .filter((s) => project && s.projectIds.includes(project.id))
+                  .map((s) => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Due date</label>

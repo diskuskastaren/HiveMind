@@ -15,6 +15,8 @@ import {
   ArrowUpRight,
   CheckCheck,
   Pencil,
+  UserRound,
+  CalendarDays,
 } from 'lucide-react';
 
 const TASK_COLUMNS: { status: TaskStatus; label: string; colorClass: string }[] = [
@@ -104,7 +106,20 @@ function TasksSection() {
 
   const [filterProject, setFilterProject] = useState('all');
   const [filterSupplier, setFilterSupplier] = useState('all');
+  const [filterOwner, setFilterOwner] = useState('all');
   const [dragging, setDragging] = useState<string | null>(null);
+
+  const ownerOptions = (() => {
+    const projectSuppliers = filterProject === 'all'
+      ? suppliers
+      : suppliers.filter((s) => s.projectIds.includes(filterProject));
+    return [
+      { value: 'all', label: 'All owners' },
+      { value: 'unassigned', label: 'Unassigned' },
+      { value: 'Internal', label: 'Internal' },
+      ...projectSuppliers.map((s) => ({ value: s.name, label: s.name })),
+    ];
+  })();
 
   const filtered = tasks
     .filter((t) => filterProject === 'all' || t.projectId === filterProject)
@@ -112,6 +127,11 @@ function TasksSection() {
       if (filterSupplier === 'all') return true;
       if (filterSupplier === INTERNAL_TAB_ID) return t.supplierId === null;
       return t.supplierId === filterSupplier;
+    })
+    .filter((t) => {
+      if (filterOwner === 'all') return true;
+      if (filterOwner === 'unassigned') return !t.owner;
+      return t.owner === filterOwner;
     });
 
   const openCount = filtered.filter((t) => t.status === 'open').length;
@@ -124,9 +144,18 @@ function TasksSection() {
           <FilterBar
             filterProject={filterProject}
             filterSupplier={filterSupplier}
-            onProjectChange={setFilterProject}
+            onProjectChange={(id) => { setFilterProject(id); setFilterOwner('all'); }}
             onSupplierChange={setFilterSupplier}
           />
+          <select
+            value={filterOwner}
+            onChange={(e) => setFilterOwner(e.target.value)}
+            className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+          >
+            {ownerOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
           {(openCount > 0 || doingCount > 0) && (
             <span className="text-xs text-gray-400">
               {openCount + doingCount} active
@@ -175,19 +204,21 @@ function TasksSection() {
                       onClick={() => setEditingTask(task.id)}
                     >
                       <div className="flex items-start gap-2">
-                        <GripVertical className="w-3.5 h-3.5 text-gray-300 mt-0.5 flex-shrink-0" />
+                        <div className="flex flex-col items-center gap-1.5 flex-shrink-0 mt-0.5">
+                          <GripVertical className="w-3.5 h-3.5 text-gray-300" />
+                          <span
+                            className={`w-2 h-2 rounded-full ${PRIORITY_DOT[task.priority]}`}
+                            title={task.priority}
+                          />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-gray-400' : ''}`}>
                             {task.title}
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            <span
-                              className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOT[task.priority]}`}
-                              title={task.priority}
-                            />
                             {project && (
                               <span
-                                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                 style={{ backgroundColor: project.color + '20', color: project.color }}
                               >
                                 {project.name}
@@ -195,19 +226,57 @@ function TasksSection() {
                             )}
                             {supplier ? (
                               <span
-                                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                 style={{ backgroundColor: supplier.color + '20', color: supplier.color }}
                               >
                                 {supplier.name}
                               </span>
                             ) : task.supplierId === null && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 font-medium">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-medium">
                                 Internal
                               </span>
                             )}
-                            {task.owner && <span className="text-[10px] text-gray-400">@{task.owner}</span>}
-                            {task.dueDate && <span className="text-[10px] text-gray-400">{task.dueDate}</span>}
                           </div>
+                          {task.owner && (() => {
+                            if (task.owner === 'Internal') {
+                              return (
+                                <div className="flex items-center gap-1 mt-1.5">
+                                  <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-50 text-indigo-600">
+                                    <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
+                                    Internal
+                                  </span>
+                                </div>
+                              );
+                            }
+                            const ownerSupplier = suppliers.find((s) => s.name === task.owner);
+                            if (ownerSupplier) {
+                              return (
+                                <div className="flex items-center gap-1 mt-1.5">
+                                  <span
+                                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                    style={{ backgroundColor: ownerSupplier.color + '20', color: ownerSupplier.color }}
+                                  >
+                                    <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
+                                    {ownerSupplier.name}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="flex items-center gap-1 mt-1.5">
+                                <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600">
+                                  <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
+                                  {task.owner}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                          {task.dueDate && (
+                            <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400">
+                              <CalendarDays className="w-2.5 h-2.5 flex-shrink-0" />
+                              {task.dueDate}
+                            </div>
+                          )}
                           {note && (
                             <button
                               className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
@@ -385,7 +454,7 @@ function DecisionsSection() {
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           {project && (
                             <span
-                              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                               style={{ backgroundColor: project.color + '20', color: project.color }}
                             >
                               {project.name}
@@ -522,7 +591,7 @@ function FollowUpsSection() {
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             {project && (
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                 style={{ backgroundColor: project.color + '20', color: project.color }}
               >
                 {project.name}
@@ -530,18 +599,18 @@ function FollowUpsSection() {
             )}
             {supplier ? (
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                 style={{ backgroundColor: supplier.color + '20', color: supplier.color }}
               >
                 {supplier.name}
               </span>
             ) : supplierId === null && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 font-medium">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-medium">
                 Internal
               </span>
             )}
             {type === 'task' && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${PRIORITY_BADGE[(item as typeof tasks[0]).priority]}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${PRIORITY_BADGE[(item as typeof tasks[0]).priority]}`}>
                 {(item as typeof tasks[0]).priority}
               </span>
             )}
@@ -582,7 +651,7 @@ function FollowUpsSection() {
           onSupplierChange={setFilterSupplier}
         />
         {openCount > 0 && (
-          <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-2 py-0.5 font-medium">
+          <span className="text-xs bg-violet-100 text-violet-700 rounded px-2 py-0.5 font-medium">
             {openCount} open
           </span>
         )}

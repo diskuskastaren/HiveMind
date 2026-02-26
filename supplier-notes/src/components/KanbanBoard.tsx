@@ -141,7 +141,7 @@ export function KanbanBoard() {
                                 />
                                 {project && (
                                   <span
-                                    className="text-[10px] px-1.5 py-0.5 rounded-full"
+                                    className="text-[10px] px-1.5 py-0.5 rounded"
                                     style={{
                                       backgroundColor: project.color + '20',
                                       color: project.color,
@@ -152,7 +152,7 @@ export function KanbanBoard() {
                                 )}
                                 {supplier ? (
                                   <span
-                                    className="text-[10px] px-1.5 py-0.5 rounded-full"
+                                    className="text-[10px] px-1.5 py-0.5 rounded"
                                     style={{
                                       backgroundColor: supplier.color + '20',
                                       color: supplier.color,
@@ -161,7 +161,7 @@ export function KanbanBoard() {
                                     {supplier.name}
                                   </span>
                                 ) : task.supplierId === null && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">
                                     Internal
                                   </span>
                                 )}

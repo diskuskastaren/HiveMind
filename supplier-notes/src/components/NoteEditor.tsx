@@ -376,7 +376,7 @@ export function NoteEditor() {
               return (
                 <span
                   key={pid}
-                  className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full group"
+                  className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded group"
                   style={{ backgroundColor: p.color + '20', color: p.color }}
                 >
                   {p.name}
@@ -441,7 +441,7 @@ export function NoteEditor() {
                 return (
                   <span
                     key={sid}
-                    className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full border group"
+                    className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded border group"
                     style={{ borderColor: s.color + '60', color: s.color }}
                   >
                     {s.name}

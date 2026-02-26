@@ -250,7 +250,7 @@ export function SearchModal() {
                         {linkedProjects.map((p) => (
                           <span
                             key={p.id}
-                            className="text-[10px] px-1.5 py-0.5 rounded-full inline-block"
+                            className="text-[10px] px-1.5 py-0.5 rounded inline-block"
                             style={{ backgroundColor: p.color + '20', color: p.color }}
                           >
                             {p.name}
@@ -259,13 +259,13 @@ export function SearchModal() {
                         {linkedSuppliers.length > 0 ? linkedSuppliers.map((s) => (
                           <span
                             key={s.id}
-                            className="text-[10px] px-1.5 py-0.5 rounded-full inline-block"
+                            className="text-[10px] px-1.5 py-0.5 rounded inline-block"
                             style={{ backgroundColor: s.color + '20', color: s.color }}
                           >
                             {s.name}
                           </span>
                         )) : r.supplierIds.length === 0 && r.type !== 'note' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full inline-block bg-indigo-50 text-indigo-500">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded inline-block bg-indigo-50 text-indigo-500">
                             Internal
                           </span>
                         )}
