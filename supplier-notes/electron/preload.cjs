@@ -10,3 +10,11 @@ contextBridge.exposeInMainWorld('electronImages', {
   save: (buffer, ext) => ipcRenderer.invoke('image:save', buffer, ext),
   delete: (filename) => ipcRenderer.invoke('image:delete', filename),
 });
+
+contextBridge.exposeInMainWorld('electronCapture', {
+  getSources: () => ipcRenderer.invoke('desktop:getSources'),
+});
+
+contextBridge.exposeInMainWorld('electronDebug', {
+  log: (payload) => ipcRenderer.send('debug:log', payload),
+});

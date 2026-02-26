@@ -32,6 +32,7 @@ import {
   Redo2,
   Plus,
   X,
+  Mic,
 } from 'lucide-react';
 import { exportNoteMarkdown, exportEmailSummary, downloadFile } from '../utils/export';
 
@@ -187,6 +188,9 @@ export function NoteEditor() {
   const addDecision = useStore((s) => s.addDecision);
   const addFollowUp = useStore((s) => s.addFollowUp);
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
+  const rightPanelOpen = useStore((s) => s.rightPanelOpen);
+  const toggleRightPanel = useStore((s) => s.toggleRightPanel);
+  const isRecording = useStore((s) => s.transcriptRecording);
 
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showSupplierPicker, setShowSupplierPicker] = useState(false);
@@ -590,6 +594,25 @@ export function NoteEditor() {
               </button>
             </div>
           )}
+
+          {/* Transcript / Record */}
+          <button
+            onClick={() => {
+              if (!rightPanelOpen) toggleRightPanel();
+              setRightPanelTab('transcript');
+            }}
+            title={isRecording ? 'Recording in progress — click to open transcript' : 'Record meeting transcript'}
+            className={`p-1.5 rounded transition-colors relative ${
+              isRecording
+                ? 'text-red-500 hover:bg-red-50'
+                : 'text-gray-500 hover:bg-gray-200'
+            }`}
+          >
+            <Mic className="w-4 h-4" />
+            {isRecording && (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            )}
+          </button>
 
           {/* Template */}
           <div className="relative">

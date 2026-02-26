@@ -16,6 +16,13 @@ export interface Supplier {
   createdAt: number;
 }
 
+export interface Transcript {
+  rawText: string;
+  summary?: string;
+  duration: number;
+  recordedAt: number;
+}
+
 export interface Note {
   id: string;
   projectIds: string[];
@@ -27,6 +34,7 @@ export interface Note {
   attendees: string;
   createdAt: number;
   updatedAt: number;
+  transcript?: Transcript;
 }
 
 export interface Task {
@@ -62,7 +70,7 @@ export interface Decision {
   createdAt: number;
 }
 
-export type RightPanelTab = 'tasks' | 'decisions';
+export type RightPanelTab = 'tasks' | 'decisions' | 'transcript';
 export type TaskStatus = 'open' | 'doing' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
 export type ActiveView = 'notes' | 'dashboard';

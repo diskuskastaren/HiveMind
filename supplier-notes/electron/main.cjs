@@ -1,6 +1,12 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// Debug logging — writes NDJSON to workspace root
+const DEBUG_LOG = path.join(__dirname, '..', 'debug-0a018f.log');
+ipcMain.on('debug:log', (_event, payload) => {
+  try { fs.appendFileSync(DEBUG_LOG, JSON.stringify(payload) + '\n'); } catch {}
+});
 
 const DATA_FILE = path.join(app.getPath('userData'), 'supplier-notes-data.json');
 const IMAGES_DIR = path.join(app.getPath('userData'), 'images');
@@ -35,6 +41,17 @@ ipcMain.handle('store:write', (_event, data) => {
 });
 
 ipcMain.handle('store:path', () => DATA_FILE);
+
+// Return screen source IDs so the renderer can capture system audio
+ipcMain.handle('desktop:getSources', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'] });
+    return sources.map((s) => ({ id: s.id, name: s.name }));
+  } catch (e) {
+    console.error('Failed to get desktop sources:', e);
+    return [];
+  }
+});
 
 // Save an image buffer to the images folder, return the filename
 ipcMain.handle('image:save', (_event, buffer, ext) => {
@@ -105,6 +122,17 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Grant microphone and media permissions so Web Speech API and getUserMedia work
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
+    callback(allowed.includes(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
+    return allowed.includes(permission);
+  });
+
   // Serve local image files via app-image:// protocol
   protocol.handle('app-image', (request) => {
     const filename = decodeURIComponent(new URL(request.url).hostname);
