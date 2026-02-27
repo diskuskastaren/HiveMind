@@ -38,10 +38,15 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   // System audio mode refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const micRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const micChunksRef = useRef<Blob[]>([]);
+  // WebM init segments (first ondataavailable chunk) — must be prepended to every batch blob
+  // so that Whisper receives a valid WebM file regardless of which batch it is
+  const sysInitChunkRef = useRef<Blob | null>(null);
+  const micInitChunkRef = useRef<Blob | null>(null);
 
   // liveText state is managed via a callback so the component can track it
   const liveTextCallbackRef = useRef<(text: string) => void>(() => {});
@@ -270,54 +275,86 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       streamRef.current = stream;
 
-      // Mix system audio + microphone into a single stream via Web Audio API
-      const audioCtx = new AudioContext();
-      audioCtxRef.current = audioCtx;
-      // Resume immediately on the user gesture to prevent Chromium from suspending it
-      await audioCtx.resume();
-      const destination = audioCtx.createMediaStreamDestination();
-
-      audioCtx.createMediaStreamSource(new MediaStream(audioTracks)).connect(destination);
-
-      // Request mic; silently continue with system-only if permission is denied
-      try {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        micStreamRef.current = micStream;
-        audioCtx.createMediaStreamSource(micStream).connect(destination);
-      } catch {
-        // Mic unavailable — system audio still captured
-      }
-
-      const audioStream = destination.stream;
-      setVisualizerStream(audioStream);
-
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
-      const recorder = new MediaRecorder(audioStream, { mimeType });
-      mediaRecorderRef.current = recorder;
 
+      // Record system audio directly — no AudioContext, no suspension risk
+      const systemStream = new MediaStream(audioTracks);
+      const recorder = new MediaRecorder(systemStream, { mimeType });
+      mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          if (!sysInitChunkRef.current) {
+            // First chunk is the WebM init segment (EBML header + codec info); save it
+            // separately so every subsequent batch blob can be prefixed with it
+            sysInitChunkRef.current = e.data;
+          } else {
+            audioChunksRef.current.push(e.data);
+          }
+        }
       };
+      recorder.start(1000);
+
+      // Record mic separately so both streams stay independent and stable
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStreamRef.current = micStream;
+        setVisualizerStream(systemStream);
+        const micRecorder = new MediaRecorder(micStream, { mimeType });
+        micRecorderRef.current = micRecorder;
+        micRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            if (!micInitChunkRef.current) {
+              micInitChunkRef.current = e.data;
+            } else {
+              micChunksRef.current.push(e.data);
+            }
+          }
+        };
+        micRecorder.start(1000);
+      } catch {
+        // Mic unavailable — system audio still captured; use system stream for visualizer
+        setVisualizerStream(systemStream);
+      }
 
       const processChunks = async () => {
-        // Revive AudioContext if Chromium suspended it between batches
-        if (audioCtxRef.current?.state === 'suspended') {
-          await audioCtxRef.current.resume();
+        const hasSystem = audioChunksRef.current.length > 0;
+        const hasMic = micChunksRef.current.length > 0;
+        if (!hasSystem && !hasMic) return;
+
+        const results: string[] = [];
+
+        if (hasSystem) {
+          const sysChunks = audioChunksRef.current;
+          audioChunksRef.current = [];
+          // Always prepend the init segment so every batch is a self-contained valid WebM
+          const sysParts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...sysChunks] : sysChunks;
+          const blob = new Blob(sysParts, { type: mimeType });
+          try {
+            const text = await transcribeAudioChunk(blob, apiKey);
+            if (text) results.push(text);
+          } catch (e) {
+            console.error('Whisper system-audio error:', e);
+          }
         }
-        if (audioChunksRef.current.length === 0) return;
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        audioChunksRef.current = [];
-        try {
-          const text = await transcribeAudioChunk(blob, apiKey);
-          if (text) appendText(text + ' ');
-        } catch (e) {
-          console.error('Whisper transcription error:', e);
+
+        if (hasMic) {
+          const micChunks = micChunksRef.current;
+          micChunksRef.current = [];
+          const micParts = micInitChunkRef.current ? [micInitChunkRef.current, ...micChunks] : micChunks;
+          const blob = new Blob(micParts, { type: mimeType });
+          try {
+            const text = await transcribeAudioChunk(blob, apiKey);
+            if (text) results.push(text);
+          } catch (e) {
+            console.error('Whisper mic error:', e);
+          }
         }
+
+        if (results.length > 0) appendText(results.join(' ') + ' ');
       };
 
-      recorder.start(1000); // collect data every second
       chunkIntervalRef.current = setInterval(processChunks, 30_000);
       return true;
     } catch (e: any) {
@@ -359,6 +396,19 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     [noteId, mode, updateNote, startMicRecording, startSystemRecording, setTranscriptRecording],
   );
 
+  // Helper: stop a MediaRecorder and wait for its final ondataavailable + onstop
+  const drainRecorder = (recorder: MediaRecorder): Promise<Blob[]> =>
+    new Promise((resolve) => {
+      const finalChunks: Blob[] = [];
+      const origHandler = recorder.ondataavailable;
+      recorder.ondataavailable = (e) => {
+        origHandler?.call(recorder, e);
+        if (e.data.size > 0) finalChunks.push(e.data);
+      };
+      recorder.onstop = () => resolve(finalChunks);
+      recorder.stop();
+    });
+
   const stop = useCallback(async () => {
     isRecordingRef.current = false;
 
@@ -368,61 +418,59 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       recognitionRef.current = null;
     }
 
-    // Stop system audio recorder and process remaining chunks
+    // Stop the periodic processing interval
     if (chunkIntervalRef.current) {
       clearInterval(chunkIntervalRef.current);
       chunkIntervalRef.current = null;
     }
 
-    // #region agent log
-    dbg({location:'useTranscription.ts:stop-mediaRecorder',message:'stop called',data:{hasRecorder:!!mediaRecorderRef.current,chunkCount:audioChunksRef.current.length,apiKeyPresent:!!apiKey},hypothesisId:'H-G,H-H'});
-    // #endregion
-    if (mediaRecorderRef.current) {
-      await new Promise<void>((resolve) => {
-        const recorder = mediaRecorderRef.current!;
-        recorder.onstop = async () => {
-          // #region agent log
-          dbg({location:'useTranscription.ts:recorder.onstop',message:'recorder stopped',data:{chunkCount:audioChunksRef.current.length,apiKeyPresent:!!apiKey,mimeType:recorder.mimeType},hypothesisId:'H-G,H-H'});
-          // #endregion
-          if (audioChunksRef.current.length > 0 && apiKey) {
-            const mimeType = recorder.mimeType || 'audio/webm';
-            const blob = new Blob(audioChunksRef.current, { type: mimeType });
-            audioChunksRef.current = [];
-            try {
-              // #region agent log
-              dbg({location:'useTranscription.ts:whisper-call',message:'calling Whisper API',data:{blobSize:blob.size,mimeType},hypothesisId:'H-H'});
-              // #endregion
-              const text = await transcribeAudioChunk(blob, apiKey);
-              // #region agent log
-              dbg({location:'useTranscription.ts:whisper-result',message:'Whisper returned',data:{textLen:text?.length??0,text:text?.slice(0,60)},hypothesisId:'H-H'});
-              // #endregion
-              if (text) appendText(text + ' ');
-            } catch(whisperErr: any) {
-              const msg = String(whisperErr);
-              // #region agent log
-              dbg({location:'useTranscription.ts:whisper-error',message:'Whisper call failed',data:{error:msg},hypothesisId:'H-H'});
-              // #endregion
-              const friendly = msg.includes('429') || msg.includes('quota')
-                ? 'OpenAI quota exceeded — add credits at platform.openai.com/account/billing'
-                : `Whisper error: ${msg.slice(0, 80)}`;
-              setDebugStatus(friendly);
-            }
-          }
-          resolve();
-        };
-        recorder.stop();
-      });
+    // Flush remaining audio from both recorders and transcribe
+    const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+    const results: string[] = [];
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      await drainRecorder(mediaRecorderRef.current);
+      if (audioChunksRef.current.length > 0 && apiKey) {
+        const sysParts = sysInitChunkRef.current
+          ? [sysInitChunkRef.current, ...audioChunksRef.current]
+          : audioChunksRef.current;
+        const blob = new Blob(sysParts, { type: mimeType });
+        audioChunksRef.current = [];
+        try {
+          const text = await transcribeAudioChunk(blob, apiKey);
+          if (text) results.push(text);
+        } catch (e: any) {
+          console.error('Whisper final system-audio error:', e);
+        }
+      }
+      sysInitChunkRef.current = null;
       mediaRecorderRef.current = null;
     }
+
+    if (micRecorderRef.current && micRecorderRef.current.state !== 'inactive') {
+      await drainRecorder(micRecorderRef.current);
+      if (micChunksRef.current.length > 0 && apiKey) {
+        const micParts = micInitChunkRef.current
+          ? [micInitChunkRef.current, ...micChunksRef.current]
+          : micChunksRef.current;
+        const blob = new Blob(micParts, { type: mimeType });
+        micChunksRef.current = [];
+        try {
+          const text = await transcribeAudioChunk(blob, apiKey);
+          if (text) results.push(text);
+        } catch (e: any) {
+          console.error('Whisper final mic error:', e);
+        }
+      }
+      micInitChunkRef.current = null;
+      micRecorderRef.current = null;
+    }
+
+    if (results.length > 0) appendText(results.join(' ') + ' ');
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
-    }
-
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
     }
 
     if (micStreamRef.current) {

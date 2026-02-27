@@ -73,17 +73,18 @@ export function TranscriptTab() {
   const [elapsed, setElapsed] = useState(0);
   const [liveText, setLiveText] = useState('');
 
-  const startTimeRef = useRef(0);
   const liveScrollRef = useRef<HTMLDivElement>(null);
 
   const { start, stop, visualizerStream, debugStatus } = useTranscription({ noteId: note?.id ?? '', apiKey, mode });
 
-  // Elapsed timer while recording
+  // Elapsed timer while recording — derived from persisted recordedAt so tab switches don't reset it
   useEffect(() => {
     if (!isRecording) { setElapsed(0); return; }
-    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
+    const recordedAt = note?.transcript?.recordedAt ?? Date.now();
+    setElapsed(Math.floor((Date.now() - recordedAt) / 1000));
+    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - recordedAt) / 1000)), 1000);
     return () => clearInterval(iv);
-  }, [isRecording]);
+  }, [isRecording, note?.transcript?.recordedAt]);
 
   // Auto-scroll the live transcript
   useEffect(() => {
@@ -93,7 +94,6 @@ export function TranscriptTab() {
   }, [liveText, note?.transcript?.rawText]);
 
   const handleStart = useCallback(async () => {
-    startTimeRef.current = Date.now();
     setElapsed(0);
     setLiveText('');
     await start(setLiveText);
