@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 
 // Debug logging — writes NDJSON to workspace root
 const DEBUG_LOG = path.join(__dirname, '..', 'debug-0a018f.log');
@@ -73,6 +74,36 @@ ipcMain.handle('image:delete', (_event, filename) => {
     if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
   } catch (e) {
     console.error('Failed to delete image:', e);
+  }
+});
+
+// Open URL in system default app (e.g. mailto: → Outlook)
+ipcMain.handle('shell:openExternal', (_event, url) => {
+  return shell.openExternal(url);
+});
+
+// Create a new Outlook email with HTML body via a temporary .eml file.
+// Opening the file via shell.openExternal uses the default mail client
+// (correct Outlook version), and X-Unsent: 1 opens it in compose mode.
+ipcMain.handle('mail:openOutlook', async (_event, subject, htmlBody) => {
+  try {
+    const os = require('os');
+    const tmpFile = path.join(os.tmpdir(), `outlook-draft-${Date.now()}.eml`);
+    const eml = [
+      'MIME-Version: 1.0',
+      'X-Unsent: 1',
+      `Subject: ${subject}`,
+      'Content-Type: text/html; charset=UTF-8',
+      '',
+      htmlBody,
+    ].join('\r\n');
+    fs.writeFileSync(tmpFile, eml, 'utf-8');
+    await shell.openExternal(tmpFile);
+    setTimeout(() => { try { fs.unlinkSync(tmpFile); } catch {} }, 15000);
+    return true;
+  } catch (e) {
+    console.error('Failed to open Outlook draft:', e);
+    return false;
   }
 });
 

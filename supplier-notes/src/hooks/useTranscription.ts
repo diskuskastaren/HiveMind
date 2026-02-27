@@ -39,6 +39,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   // System audio mode refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -268,7 +269,26 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       if (audioTracks.length === 0) throw new Error('No audio tracks captured from system audio');
 
       streamRef.current = stream;
-      const audioStream = new MediaStream(audioTracks);
+
+      // Mix system audio + microphone into a single stream via Web Audio API
+      const audioCtx = new AudioContext();
+      audioCtxRef.current = audioCtx;
+      // Resume immediately on the user gesture to prevent Chromium from suspending it
+      await audioCtx.resume();
+      const destination = audioCtx.createMediaStreamDestination();
+
+      audioCtx.createMediaStreamSource(new MediaStream(audioTracks)).connect(destination);
+
+      // Request mic; silently continue with system-only if permission is denied
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStreamRef.current = micStream;
+        audioCtx.createMediaStreamSource(micStream).connect(destination);
+      } catch {
+        // Mic unavailable — system audio still captured
+      }
+
+      const audioStream = destination.stream;
       setVisualizerStream(audioStream);
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -282,6 +302,10 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       };
 
       const processChunks = async () => {
+        // Revive AudioContext if Chromium suspended it between batches
+        if (audioCtxRef.current?.state === 'suspended') {
+          await audioCtxRef.current.resume();
+        }
         if (audioChunksRef.current.length === 0) return;
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         audioChunksRef.current = [];
@@ -394,6 +418,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+    }
+
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
     }
 
     if (micStreamRef.current) {

@@ -87,6 +87,52 @@ export function exportEmailSummary(
   return out;
 }
 
+/** Convert AI summary markdown to HTML with Calibri 11pt styling for Outlook. */
+export function summaryToHtmlForEmail(md: string): string {
+  const bodyStyle = 'font-family: Calibri, sans-serif; font-size: 11pt;';
+  const headingStyle = 'font-family: Calibri, sans-serif; font-size: 11pt; font-weight: bold; margin: 12pt 0 4pt 0;';
+  const bulletStyle = 'font-family: Calibri, sans-serif; font-size: 11pt; margin: 2pt 0;';
+
+  const htmlLines = md.split('\n').map((line) => {
+    if (/^## (.+)$/.test(line)) {
+      const text = line.replace(/^## /, '').replace(/\*\*(.+?)\*\*/g, '$1');
+      return `<p style="${headingStyle}">${text}</p>`;
+    }
+    if (/^- (.+)$/.test(line)) {
+      const text = line.replace(/^- /, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      return `<p style="${bulletStyle}">&bull; ${text}</p>`;
+    }
+    if (line.trim() === '') return '';
+    const text = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return `<p style="${bodyStyle}">${text}</p>`;
+  });
+
+  return `<html><body style="${bodyStyle}">${htmlLines.join('')}</body></html>`;
+}
+
+/** Convert AI summary markdown to plain text for email body (Outlook-friendly). */
+export function summaryToPlainTextForEmail(md: string): string {
+  return (
+    md
+      // ## Heading -> blank line + heading + newline
+      .replace(/^## (.+)$/gm, '\n$1\n')
+      // - item -> bullet + space
+      .replace(/^- (.+)$/gm, '• $1')
+      // **bold** -> plain text
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}
+
+/** Build a mailto URL with optional body truncation for client URL length limits. */
+export function getMailtoUrl(subject: string, body: string, maxBodyLength = 1500): string {
+  const encodedSubject = encodeURIComponent(subject);
+  const truncated = body.length > maxBodyLength ? body.slice(0, maxBodyLength) + '\n\n[… truncated]' : body;
+  const encodedBody = encodeURIComponent(truncated);
+  return `mailto:?subject=${encodedSubject}&body=${encodedBody}`;
+}
+
 export function downloadFile(content: string, filename: string, mime = 'text/plain') {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);

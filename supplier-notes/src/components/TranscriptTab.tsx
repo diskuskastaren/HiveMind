@@ -10,11 +10,13 @@ import {
   Volume2,
   ChevronLeft,
   Check,
+  Mail,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store/store';
 import { useTranscription, type TranscriptionMode } from '../hooks/useTranscription';
 import { summarizeMeetingTranscript } from '../utils/summarize';
+import { getMailtoUrl, summaryToPlainTextForEmail, summaryToHtmlForEmail } from '../utils/export';
 import { AudioVisualizer } from './AudioVisualizer';
 
 const STORAGE_KEY = 'openai-api-key';
@@ -57,6 +59,7 @@ function CopyButton({ text }: { text: string }) {
 
 export function TranscriptTab() {
   const note = useStore((s) => s.notes.find((n) => n.id === s.activeNoteId));
+  const projects = useStore((s) => s.projects);
   const updateNote = useStore((s) => s.updateNote);
   const isRecording = useStore((s) => s.transcriptRecording);
 
@@ -133,6 +136,35 @@ export function TranscriptTab() {
     const section = `<h2>Meeting Transcript</h2><p style="white-space:pre-wrap">${note.transcript.rawText.trim()}</p>`;
     updateNote(note.id, { content: (note.content || '') + section });
   }, [note, updateNote]);
+
+  const handleAddSummaryToNote = useCallback(() => {
+    if (!note?.transcript?.summary || !note.id) return;
+    const html = renderSummary(note.transcript.summary).__html;
+    const section = `<h2>Meeting Summary</h2>${html}`;
+    updateNote(note.id, { content: (note.content || '') + section });
+  }, [note, updateNote]);
+
+  const handleEmailSummary = useCallback(() => {
+    if (!note?.transcript?.summary) return;
+    const projectNames = (note.projectIds || [])
+      .map((id) => projects.find((p) => p.id === id)?.name)
+      .filter(Boolean) as string[];
+    const baseSubject = note.title ? `Meeting summary: ${note.title}` : 'Meeting summary';
+    const subject = projectNames.length > 0 ? `[${projectNames.join(', ')}] - ${baseSubject}` : baseSubject;
+
+    const outlookOpen = (window as any).electronOutlookMail?.open;
+    if (typeof outlookOpen === 'function') {
+      const htmlBody = summaryToHtmlForEmail(note.transcript.summary);
+      outlookOpen(subject, htmlBody);
+    } else {
+      // Fallback: plain-text mailto for non-Electron / non-Windows environments
+      const plainBody = summaryToPlainTextForEmail(note.transcript.summary);
+      const url = getMailtoUrl(subject, plainBody);
+      const openExternal = (window as any).electronOpenExternal?.open;
+      if (typeof openExternal === 'function') openExternal(url);
+      else window.location.href = url;
+    }
+  }, [note?.transcript?.summary, note?.title, note?.projectIds, projects]);
 
   const handleClearTranscript = useCallback(() => {
     if (!note?.id) return;
@@ -254,11 +286,7 @@ export function TranscriptTab() {
 
         {mode === 'system' && (
           <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-1">
-            <p className="font-medium text-blue-700">Captures Teams, Zoom &amp; more</p>
-            <p className="text-blue-600 leading-relaxed">
-              Records everything playing through your speakers — meeting participants included.
-              Requires an OpenAI API key for transcription.
-            </p>
+            <p className="font-medium text-blue-700">API key needed to transcribe</p>
             {!apiKey && (
               <button
                 onClick={() => { setApiKeyInput(''); setShowSettings(true); }}
@@ -282,7 +310,7 @@ export function TranscriptTab() {
         <button
           onClick={handleStart}
           disabled={mode === 'system' && !apiKey}
-          className="w-full py-2 text-sm font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Mic className="w-4 h-4" /> Start Recording
         </button>
@@ -441,44 +469,67 @@ export function TranscriptTab() {
       </div>
 
       {/* Footer actions */}
-      <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-shrink-0">
-        {subTab === 'summary' && (note.transcript?.summary || isSummarizing) && (
-          <>
-            {note.transcript?.summary && <CopyButton text={note.transcript.summary} />}
+      <div className="px-4 pt-2.5 pb-2 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
+
+        {/* Row 1 — primary CTAs */}
+        {subTab === 'summary' && note.transcript?.summary && (
+          <div className="flex gap-2">
             <button
-              onClick={handleRegenerateSummary}
-              disabled={isSummarizing || !apiKey}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
+              onClick={handleAddSummaryToNote}
+              className="flex-1 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
             >
-              <RefreshCw className="w-3 h-3" /> Regenerate
+              <FileText className="w-3 h-3 flex-shrink-0" /> Add summary to note
             </button>
-          </>
+            <button
+              onClick={handleEmailSummary}
+              className="flex-1 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+              title="Open default mail app (e.g. Outlook) with summary in body"
+            >
+              <Mail className="w-3 h-3 flex-shrink-0" /> Email summary
+            </button>
+          </div>
         )}
 
-        {subTab === 'raw' && note.transcript?.rawText && (
-          <>
-            <CopyButton text={note.transcript.rawText} />
+        {/* Row 2 — utilities */}
+        <div className="flex items-center gap-3">
+          {subTab === 'summary' && (note.transcript?.summary || isSummarizing) && (
+            <>
+              {note.transcript?.summary && <CopyButton text={note.transcript.summary} />}
+              <button
+                onClick={handleRegenerateSummary}
+                disabled={isSummarizing || !apiKey}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" /> Regenerate
+              </button>
+            </>
+          )}
+
+          {subTab === 'raw' && note.transcript?.rawText && (
+            <>
+              <CopyButton text={note.transcript.rawText} />
+              <button
+                onClick={handleInsertIntoNote}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <FileText className="w-3 h-3" /> Insert into note
+              </button>
+            </>
+          )}
+
+          <div className="flex-1" />
+
+          {!isRecording && (
             <button
-              onClick={handleInsertIntoNote}
+              onClick={handleStart}
               className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              title="Start a new recording (replaces this transcript)"
             >
-              <FileText className="w-3 h-3" /> Insert into note
+              <Mic className="w-3 h-3" /> Re-record
             </button>
-          </>
-        )}
+          )}
+        </div>
 
-        <div className="flex-1" />
-
-        {/* Re-record button */}
-        {!isRecording && (
-          <button
-            onClick={handleStart}
-            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors"
-            title="Start a new recording (replaces this transcript)"
-          >
-            <Mic className="w-3 h-3" /> Re-record
-          </button>
-        )}
       </div>
     </div>
   );

@@ -18,3 +18,11 @@ contextBridge.exposeInMainWorld('electronCapture', {
 contextBridge.exposeInMainWorld('electronDebug', {
   log: (payload) => ipcRenderer.send('debug:log', payload),
 });
+
+contextBridge.exposeInMainWorld('electronOpenExternal', {
+  open: (url) => ipcRenderer.invoke('shell:openExternal', url),
+});
+
+contextBridge.exposeInMainWorld('electronOutlookMail', {
+  open: (subject, htmlBody) => ipcRenderer.invoke('mail:openOutlook', subject, htmlBody),
+});

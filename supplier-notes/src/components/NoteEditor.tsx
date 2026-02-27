@@ -238,13 +238,16 @@ export function NoteEditor() {
 
   useEffect(() => {
     if (editor && note && !editor.isDestroyed) {
-      switchingRef.current = true;
-      editor.commands.setContent(note.content || '');
-      requestAnimationFrame(() => {
-        switchingRef.current = false;
-      });
+      const storeContent = note.content || '';
+      if (editor.getHTML() !== storeContent) {
+        switchingRef.current = true;
+        editor.commands.setContent(storeContent);
+        requestAnimationFrame(() => {
+          switchingRef.current = false;
+        });
+      }
     }
-  }, [activeNoteId, editor]);
+  }, [activeNoteId, editor, note?.content]);
 
   useEffect(() => {
     if (activeNoteId && note && !note.title) {

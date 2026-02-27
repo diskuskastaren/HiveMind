@@ -129,7 +129,9 @@ export function RightPanel() {
   };
 
   return (
-    <div className="w-72 border-l border-gray-200 flex flex-col bg-white h-full flex-shrink-0">
+    <div
+      className="border-l border-gray-200 flex flex-col bg-white h-full flex-shrink-0 w-96"
+    >
       {/* Tabs */}
       <div className="flex border-b border-gray-200 flex-shrink-0">
         {(['tasks', 'decisions'] as const).map((tab) => (
