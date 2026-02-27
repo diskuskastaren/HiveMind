@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Project, Supplier, Note, Task, Decision, FollowUp, RightPanelTab, ActiveView, DashboardSection } from '../types';
+import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, RightPanelTab, ActiveView, DashboardSection } from '../types';
 import { getTemplateContent } from '../utils/templates';
 
 export const INTERNAL_TAB_ID = '__internal__';
@@ -38,7 +38,7 @@ const PROJECT_COLORS = [
 ];
 
 export interface ExportData {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   exportedAt: number;
   projects?: Project[];
   suppliers: Supplier[];
@@ -94,6 +94,10 @@ interface AppState {
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   setActiveNote: (id: string | null) => void;
+
+  addTranscript: (noteId: string, transcript: Transcript) => void;
+  updateTranscript: (noteId: string, transcriptId: string, updates: Partial<Omit<Transcript, 'id'>>) => void;
+  deleteTranscript: (noteId: string, transcriptId: string) => void;
 
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => string;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -402,6 +406,45 @@ export const useStore = create<AppState>()(
 
       setActiveNote: (id) => set({ activeNoteId: id }),
 
+      // --- Transcripts ---
+
+      addTranscript: (noteId, transcript) =>
+        set((s) => ({
+          notes: s.notes.map((n) =>
+            n.id === noteId
+              ? { ...n, transcripts: [...(n.transcripts ?? []), transcript], updatedAt: Date.now() }
+              : n,
+          ),
+        })),
+
+      updateTranscript: (noteId, transcriptId, updates) =>
+        set((s) => ({
+          notes: s.notes.map((n) =>
+            n.id === noteId
+              ? {
+                  ...n,
+                  transcripts: (n.transcripts ?? []).map((t) =>
+                    t.id === transcriptId ? { ...t, ...updates } : t,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : n,
+          ),
+        })),
+
+      deleteTranscript: (noteId, transcriptId) =>
+        set((s) => ({
+          notes: s.notes.map((n) =>
+            n.id === noteId
+              ? {
+                  ...n,
+                  transcripts: (n.transcripts ?? []).filter((t) => t.id !== transcriptId),
+                  updatedAt: Date.now(),
+                }
+              : n,
+          ),
+        })),
+
       // --- Tasks ---
 
       addTask: (task) => {
@@ -554,7 +597,7 @@ export const useStore = create<AppState>()(
       getExportData: () => {
         const s = get();
         return {
-          version: 4,
+          version: 5,
           exportedAt: Date.now(),
           projects: s.projects,
           suppliers: s.suppliers,
@@ -567,7 +610,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'supplier-notes-storage',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -616,6 +659,19 @@ export const useStore = create<AppState>()(
               projectIds: n.projectIds ?? (n.projectId ? [n.projectId] : []),
               supplierIds: n.supplierIds ?? (n.supplierId ? [n.supplierId] : []),
             })),
+          };
+        }
+        if (version < 5) {
+          // Migrate single transcript → transcripts array
+          state = {
+            ...state,
+            notes: (state.notes || []).map((n: any) => {
+              const { transcript, ...rest } = n;
+              return {
+                ...rest,
+                transcripts: transcript ? [{ id: uid(), ...transcript }] : [],
+              };
+            }),
           };
         }
         return state;

@@ -1,6 +1,7 @@
 import { useRef, useCallback, useState } from 'react';
 import { useStore } from '../store/store';
 import { transcribeAudioChunk } from '../utils/summarize';
+import type { Transcript } from '../types';
 
 // Dual-channel debug logger: IPC file + console (works regardless of preload version)
 function dbg(payload: Record<string, unknown>) {
@@ -17,11 +18,14 @@ interface UseTranscriptionOptions {
 }
 
 export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptions) {
-  const updateNote = useStore((s) => s.updateNote);
+  const addTranscript = useStore((s) => s.addTranscript);
+  const updateTranscript = useStore((s) => s.updateTranscript);
   const setTranscriptRecording = useStore((s) => s.setTranscriptRecording);
 
   // Capture the noteId at start time so recording always saves to the right note
   const recordingNoteIdRef = useRef('');
+  // Each recording session gets its own transcript entry in the note
+  const transcriptIdRef = useRef('');
   const accumulatedRef = useRef('');
   const startTimeRef = useRef(0);
   const isRecordingRef = useRef(false);
@@ -57,16 +61,14 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const speechNetworkFailedRef = useRef(false);
 
   const saveProgress = useCallback((extra?: { duration?: number }) => {
-    const id = recordingNoteIdRef.current;
-    if (!id) return;
-    updateNote(id, {
-      transcript: {
-        rawText: accumulatedRef.current,
-        duration: extra?.duration ?? Math.floor((Date.now() - startTimeRef.current) / 1000),
-        recordedAt: startTimeRef.current,
-      },
+    const noteId = recordingNoteIdRef.current;
+    const tid = transcriptIdRef.current;
+    if (!noteId || !tid) return;
+    updateTranscript(noteId, tid, {
+      rawText: accumulatedRef.current,
+      duration: extra?.duration ?? Math.floor((Date.now() - startTimeRef.current) / 1000),
     });
-  }, [updateNote]);
+  }, [updateTranscript]);
 
   const appendText = useCallback((text: string) => {
     accumulatedRef.current += text;
@@ -99,12 +101,20 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       // #region agent log
       dbg({location:'useTranscription.ts:ondataavailable',message:'audio chunk received',data:{size:e.data.size,chunkCount:audioChunksRef.current.length+1},hypothesisId:'H-F'});
       // #endregion
-      if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      if (e.data.size > 0) {
+        if (!sysInitChunkRef.current) {
+          sysInitChunkRef.current = e.data;
+        } else {
+          audioChunksRef.current.push(e.data);
+        }
+      }
     };
     const processChunks = async () => {
       if (audioChunksRef.current.length === 0) return;
-      const blob = new Blob(audioChunksRef.current, { type: mimeType });
+      const chunks = audioChunksRef.current;
       audioChunksRef.current = [];
+      const parts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...chunks] : chunks;
+      const blob = new Blob(parts, { type: mimeType });
       try {
         const text = await transcribeAudioChunk(blob, key);
         if (text) {
@@ -373,10 +383,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       speechNetworkFailedRef.current = false;
       liveTextCallbackRef.current = onLiveText;
 
-      // Initialise the transcript record immediately
-      updateNote(noteId, {
-        transcript: { rawText: '', duration: 0, recordedAt: Date.now() },
-      });
+      // Create a new transcript entry for this recording session — previous ones are preserved
+      const newId = crypto.randomUUID();
+      transcriptIdRef.current = newId;
+      const newTranscript: Transcript = { id: newId, rawText: '', duration: 0, recordedAt: Date.now() };
+      addTranscript(noteId, newTranscript);
 
       let success = false;
       if (mode === 'system') {
@@ -393,7 +404,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       setTranscriptRecording(true);
       return true;
     },
-    [noteId, mode, updateNote, startMicRecording, startSystemRecording, setTranscriptRecording],
+    [noteId, mode, addTranscript, startMicRecording, startSystemRecording, setTranscriptRecording],
   );
 
   // Helper: stop a MediaRecorder and wait for its final ondataavailable + onstop
@@ -482,11 +493,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     liveTextCallbackRef.current = () => {};
     setTranscriptRecording(false);
 
+    // Write the final duration now that we know the total elapsed time
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
     saveProgress({ duration });
 
     return accumulatedRef.current;
   }, [apiKey, appendText, saveProgress, setTranscriptRecording]);
 
-  return { start, stop, visualizerStream, debugStatus };
+  return { start, stop, visualizerStream, debugStatus, transcriptIdRef };
 }

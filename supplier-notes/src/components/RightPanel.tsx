@@ -163,7 +163,7 @@ export function RightPanel() {
           <Mic className="w-3 h-3" />
           {isRecording ? (
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          ) : activeNote?.transcript?.rawText ? (
+          ) : (activeNote?.transcripts?.length ?? 0) > 0 ? (
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
           ) : null}
         </button>

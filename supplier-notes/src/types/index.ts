@@ -17,6 +17,7 @@ export interface Supplier {
 }
 
 export interface Transcript {
+  id: string;
   rawText: string;
   summary?: string;
   duration: number;
@@ -34,7 +35,7 @@ export interface Note {
   attendees: string;
   createdAt: number;
   updatedAt: number;
-  transcript?: Transcript;
+  transcripts?: Transcript[];
 }
 
 export interface Task {
