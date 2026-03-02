@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useStore } from './store/store';
+import { useStore, INTERNAL_TAB_ID } from './store/store';
 import { Sidebar } from './components/Sidebar';
 import { TabBar } from './components/TabBar';
 import { NoteEditor } from './components/NoteEditor';
@@ -19,6 +19,7 @@ function EmptyState() {
   const activeTabId = useStore((s) => s.activeTabId);
   const activeNoteId = useStore((s) => s.activeNoteId);
   const addNote = useStore((s) => s.addNote);
+  const addInternalNote = useStore((s) => s.addInternalNote);
 
   if (!activeProjectId) {
     return (
@@ -49,7 +50,7 @@ function EmptyState() {
           <FileText className="w-12 h-12 text-gray-200 mx-auto mb-4" />
           <h2 className="text-lg font-medium text-gray-400 mb-2">No notes yet</h2>
           <button
-            onClick={() => addNote(activeTabId)}
+            onClick={() => activeTabId === INTERNAL_TAB_ID ? addInternalNote() : addNote(activeTabId)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
           >
             Create first note
@@ -141,7 +142,10 @@ export default function App() {
 
       if (ctrl && e.key === 'n') {
         e.preventDefault();
-        if (s.activeTabId) s.addNote(s.activeTabId);
+        if (s.activeTabId) {
+          if (s.activeTabId === INTERNAL_TAB_ID) s.addInternalNote();
+          else s.addNote(s.activeTabId);
+        }
         return;
       }
 
