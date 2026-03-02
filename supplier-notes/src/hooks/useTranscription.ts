@@ -21,6 +21,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const addTranscript = useStore((s) => s.addTranscript);
   const updateTranscript = useStore((s) => s.updateTranscript);
   const setTranscriptRecording = useStore((s) => s.setTranscriptRecording);
+  const setRecordingNote = useStore((s) => s.setRecordingNote);
 
   // Capture the noteId at start time so recording always saves to the right note
   const recordingNoteIdRef = useRef('');
@@ -42,15 +43,13 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   // System audio mode refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const micRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const micChunksRef = useRef<Blob[]>([]);
-  // WebM init segments (first ondataavailable chunk) — must be prepended to every batch blob
+  // WebM init segment (first ondataavailable chunk) — must be prepended to every batch blob
   // so that Whisper receives a valid WebM file regardless of which batch it is
   const sysInitChunkRef = useRef<Blob | null>(null);
-  const micInitChunkRef = useRef<Blob | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // liveText state is managed via a callback so the component can track it
   const liveTextCallbackRef = useRef<(text: string) => void>(() => {});
@@ -133,10 +132,10 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       }
     };
     recorder.start(1000);
-    chunkIntervalRef.current = setInterval(processChunks, 30_000);
+    chunkIntervalRef.current = setInterval(processChunks, 60_000);
     // #region agent log
     dbg({location:'useTranscription.ts:startMicWhisperFallback',message:'Switched to Whisper mic fallback',data:{hasStream:true,hasKey:!!key},hypothesisId:'H-D'});
-    setDebugStatus('Whisper mic fallback active — processing every 30s');
+    setDebugStatus('Whisper mic fallback active — processing every 60s');
     // #endregion
   }, [appendText, setTranscriptRecording, setDebugStatus, setVisualizerStream]);
 
@@ -289,9 +288,26 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      // Record system audio directly — no AudioContext, no suspension risk
+      // Mix system audio and mic into a single stream via AudioContext so only one
+      // Whisper call is needed per interval (halves billed audio minutes)
+      const audioCtx = new AudioContext();
+      audioContextRef.current = audioCtx;
+      const dest = audioCtx.createMediaStreamDestination();
+
       const systemStream = new MediaStream(audioTracks);
-      const recorder = new MediaRecorder(systemStream, { mimeType });
+      audioCtx.createMediaStreamSource(systemStream).connect(dest);
+
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStreamRef.current = micStream;
+        audioCtx.createMediaStreamSource(micStream).connect(dest);
+      } catch {
+        // Mic unavailable — system audio only
+      }
+
+      setVisualizerStream(systemStream);
+
+      const recorder = new MediaRecorder(dest.stream, { mimeType });
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -306,66 +322,22 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       };
       recorder.start(1000);
 
-      // Record mic separately so both streams stay independent and stable
-      try {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        micStreamRef.current = micStream;
-        setVisualizerStream(systemStream);
-        const micRecorder = new MediaRecorder(micStream, { mimeType });
-        micRecorderRef.current = micRecorder;
-        micRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            if (!micInitChunkRef.current) {
-              micInitChunkRef.current = e.data;
-            } else {
-              micChunksRef.current.push(e.data);
-            }
-          }
-        };
-        micRecorder.start(1000);
-      } catch {
-        // Mic unavailable — system audio still captured; use system stream for visualizer
-        setVisualizerStream(systemStream);
-      }
-
       const processChunks = async () => {
-        const hasSystem = audioChunksRef.current.length > 0;
-        const hasMic = micChunksRef.current.length > 0;
-        if (!hasSystem && !hasMic) return;
-
-        const results: string[] = [];
-
-        if (hasSystem) {
-          const sysChunks = audioChunksRef.current;
-          audioChunksRef.current = [];
-          // Always prepend the init segment so every batch is a self-contained valid WebM
-          const sysParts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...sysChunks] : sysChunks;
-          const blob = new Blob(sysParts, { type: mimeType });
-          try {
-            const text = await transcribeAudioChunk(blob, apiKey);
-            if (text) results.push(text);
-          } catch (e) {
-            console.error('Whisper system-audio error:', e);
-          }
+        if (audioChunksRef.current.length === 0) return;
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        // Always prepend the init segment so every batch is a self-contained valid WebM
+        const parts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...chunks] : chunks;
+        const blob = new Blob(parts, { type: mimeType });
+        try {
+          const text = await transcribeAudioChunk(blob, apiKey);
+          if (text) appendText(text + ' ');
+        } catch (e) {
+          console.error('Whisper error:', e);
         }
-
-        if (hasMic) {
-          const micChunks = micChunksRef.current;
-          micChunksRef.current = [];
-          const micParts = micInitChunkRef.current ? [micInitChunkRef.current, ...micChunks] : micChunks;
-          const blob = new Blob(micParts, { type: mimeType });
-          try {
-            const text = await transcribeAudioChunk(blob, apiKey);
-            if (text) results.push(text);
-          } catch (e) {
-            console.error('Whisper mic error:', e);
-          }
-        }
-
-        if (results.length > 0) appendText(results.join(' ') + ' ');
       };
 
-      chunkIntervalRef.current = setInterval(processChunks, 30_000);
+      chunkIntervalRef.current = setInterval(processChunks, 60_000);
       return true;
     } catch (e: any) {
       console.error('System audio capture failed:', e);
@@ -402,9 +374,10 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       }
 
       setTranscriptRecording(true);
+      setRecordingNote(noteId);
       return true;
     },
-    [noteId, mode, addTranscript, startMicRecording, startSystemRecording, setTranscriptRecording],
+    [noteId, mode, addTranscript, startMicRecording, startSystemRecording, setTranscriptRecording, setRecordingNote],
   );
 
   // Helper: stop a MediaRecorder and wait for its final ondataavailable + onstop
@@ -458,26 +431,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       mediaRecorderRef.current = null;
     }
 
-    if (micRecorderRef.current && micRecorderRef.current.state !== 'inactive') {
-      await drainRecorder(micRecorderRef.current);
-      if (micChunksRef.current.length > 0 && apiKey) {
-        const micParts = micInitChunkRef.current
-          ? [micInitChunkRef.current, ...micChunksRef.current]
-          : micChunksRef.current;
-        const blob = new Blob(micParts, { type: mimeType });
-        micChunksRef.current = [];
-        try {
-          const text = await transcribeAudioChunk(blob, apiKey);
-          if (text) results.push(text);
-        } catch (e: any) {
-          console.error('Whisper final mic error:', e);
-        }
-      }
-      micInitChunkRef.current = null;
-      micRecorderRef.current = null;
-    }
-
     if (results.length > 0) appendText(results.join(' ') + ' ');
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -492,13 +451,14 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     setVisualizerStream(null);
     liveTextCallbackRef.current = () => {};
     setTranscriptRecording(false);
+    setRecordingNote(null);
 
     // Write the final duration now that we know the total elapsed time
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
     saveProgress({ duration });
 
     return accumulatedRef.current;
-  }, [apiKey, appendText, saveProgress, setTranscriptRecording]);
+  }, [apiKey, appendText, saveProgress, setTranscriptRecording, setRecordingNote]);
 
   return { start, stop, visualizerStream, debugStatus, transcriptIdRef };
 }

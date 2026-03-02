@@ -115,7 +115,9 @@ interface AppState {
   setEditingDecision: (id: string | null) => void;
 
   transcriptRecording: boolean;
+  recordingNoteId: string | null;
   setTranscriptRecording: (recording: boolean) => void;
+  setRecordingNote: (noteId: string | null) => void;
 
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
@@ -157,6 +159,7 @@ export const useStore = create<AppState>()(
       previousView: null,
       dashboardSection: 'tasks' as DashboardSection,
       transcriptRecording: false,
+      recordingNoteId: null,
 
       // --- Projects ---
 
@@ -510,6 +513,7 @@ export const useStore = create<AppState>()(
       // --- UI ---
 
       setTranscriptRecording: (recording) => set({ transcriptRecording: recording }),
+      setRecordingNote: (noteId) => set({ recordingNoteId: noteId }),
 
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),

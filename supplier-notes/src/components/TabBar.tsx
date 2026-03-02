@@ -11,6 +11,19 @@ export function TabBar() {
   const setActiveView = useStore((s) => s.setActiveView);
   const goBackToPreviousView = useStore((s) => s.goBackToPreviousView);
   const toggleSearch = useStore((s) => s.toggleSearch);
+  const transcriptRecording = useStore((s) => s.transcriptRecording);
+  const recordingNoteId = useStore((s) => s.recordingNoteId);
+  const navigateToNote = useStore((s) => s.navigateToNote);
+  const rightPanelOpen = useStore((s) => s.rightPanelOpen);
+  const toggleRightPanel = useStore((s) => s.toggleRightPanel);
+  const setRightPanelTab = useStore((s) => s.setRightPanelTab);
+
+  const handleJumpToRecording = () => {
+    if (!recordingNoteId) return;
+    navigateToNote(recordingNoteId);
+    setRightPanelTab('transcript');
+    if (!rightPanelOpen) toggleRightPanel();
+  };
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const activeSupplier = activeTabId && activeTabId !== INTERNAL_TAB_ID
@@ -69,8 +82,18 @@ export function TabBar() {
         </div>
       )}
 
-      {/* Right: search + view toggle */}
+      {/* Right: recording indicator + search + view toggle */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {transcriptRecording && recordingNoteId && (
+          <button
+            onClick={handleJumpToRecording}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors"
+            title="Active recording — click to return to note"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+            Recording
+          </button>
+        )}
         <button
           onClick={toggleSearch}
           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"

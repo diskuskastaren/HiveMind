@@ -194,19 +194,16 @@ export default function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TabBar />
-        {activeView === 'dashboard' ? (
-          <Dashboard />
-        ) : (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="flex flex-1 overflow-hidden min-h-0">
-              <div className="flex-1 overflow-hidden relative">
-                {activeNoteId ? <NoteEditor /> : <EmptyState />}
-              </div>
-              {rightPanelOpen && activeTabId && <RightPanel />}
+        <div className={activeView === 'dashboard' ? 'hidden' : 'flex-1 flex flex-col overflow-hidden min-h-0'}>
+          <div className="flex flex-1 overflow-hidden min-h-0">
+            <div className="flex-1 overflow-hidden relative">
+              {activeNoteId ? <NoteEditor /> : <EmptyState />}
             </div>
-            <FollowUpsPanel />
+            {rightPanelOpen && activeTabId && <RightPanel />}
           </div>
-        )}
+          <FollowUpsPanel />
+        </div>
+        {activeView === 'dashboard' && <Dashboard />}
       </div>
 
       {commandPaletteOpen && <CommandPalette />}
