@@ -184,7 +184,10 @@ export function RightPanel() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {rightPanelTab === 'transcript' && <TranscriptTab />}
+        {/* Always mounted so recording survives switching to Tasks/Decisions tabs */}
+        <div className={rightPanelTab !== 'transcript' ? 'hidden' : ''}>
+          <TranscriptTab />
+        </div>
         {rightPanelTab === 'tasks' && (
           <div className="p-3 space-y-1">
             {/* Quick add */}

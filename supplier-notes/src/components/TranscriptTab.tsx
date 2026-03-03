@@ -13,6 +13,7 @@ import {
   Mail,
   ChevronDown,
   ChevronRight,
+  Pencil,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store/store';
@@ -80,6 +81,14 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   const [subTab, setSubTab] = useState<'summary' | 'raw'>('summary');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summarizeError, setSummarizeError] = useState('');
+  const [isEditingRaw, setIsEditingRaw] = useState(false);
+  const [editedRawText, setEditedRawText] = useState('');
+
+  // Reset edit mode when the user navigates to a different transcript
+  useEffect(() => {
+    setIsEditingRaw(false);
+    setEditedRawText('');
+  }, [transcript.id]);
 
   const handleRegenerateSummary = useCallback(async () => {
     if (!transcript.rawText || !apiKey) return;
@@ -221,9 +230,16 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
         )}
 
         {subTab === 'raw' && (
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-            {transcript.rawText ?? ''}
-          </p>
+          isEditingRaw
+            ? <textarea
+                className="w-full h-full text-sm text-gray-700 leading-relaxed resize-none border border-blue-300 rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                value={editedRawText}
+                onChange={(e) => setEditedRawText(e.target.value)}
+                autoFocus
+              />
+            : <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                {transcript.rawText ?? ''}
+              </p>
         )}
       </div>
 
@@ -260,7 +276,7 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
               </button>
             </>
           )}
-          {subTab === 'raw' && transcript.rawText && (
+          {subTab === 'raw' && !isEditingRaw && transcript.rawText && (
             <>
               <CopyButton text={transcript.rawText} />
               <button
@@ -268,6 +284,28 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
                 className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <FileText className="w-3 h-3" /> Insert into note
+              </button>
+              <button
+                onClick={() => { setEditedRawText(transcript.rawText ?? ''); setIsEditingRaw(true); }}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+            </>
+          )}
+          {subTab === 'raw' && isEditingRaw && (
+            <>
+              <button
+                onClick={() => { updateTranscript(noteId, transcript.id, { rawText: editedRawText }); setIsEditingRaw(false); }}
+                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 font-medium transition-colors"
+              >
+                <Check className="w-3 h-3" /> Save
+              </button>
+              <button
+                onClick={() => setIsEditingRaw(false)}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Cancel
               </button>
             </>
           )}
@@ -360,7 +398,7 @@ export function TranscriptTab() {
   const isRecording = useStore((s) => s.transcriptRecording);
   const updateTranscript = useStore((s) => s.updateTranscript);
 
-  const [mode, setMode] = useState<TranscriptionMode>('mic');
+  const [mode, setMode] = useState<TranscriptionMode>('system');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEY) ?? '');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -423,6 +461,12 @@ export function TranscriptTab() {
       setSelectedId(transcriptIdRef.current);
     }
   }, [start, transcriptIdRef]);
+
+  useEffect(() => {
+    const handler = () => { if (!isRecording) handleStart(); };
+    window.addEventListener('teams:autostart', handler);
+    return () => window.removeEventListener('teams:autostart', handler);
+  }, [handleStart, isRecording]);
 
   const handleStop = useCallback(async () => {
     const rawText = await stop();

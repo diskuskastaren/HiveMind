@@ -192,6 +192,23 @@ export default function App() {
     return () => window.removeEventListener('storage-error', handler);
   }, []);
 
+  // When the overlay's "Start Recording" is clicked, open the right panel,
+  // switch to the Transcript tab, and fire the autostart signal.
+  useEffect(() => {
+    const electronTeams = (window as any).electronTeams;
+    if (!electronTeams) return;
+
+    const onJoined = () => {
+      const s = useStore.getState();
+      if (!s.rightPanelOpen) s.toggleRightPanel();
+      s.setRightPanelTab('transcript');
+      window.dispatchEvent(new CustomEvent('teams:autostart'));
+    };
+
+    electronTeams.onMeetingJoined(onJoined);
+    return () => electronTeams.offMeetingJoined(onJoined);
+  }, []);
+
   return (
     <div className="h-full flex overflow-hidden bg-white">
       <Sidebar />
@@ -203,7 +220,12 @@ export default function App() {
             <div className="flex-1 overflow-hidden relative">
               {activeNoteId ? <NoteEditor /> : <EmptyState />}
             </div>
-            {rightPanelOpen && activeTabId && <RightPanel />}
+              {/* Always mounted when a tab is open so recording survives panel toggle (Ctrl+]) */}
+              {activeTabId && (
+                <div className={!rightPanelOpen ? 'hidden' : ''}>
+                  <RightPanel />
+                </div>
+              )}
           </div>
           <FollowUpsPanel />
         </div>

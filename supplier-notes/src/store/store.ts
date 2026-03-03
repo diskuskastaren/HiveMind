@@ -207,13 +207,15 @@ export const useStore = create<AppState>()(
           };
         }),
 
-      setActiveProject: (id) =>
+      setActiveProject: (id) => {
+        if (get().transcriptRecording) return;
         set(() => ({
           activeProjectId: id,
           openTabs: [],
           activeTabId: null,
           activeNoteId: null,
-        })),
+        }));
+      },
 
       // --- Suppliers ---
 
@@ -332,7 +334,10 @@ export const useStore = create<AppState>()(
           let nextNote = s.activeNoteId;
           if (s.activeTabId === supplierId) {
             const idx = s.openTabs.indexOf(supplierId);
-            nextTab = tabs[Math.min(idx, tabs.length - 1)] || null;
+            const candidate = tabs[Math.min(idx, tabs.length - 1)] || null;
+            // Block closing if it would null activeTabId during a recording
+            if (!candidate && s.transcriptRecording) return {};
+            nextTab = candidate;
             if (nextTab) {
               const notes = nextTab === INTERNAL_TAB_ID
                 ? s.notes.filter((n) => !n.archived && n.internal && s.activeProjectId && n.projectIds.includes(s.activeProjectId))

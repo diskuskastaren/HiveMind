@@ -51,6 +51,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const sysInitChunkRef = useRef<Blob | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // Auto-stop safety net — fires after 4 hours in case the user forgets to stop
+  const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref to the stop function so the auto-stop timeout always calls the latest version
+  const stopRef = useRef<() => Promise<string>>(async () => '');
+
   // liveText state is managed via a callback so the component can track it
   const liveTextCallbackRef = useRef<(text: string) => void>(() => {});
   // Keep apiKey accessible inside async callbacks without stale closures
@@ -375,6 +380,10 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       setTranscriptRecording(true);
       setRecordingNote(noteId);
+
+      // Safety net: auto-stop after 4 hours in case the user forgets
+      autoStopTimeoutRef.current = setTimeout(() => { stopRef.current(); }, 4 * 60 * 60 * 1000);
+
       return true;
     },
     [noteId, mode, addTranscript, startMicRecording, startSystemRecording, setTranscriptRecording, setRecordingNote],
@@ -395,6 +404,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   const stop = useCallback(async () => {
     isRecordingRef.current = false;
+
+    // Clear the 4-hour auto-stop safety timeout
+    if (autoStopTimeoutRef.current) {
+      clearTimeout(autoStopTimeoutRef.current);
+      autoStopTimeoutRef.current = null;
+    }
 
     // Stop Web Speech API
     if (recognitionRef.current) {
@@ -459,6 +474,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
     return accumulatedRef.current;
   }, [apiKey, appendText, saveProgress, setTranscriptRecording, setRecordingNote]);
+
+  // Keep stopRef current so the auto-stop timeout always calls the latest stop function
+  stopRef.current = stop;
 
   return { start, stop, visualizerStream, debugStatus, transcriptIdRef };
 }

@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { WebSocket } = require('ws');
 const { execFile } = require('child_process');
 
 // Debug logging — writes NDJSON to workspace root
@@ -107,6 +108,149 @@ ipcMain.handle('mail:openOutlook', async (_event, subject, htmlBody) => {
   }
 });
 
+// ── Teams overlay window ───────────────────────────────────────────────────────
+let overlayWindow = null;
+
+function showOverlay(mainWindow) {
+  if (overlayWindow && !overlayWindow.isDestroyed()) return;
+
+  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+  const overlayWidth = 500;
+  const overlayHeight = 190;
+
+  overlayWindow = new BrowserWindow({
+    width: overlayWidth,
+    height: overlayHeight,
+    x: Math.round((screenWidth - overlayWidth) / 2),
+    y: -20,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: true,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+
+  overlayWindow.on('closed', () => { overlayWindow = null; });
+}
+
+function closeOverlay() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.close();
+    overlayWindow = null;
+  }
+}
+
+ipcMain.on('overlay:start-recording', (_event) => {
+  const mainWindow = BrowserWindow.getAllWindows().find((w) => w !== overlayWindow);
+  closeOverlay();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('teams:meeting-joined');
+  }
+});
+
+ipcMain.on('overlay:dismiss', () => {
+  closeOverlay();
+});
+
+// ── Teams Local WebSocket API integration ─────────────────────────────────────
+const TEAMS_TOKEN_FILE = path.join(app.getPath('userData'), 'teams-token.json');
+
+function loadTeamsToken() {
+  try {
+    if (fs.existsSync(TEAMS_TOKEN_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TEAMS_TOKEN_FILE, 'utf-8'));
+      return data.token || '';
+    }
+  } catch {}
+  return '';
+}
+
+function saveTeamsToken(token) {
+  try {
+    fs.writeFileSync(TEAMS_TOKEN_FILE, JSON.stringify({ token }), 'utf-8');
+  } catch {}
+}
+
+let teamsWs = null;
+let teamsRetryTimer = null;
+let teamsWasInMeeting = false;
+let teamsConnected = false;
+
+function connectToTeams(mainWindow) {
+  if (teamsConnected) return;
+
+  const token = loadTeamsToken();
+  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=SupplierNotes&app=SupplierNotes&app-version=1.0`;
+
+  try {
+    teamsWs = new WebSocket(url);
+  } catch {
+    scheduleTeamsReconnect(mainWindow);
+    return;
+  }
+
+  teamsWs.on('open', () => {
+    teamsConnected = true;
+  });
+
+  teamsWs.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    if (msg.tokenRefresh) {
+      saveTeamsToken(msg.tokenRefresh);
+    }
+
+    // Before pairing: Teams sends canPair:true without a meetingState object.
+    // After pairing: Teams sends the full meetingState with isInMeeting.
+    // Both are valid "in meeting" signals.
+    const meetingState = msg.meetingUpdate?.meetingState;
+    const permissions = msg.meetingUpdate?.meetingPermissions;
+
+    const isInMeeting =
+      meetingState?.isInMeeting === true ||
+      permissions?.canPair === true;
+
+    if (isInMeeting && !teamsWasInMeeting) {
+      teamsWasInMeeting = true;
+      showOverlay(mainWindow);
+    } else if (!isInMeeting && teamsWasInMeeting) {
+      teamsWasInMeeting = false;
+      closeOverlay();
+    }
+  });
+
+  teamsWs.on('close', () => {
+    teamsConnected = false;
+    teamsWs = null;
+    scheduleTeamsReconnect(mainWindow);
+  });
+
+  teamsWs.on('error', () => {
+    // 'close' fires after 'error', reconnect handled there
+  });
+}
+
+function scheduleTeamsReconnect(mainWindow) {
+  if (teamsRetryTimer) return;
+  teamsRetryTimer = setTimeout(() => {
+    teamsRetryTimer = null;
+    connectToTeams(mainWindow);
+  }, 10000);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -150,6 +294,8 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  return win;
 }
 
 app.whenReady().then(() => {
@@ -171,13 +317,20 @@ app.whenReady().then(() => {
     return net.fetch(`file://${filepath}`);
   });
 
-  createWindow();
+  const win = createWindow();
+  connectToTeams(win);
 });
 
 app.on('window-all-closed', () => {
+  if (teamsRetryTimer) { clearTimeout(teamsRetryTimer); teamsRetryTimer = null; }
+  if (teamsWs) { teamsWs.terminate(); teamsWs = null; }
+  closeOverlay();
   app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    const win = createWindow();
+    connectToTeams(win);
+  }
 });

@@ -26,3 +26,15 @@ contextBridge.exposeInMainWorld('electronOpenExternal', {
 contextBridge.exposeInMainWorld('electronOutlookMail', {
   open: (subject, htmlBody) => ipcRenderer.invoke('mail:openOutlook', subject, htmlBody),
 });
+
+contextBridge.exposeInMainWorld('electronTeams', {
+  onMeetingJoined:  (cb) => ipcRenderer.on('teams:meeting-joined', cb),
+  onMeetingLeft:    (cb) => ipcRenderer.on('teams:meeting-left', cb),
+  offMeetingJoined: (cb) => ipcRenderer.removeListener('teams:meeting-joined', cb),
+  offMeetingLeft:   (cb) => ipcRenderer.removeListener('teams:meeting-left', cb),
+});
+
+contextBridge.exposeInMainWorld('electronOverlay', {
+  startRecording: () => ipcRenderer.send('overlay:start-recording'),
+  dismiss:        () => ipcRenderer.send('overlay:dismiss'),
+});

@@ -58,6 +58,7 @@ export function Sidebar() {
   const addNote = useStore((s) => s.addNote);
   const addInternalNote = useStore((s) => s.addInternalNote);
   const setActiveNote = useStore((s) => s.setActiveNote);
+  const navigateToNote = useStore((s) => s.navigateToNote);
   const deleteNote = useStore((s) => s.deleteNote);
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const setNextMeetingPrepSupplier = useStore((s) => s.setNextMeetingPrepSupplier);
@@ -444,7 +445,7 @@ export function Sidebar() {
                       className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 transition-colors ${
                         activeNoteId === n.id ? 'bg-blue-50 border border-blue-100' : ''
                       }`}
-                      onClick={() => setActiveNote(n.id)}
+                      onClick={() => navigateToNote(n.id)}
                     >
                       <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -502,7 +503,7 @@ export function Sidebar() {
                             className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 transition-colors opacity-60 ${
                               activeNoteId === n.id ? 'bg-blue-50 border border-blue-100 opacity-100' : ''
                             }`}
-                            onClick={() => setActiveNote(n.id)}
+                            onClick={() => navigateToNote(n.id)}
                           >
                             <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
