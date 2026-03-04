@@ -44,6 +44,8 @@ ipcMain.handle('store:write', (_event, data) => {
 
 ipcMain.handle('store:path', () => DATA_FILE);
 
+ipcMain.handle('store:openFolder', () => shell.openPath(path.dirname(DATA_FILE)));
+
 // Return screen source IDs so the renderer can capture system audio
 ipcMain.handle('desktop:getSources', async () => {
   try {
@@ -192,7 +194,7 @@ function connectToTeams(mainWindow) {
   if (teamsConnected) return;
 
   const token = loadTeamsToken();
-  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=SupplierNotes&app=SupplierNotes&app-version=1.0`;
+  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=Combobulator&app=Combobulator&app-version=1.0`;
 
   try {
     teamsWs = new WebSocket(url);
@@ -257,7 +259,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 500,
-    title: 'Supplier Meeting Notes',
+    title: 'Combobulator',
     backgroundColor: '#ffffff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

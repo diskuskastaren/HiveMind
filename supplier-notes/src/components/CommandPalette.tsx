@@ -8,8 +8,6 @@ import {
   PanelRight,
   Download,
   Columns3,
-  CalendarPlus,
-  ClipboardList,
   FolderOpen,
 } from 'lucide-react';
 import { exportAllData } from '../utils/export';
@@ -41,7 +39,6 @@ export function CommandPalette() {
   const setActiveProject = useStore((s) => s.setActiveProject);
   const toggleRightPanel = useStore((s) => s.toggleRightPanel);
   const toggleKanban = useStore((s) => s.toggleKanban);
-  const setNextMeetingPrepSupplier = useStore((s) => s.setNextMeetingPrepSupplier);
   const getExportData = useStore((s) => s.getExportData);
   const importData = useStore((s) => s.importData);
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
@@ -128,19 +125,6 @@ export function CommandPalette() {
         },
         keywords: 'new note create',
       });
-      if (activeTabId !== INTERNAL_TAB_ID) {
-        cmds.push({
-          id: 'new-note-template',
-          label: 'New note from template',
-          description: 'Create note with default template',
-          icon: <ClipboardList className="w-4 h-4" />,
-          action: () => {
-            addNote(activeTabId, true);
-            toggleCommandPalette();
-          },
-          keywords: 'new note template',
-        });
-      }
       cmds.push({
         id: 'new-task',
         label: 'New task',
@@ -151,17 +135,6 @@ export function CommandPalette() {
           toggleCommandPalette();
         },
         keywords: 'new task action item',
-      });
-      cmds.push({
-        id: 'meeting-prep',
-        label: 'Next meeting prep',
-        description: 'Prepare agenda from open items',
-        icon: <CalendarPlus className="w-4 h-4" />,
-        action: () => {
-          setNextMeetingPrepSupplier(activeTabId);
-          toggleCommandPalette();
-        },
-        keywords: 'meeting prep agenda',
       });
     }
 
@@ -246,7 +219,7 @@ export function CommandPalette() {
     });
 
     return cmds;
-  }, [projects, suppliers, activeProjectId, activeTabId, openTab, addNote, addInternalNote, addProject, setActiveProject, toggleCommandPalette, toggleSearch, toggleRightPanel, toggleKanban, setNextMeetingPrepSupplier, getExportData, importData, setRightPanelTab]);
+  }, [projects, suppliers, activeProjectId, activeTabId, openTab, addNote, addInternalNote, addProject, setActiveProject, toggleCommandPalette, toggleSearch, toggleRightPanel, toggleKanban, getExportData, importData, setRightPanelTab]);
 
   const filtered = query
     ? commands.filter(

@@ -8,10 +8,11 @@ import { FollowUpsPanel } from './components/FollowUpsPanel';
 import { CommandPalette } from './components/CommandPalette';
 import { TaskModal } from './components/TaskModal';
 import { Dashboard } from './components/Dashboard';
-import { NextMeetingPrep } from './components/NextMeetingPrep';
 import { SearchModal } from './components/SearchModal';
-import { getSeedData } from './utils/seed';
+import { SettingsModal } from './components/SettingsModal';
+import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { FileText, Keyboard, FolderOpen } from 'lucide-react';
+import { WelcomeScreen } from './components/WelcomeScreen';
 
 function EmptyState() {
   const projects = useStore((s) => s.projects);
@@ -22,6 +23,9 @@ function EmptyState() {
   const addInternalNote = useStore((s) => s.addInternalNote);
 
   if (!activeProjectId) {
+    if (projects.length === 0) {
+      return <WelcomeScreen />;
+    }
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center max-w-md">
@@ -30,14 +34,12 @@ function EmptyState() {
           </div>
           <h1 className="text-xl font-semibold text-gray-800 mb-2">Supplier Meeting Notes</h1>
           <p className="text-sm text-gray-500 mb-8">
-            Organize meeting notes by project and supplier. Select or create a project in the sidebar to get started.
+            Select or create a project in the sidebar to get started.
           </p>
-          {projects.length === 0 && (
-            <p className="text-xs text-gray-400">
-              Use the project dropdown in the sidebar, or press{' '}
-              <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+K</kbd>
-            </p>
-          )}
+          <p className="text-xs text-gray-400">
+            Use the project dropdown in the sidebar, or press{' '}
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+K</kbd>
+          </p>
         </div>
       </div>
     );
@@ -109,10 +111,13 @@ export default function App() {
   const rightPanelOpen = useStore((s) => s.rightPanelOpen);
   const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
-  const nextMeetingPrepSupplierId = useStore((s) => s.nextMeetingPrepSupplierId);
+  const settingsOpen = useStore((s) => s.settingsOpen);
   const editingTaskId = useStore((s) => s.editingTaskId);
   const activeTabId = useStore((s) => s.activeTabId);
   const activeView = useStore((s) => s.activeView);
+  const transcriptRecording = useStore((s) => s.transcriptRecording);
+  const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
+  const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -121,10 +126,16 @@ export default function App() {
 
       if (e.key === 'Escape') {
         if (s.editingTaskId) { s.setEditingTask(null); return; }
+        if (s.settingsOpen) { s.toggleSettings(); return; }
         if (s.commandPaletteOpen) { s.toggleCommandPalette(); return; }
         if (s.searchOpen) { s.toggleSearch(); return; }
-        if (s.nextMeetingPrepSupplierId) { s.setNextMeetingPrepSupplier(null); return; }
         if (s.activeView === 'dashboard') { s.setActiveView('notes'); return; }
+        return;
+      }
+
+      if (ctrl && e.key === ',') {
+        e.preventDefault();
+        s.toggleSettings();
         return;
       }
 
@@ -174,17 +185,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const s = useStore.getState();
-    if (s.projects.length === 0 && s.suppliers.length === 0) {
-      s.importData(getSeedData());
-      s.setActiveProject('seed-proj-radius');
-      s.openTab('seed-lux');
-      s.openTab('seed-sig');
-      s.setActiveTab('seed-lux');
-    }
-  }, []);
-
-  useEffect(() => {
     const handler = () => {
       alert('Storage limit reached. Please export a backup (Ctrl+K → Backup) to avoid data loss.');
     };
@@ -192,22 +192,21 @@ export default function App() {
     return () => window.removeEventListener('storage-error', handler);
   }, []);
 
-  // When the overlay's "Start Recording" is clicked, open the right panel,
-  // switch to the Transcript tab, and fire the autostart signal.
+  // When the overlay's "Start Recording" is clicked, show the recording
+  // destination prompt as a modal so the user can choose which note to use.
   useEffect(() => {
+    if (!teamsEnabled) return;
     const electronTeams = (window as any).electronTeams;
     if (!electronTeams) return;
 
     const onJoined = () => {
       const s = useStore.getState();
-      if (!s.rightPanelOpen) s.toggleRightPanel();
-      s.setRightPanelTab('transcript');
-      window.dispatchEvent(new CustomEvent('teams:autostart'));
+      if (!s.transcriptRecording) s.setTeamsPromptOpen(true);
     };
 
     electronTeams.onMeetingJoined(onJoined);
     return () => electronTeams.offMeetingJoined(onJoined);
-  }, []);
+  }, [teamsEnabled]);
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
@@ -220,8 +219,9 @@ export default function App() {
             <div className="flex-1 overflow-hidden relative">
               {activeNoteId ? <NoteEditor /> : <EmptyState />}
             </div>
-              {/* Always mounted when a tab is open so recording survives panel toggle (Ctrl+]) */}
-              {activeTabId && (
+              {/* Always mounted when a tab is open (or recording is active) so the hook
+                  survives panel toggles and project switches mid-recording */}
+              {(activeTabId || transcriptRecording) && (
                 <div className={!rightPanelOpen ? 'hidden' : ''}>
                   <RightPanel />
                 </div>
@@ -234,8 +234,9 @@ export default function App() {
 
       {commandPaletteOpen && <CommandPalette />}
       {searchOpen && <SearchModal />}
-      {nextMeetingPrepSupplierId && <NextMeetingPrep />}
+      {settingsOpen && <SettingsModal />}
       {editingTaskId && <TaskModal />}
+      {teamsPromptOpen && <TeamsRecordingPrompt />}
     </div>
   );
 }

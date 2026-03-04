@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Mic,
   Square,
@@ -11,24 +12,23 @@ import {
   ChevronLeft,
   Check,
   Mail,
-  ChevronDown,
   ChevronRight,
   Pencil,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store/store';
 import { useTranscription, type TranscriptionMode } from '../hooks/useTranscription';
-import { summarizeMeetingTranscript } from '../utils/summarize';
+import { summarizeMeetingTranscript, MAX_SUMMARY_TOKENS } from '../utils/summarize';
 import { getMailtoUrl, summaryToPlainTextForEmail, summaryToHtmlForEmail } from '../utils/export';
 import { AudioVisualizer } from './AudioVisualizer';
 import type { Transcript } from '../types';
 
-const STORAGE_KEY = 'openai-api-key';
-
 function formatDuration(seconds: number) {
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
 }
 
 /** Very simple markdown → HTML for the AI summary output */
@@ -77,6 +77,11 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   const updateTranscript = useStore((s) => s.updateTranscript);
   const deleteTranscript = useStore((s) => s.deleteTranscript);
   const updateNote = useStore((s) => s.updateNote);
+  const summarySettings = useStore(useShallow((s) => ({
+    model: s.settings.gptModel,
+    temperature: s.settings.temperature,
+    customInstructions: s.settings.customSummaryInstructions,
+  })));
 
   const [subTab, setSubTab] = useState<'summary' | 'raw'>('summary');
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -95,13 +100,16 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
     setIsSummarizing(true);
     setSummarizeError('');
     try {
-      const summary = await summarizeMeetingTranscript(transcript.rawText, apiKey);
+      const summary = await summarizeMeetingTranscript(transcript.rawText, apiKey, {
+        ...summarySettings,
+        maxTokens: MAX_SUMMARY_TOKENS,
+      });
       updateTranscript(noteId, transcript.id, { summary });
     } catch (e: any) {
       setSummarizeError(e?.message ?? 'Summarization failed');
     }
     setIsSummarizing(false);
-  }, [transcript, apiKey, noteId, updateTranscript]);
+  }, [transcript, apiKey, summarySettings, noteId, updateTranscript]);
 
   const handleInsertIntoNote = useCallback(() => {
     if (!transcript.rawText || !note) return;
@@ -395,13 +403,22 @@ function TranscriptList({ transcripts, onSelect, onStartNew, isRecording }: Tran
 // ── Root component ────────────────────────────────────────────────────────────
 export function TranscriptTab() {
   const note = useStore((s) => s.notes.find((n) => n.id === s.activeNoteId));
+  const allNotes = useStore((s) => s.notes);
   const isRecording = useStore((s) => s.transcriptRecording);
   const updateTranscript = useStore((s) => s.updateTranscript);
+  const apiKey = useStore((s) => s.settings.openaiApiKey);
+  const toggleSettings = useStore((s) => s.toggleSettings);
+  const summarySettings = useStore(useShallow((s) => ({
+    model: s.settings.gptModel,
+    maxTokens: s.settings.maxTokens,
+    autoMaxTokens: s.settings.autoMaxTokens,
+    temperature: s.settings.temperature,
+    customInstructions: s.settings.customSummaryInstructions,
+  })));
 
-  const [mode, setMode] = useState<TranscriptionMode>('system');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEY) ?? '');
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
+  const [mode, setMode] = useState<TranscriptionMode>(
+    () => useStore.getState().settings.defaultAudioMode,
+  );
   const [showStartScreen, setShowStartScreen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [liveText, setLiveText] = useState('');
@@ -409,6 +426,10 @@ export function TranscriptTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const liveScrollRef = useRef<HTMLDivElement>(null);
+  // Captures the note ID at recording start so handleStop always writes summary to the right note
+  const recordingNoteIdRef = useRef<string>('');
+  // Captures wall-clock start time so the elapsed timer never resets when switching notes
+  const recordingStartTimeRef = useRef<number>(0);
 
   const { start, stop, visualizerStream, debugStatus, transcriptIdRef } = useTranscription({
     noteId: note?.id ?? '',
@@ -418,6 +439,11 @@ export function TranscriptTab() {
 
   const transcripts = note?.transcripts ?? [];
   const hasTranscripts = transcripts.length > 0;
+
+  // Look up the in-progress transcript from ALL notes so it survives switching the active note
+  const inProgressTranscript = isRecording
+    ? allNotes.flatMap((n) => n.transcripts ?? []).find((t) => t.id === transcriptIdRef.current)
+    : transcripts.find((t) => t.id === transcriptIdRef.current);
 
   // When a new recording starts, open the live view for that transcript
   useEffect(() => {
@@ -435,15 +461,14 @@ export function TranscriptTab() {
     prevRecordingRef.current = isRecording;
   }, [isRecording, transcriptIdRef]);
 
-  // Elapsed timer while recording
-  const inProgressTranscript = transcripts.find((t) => t.id === transcriptIdRef.current);
+  // Elapsed timer — driven by a ref set at start so it never resets when switching notes/projects
   useEffect(() => {
     if (!isRecording) { setElapsed(0); return; }
-    const recordedAt = inProgressTranscript?.recordedAt ?? Date.now();
-    setElapsed(Math.floor((Date.now() - recordedAt) / 1000));
-    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - recordedAt) / 1000)), 1000);
+    const startTime = recordingStartTimeRef.current;
+    setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
     return () => clearInterval(iv);
-  }, [isRecording, inProgressTranscript?.recordedAt]);
+  }, [isRecording]);
 
   // Auto-scroll the live transcript
   useEffect(() => {
@@ -456,11 +481,13 @@ export function TranscriptTab() {
     setShowStartScreen(false);
     setElapsed(0);
     setLiveText('');
+    recordingNoteIdRef.current = note?.id ?? '';
+    recordingStartTimeRef.current = Date.now();
     const ok = await start(setLiveText);
     if (ok && transcriptIdRef.current) {
       setSelectedId(transcriptIdRef.current);
     }
-  }, [start, transcriptIdRef]);
+  }, [start, transcriptIdRef, note?.id]);
 
   useEffect(() => {
     const handler = () => { if (!isRecording) handleStart(); };
@@ -469,76 +496,26 @@ export function TranscriptTab() {
   }, [handleStart, isRecording]);
 
   const handleStop = useCallback(async () => {
+    // Capture the note ID now — before stop() clears any state — using the ref set at start
+    const noteIdForSummary = recordingNoteIdRef.current;
     const rawText = await stop();
     setLiveText('');
     const tid = transcriptIdRef.current;
-    if (rawText && apiKey && note?.id && tid) {
+    if (rawText && apiKey && noteIdForSummary && tid) {
       try {
-        const summary = await summarizeMeetingTranscript(rawText, apiKey);
-        updateTranscript(note.id, tid, { summary });
+        const summary = await summarizeMeetingTranscript(rawText, apiKey, {
+          ...summarySettings,
+          maxTokens: MAX_SUMMARY_TOKENS,
+        });
+        updateTranscript(noteIdForSummary, tid, { summary });
       } catch {
         // Summary generation is best-effort; the raw text is already saved
       }
     }
-  }, [stop, apiKey, note, updateTranscript, transcriptIdRef]);
+  }, [stop, apiKey, summarySettings, updateTranscript, transcriptIdRef]);
 
-  const saveApiKey = () => {
-    const trimmed = apiKeyInput.trim();
-    setApiKey(trimmed);
-    if (trimmed) localStorage.setItem(STORAGE_KEY, trimmed);
-    else localStorage.removeItem(STORAGE_KEY);
-    setShowSettings(false);
-  };
-
-  if (!note) return null;
-
-  // ── Settings panel ──────────────────────────────────────────────────────
-  if (showSettings) {
-    return (
-      <div className="p-4 flex flex-col gap-4">
-        <button
-          onClick={() => setShowSettings(false)}
-          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors self-start"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" /> Back
-        </button>
-
-        <div>
-          <p className="text-sm font-medium text-gray-700 mb-3">Transcript Settings</p>
-          <label className="block text-xs font-medium text-gray-500 mb-1">OpenAI API Key</label>
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && saveApiKey()}
-            placeholder="sk-…"
-            className="w-full text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-            autoFocus
-          />
-          <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
-            Used for system audio transcription (Whisper) and meeting summaries (GPT-4o mini).
-            Stored locally in your browser only — never sent anywhere else.
-          </p>
-        </div>
-
-        <button
-          onClick={saveApiKey}
-          className="w-full py-1.5 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-        >
-          Save
-        </button>
-
-        {apiKey && (
-          <button
-            onClick={() => { setApiKeyInput(''); saveApiKey(); }}
-            className="text-xs text-red-400 hover:text-red-600 transition-colors text-center"
-          >
-            Remove API key
-          </button>
-        )}
-      </div>
-    );
-  }
+  // Show recording UI even when the active note has changed (user navigated away mid-recording)
+  if (!note && !isRecording) return null;
 
   // ── Recording state ─────────────────────────────────────────────────────
   if (isRecording) {
@@ -573,7 +550,7 @@ export function TranscriptTab() {
             <p className="text-[10px] text-amber-500 mt-3 font-mono">{debugStatus}</p>
           ) : mode === 'system' && (
             <p className="text-[10px] text-gray-300 mt-3">
-              Transcribing in 30-second batches via Whisper…
+              Transcribing in 30-second batches via OpenAI…
             </p>
           )}
         </div>
@@ -608,9 +585,9 @@ export function TranscriptTab() {
             </span>
           )}
           <button
-            onClick={() => { setApiKeyInput(apiKey); setShowSettings(true); }}
+            onClick={toggleSettings}
             className="p-1 text-gray-300 hover:text-gray-500 rounded transition-colors"
-            title="Transcript settings"
+            title="Open settings"
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
@@ -657,10 +634,10 @@ export function TranscriptTab() {
             <p className="font-medium text-blue-700">API key needed to transcribe</p>
             {!apiKey && (
               <button
-                onClick={() => { setApiKeyInput(''); setShowSettings(true); }}
+                onClick={toggleSettings}
                 className="text-blue-600 underline underline-offset-2 mt-1"
               >
-                Add API key →
+                Add API key in Settings →
               </button>
             )}
             {apiKey && <p className="text-green-600 font-medium">✓ API key configured</p>}
@@ -712,9 +689,9 @@ export function TranscriptTab() {
         </span>
         <span className="text-[10px] text-gray-300 mr-2">{transcripts.length} total</span>
         <button
-          onClick={() => { setApiKeyInput(apiKey); setShowSettings(true); }}
+          onClick={toggleSettings}
           className="p-1 text-gray-300 hover:text-gray-500 rounded transition-colors"
-          title="Transcript settings"
+          title="Open settings"
         >
           <Settings className="w-3 h-3" />
         </button>

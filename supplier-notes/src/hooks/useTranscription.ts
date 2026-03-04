@@ -92,7 +92,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       setTranscriptRecording(false);
       alert(
         'Mic transcription needs internet access to Google\'s speech servers, which is unavailable.\n\n' +
-        'To transcribe offline, add an OpenAI API key in Transcript Settings — it will record your mic directly via Whisper.',
+        'To transcribe offline, add an OpenAI API key in Transcript Settings — it will record your mic directly via OpenAI transcription.',
       );
       return;
     }
@@ -137,10 +137,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       }
     };
     recorder.start(1000);
-    chunkIntervalRef.current = setInterval(processChunks, 60_000);
+    const chunkMs = useStore.getState().settings.chunkIntervalSeconds * 1000;
+    chunkIntervalRef.current = setInterval(processChunks, chunkMs);
     // #region agent log
-    dbg({location:'useTranscription.ts:startMicWhisperFallback',message:'Switched to Whisper mic fallback',data:{hasStream:true,hasKey:!!key},hypothesisId:'H-D'});
-    setDebugStatus('Whisper mic fallback active — processing every 60s');
+    dbg({location:'useTranscription.ts:startMicWhisperFallback',message:'Switched to Whisper mic fallback',data:{hasStream:true,hasKey:!!key,chunkMs},hypothesisId:'H-D'});
+    setDebugStatus(`Whisper mic fallback active — processing every ${chunkMs / 1000}s`);
     // #endregion
   }, [appendText, setTranscriptRecording, setDebugStatus, setVisualizerStream]);
 
@@ -342,7 +343,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         }
       };
 
-      chunkIntervalRef.current = setInterval(processChunks, 60_000);
+      const chunkMs = useStore.getState().settings.chunkIntervalSeconds * 1000;
+      chunkIntervalRef.current = setInterval(processChunks, chunkMs);
       return true;
     } catch (e: any) {
       console.error('System audio capture failed:', e);
@@ -381,8 +383,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       setTranscriptRecording(true);
       setRecordingNote(noteId);
 
-      // Safety net: auto-stop after 4 hours in case the user forgets
-      autoStopTimeoutRef.current = setTimeout(() => { stopRef.current(); }, 4 * 60 * 60 * 1000);
+      // Safety net: auto-stop after the configured duration in case the user forgets
+      const autoStopMs = useStore.getState().settings.autoStopHours * 60 * 60 * 1000;
+      autoStopTimeoutRef.current = setTimeout(() => { stopRef.current(); }, autoStopMs);
 
       return true;
     },

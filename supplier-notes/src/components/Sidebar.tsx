@@ -1,19 +1,14 @@
-import { useState, useRef } from 'react';
-import { useStore, INTERNAL_TAB_ID } from '../store/store';
+import { useState, useRef, useEffect } from 'react';
+import { useStore, INTERNAL_TAB_ID, SUPPLIER_COLORS } from '../store/store';
 import { format } from 'date-fns';
-import { TEMPLATE_OPTIONS } from '../utils/templates';
 import {
   Plus,
   Search,
-  Pin,
-  PinOff,
   Trash2,
   FileText,
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
-  CalendarPlus,
-  Layout,
   FolderOpen,
   Link2,
   Unlink,
@@ -50,8 +45,6 @@ export function Sidebar() {
   const setActiveProject = useStore((s) => s.setActiveProject);
   const addSupplier = useStore((s) => s.addSupplier);
   const deleteSupplier = useStore((s) => s.deleteSupplier);
-  const togglePinSupplier = useStore((s) => s.togglePinSupplier);
-  const setSupplierTemplate = useStore((s) => s.setSupplierTemplate);
   const linkSupplierToProject = useStore((s) => s.linkSupplierToProject);
   const unlinkSupplierFromProject = useStore((s) => s.unlinkSupplierFromProject);
   const openTab = useStore((s) => s.openTab);
@@ -61,7 +54,7 @@ export function Sidebar() {
   const navigateToNote = useStore((s) => s.navigateToNote);
   const deleteNote = useStore((s) => s.deleteNote);
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
-  const setNextMeetingPrepSupplier = useStore((s) => s.setNextMeetingPrepSupplier);
+  const toggleSettings = useStore((s) => s.toggleSettings);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
@@ -70,8 +63,6 @@ export function Sidebar() {
     : [];
 
   const filtered = projectSuppliers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
-  const pinned = filtered.filter((s) => s.pinned).sort((a, b) => a.name.localeCompare(b.name));
-  const unpinned = filtered.filter((s) => !s.pinned).sort((a, b) => a.name.localeCompare(b.name));
 
   const unlinkableSuppliers = activeProjectId
     ? suppliers.filter((s) => !s.projectIds.includes(activeProjectId))
@@ -124,6 +115,44 @@ export function Sidebar() {
     return text.length > 60 ? text.slice(0, 60) + '…' : text;
   }
 
+  const ColorDot = ({ supplier }: { supplier: (typeof suppliers)[0] }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const updateSupplier = useStore((s) => s.updateSupplier);
+
+    useEffect(() => {
+      if (!open) return;
+      const handler = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    return (
+      <div ref={ref} className="relative flex-shrink-0">
+        <button
+          className="w-2 h-2 rounded-full hover:ring-2 hover:ring-offset-1 hover:ring-gray-400 transition-all"
+          style={{ backgroundColor: supplier.color }}
+          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+          title="Change color"
+        />
+        {open && (
+          <div className="absolute left-0 top-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1.5 w-[120px]">
+            {SUPPLIER_COLORS.map((c) => (
+              <button
+                key={c}
+                className="block w-4 h-4 rounded-full hover:scale-110 transition-transform"
+                style={{ backgroundColor: c, outline: c === supplier.color ? '2px solid #374151' : 'none', outlineOffset: '2px' }}
+                onClick={(e) => { e.stopPropagation(); updateSupplier(supplier.id, { color: c }); setOpen(false); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const SupplierRow = ({ supplier }: { supplier: (typeof suppliers)[0] }) => (
     <button
       className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 transition-colors group ${
@@ -132,9 +161,8 @@ export function Sidebar() {
       onClick={() => openTab(supplier.id)}
       onContextMenu={(e) => handleContextMenu(e, supplier.id)}
     >
-      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: supplier.color }} />
+      <ColorDot supplier={supplier} />
       <span className="truncate flex-1">{supplier.name}</span>
-      {supplier.pinned && <Pin className="w-3 h-3 text-gray-400 flex-shrink-0" />}
       <button
         className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
         onClick={(e) => {
@@ -303,11 +331,7 @@ export function Sidebar() {
 
               {!suppliersCollapsed && (
                 <div className="space-y-0.5">
-                  {pinned.map((s) => (
-                    <SupplierRow key={s.id} supplier={s} />
-                  ))}
-                  {pinned.length > 0 && unpinned.length > 0 && <div className="border-t border-gray-200 my-1" />}
-                  {unpinned.map((s) => (
+                  {filtered.sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
                     <SupplierRow key={s.id} supplier={s} />
                   ))}
                   {filtered.length === 0 && (
@@ -410,25 +434,7 @@ export function Sidebar() {
                     {isInternalTab ? 'Internal Notes' : `Notes${activeSupplier ? ` — ${activeSupplier.name}` : ''}`}
                   </span>
                   <div className="flex items-center gap-1">
-                    {!isInternalTab && (
                       <button
-                        onClick={() => setNextMeetingPrepSupplier(activeTabId)}
-                        className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
-                        title="Next meeting prep"
-                      >
-                        <CalendarPlus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {!isInternalTab && (
-                      <button
-                        onClick={() => addNote(activeTabId, true)}
-                        className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-600"
-                        title="New note (with template)"
-                      >
-                        <Layout className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <button
                       onClick={() => isInternalTab ? addInternalNote() : addNote(activeTabId)}
                       className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-600"
                       title="New blank note"
@@ -546,6 +552,18 @@ export function Sidebar() {
         )}
       </div>
 
+      {/* Settings footer */}
+      <div className="flex-shrink-0 border-t border-gray-200 p-2">
+        <button
+          onClick={toggleSettings}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md w-full transition-colors"
+          title="Settings (Ctrl+,)"
+        >
+          <Settings className="w-3.5 h-3.5" />
+          Settings
+        </button>
+      </div>
+
       {/* Context menu */}
       {contextMenu && (
         <>
@@ -559,40 +577,6 @@ export function Sidebar() {
               if (!sup) return null;
               return (
                 <>
-                  <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 flex items-center gap-2"
-                    onClick={() => {
-                      togglePinSupplier(sup.id);
-                      setContextMenu(null);
-                    }}
-                  >
-                    {sup.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                    {sup.pinned ? 'Unpin' : 'Pin to top'}
-                  </button>
-                  <div className="border-t border-gray-100 my-1" />
-                  <div className="px-3 py-1 text-xs text-gray-400">Default template</div>
-                  <button
-                    className={`w-full px-3 py-1 text-sm text-left hover:bg-gray-100 ${!sup.defaultTemplate ? 'font-medium text-blue-600' : ''}`}
-                    onClick={() => {
-                      setSupplierTemplate(sup.id, null);
-                      setContextMenu(null);
-                    }}
-                  >
-                    None
-                  </button>
-                  {TEMPLATE_OPTIONS.map((t) => (
-                    <button
-                      key={t.key}
-                      className={`w-full px-3 py-1 text-sm text-left hover:bg-gray-100 ${sup.defaultTemplate === t.key ? 'font-medium text-blue-600' : ''}`}
-                      onClick={() => {
-                        setSupplierTemplate(sup.id, t.key);
-                        setContextMenu(null);
-                      }}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                  <div className="border-t border-gray-100 my-1" />
                   {activeProjectId && (
                     <button
                       className="w-full px-3 py-1.5 text-sm text-left hover:bg-orange-50 text-orange-600 flex items-center gap-2"

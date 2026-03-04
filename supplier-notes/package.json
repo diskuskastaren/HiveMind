@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.fractal.supplier-notes",
-    "productName": "Supplier Meeting Notes",
+    "productName": "Combobulator",
     "directories": {
       "output": "release"
     },

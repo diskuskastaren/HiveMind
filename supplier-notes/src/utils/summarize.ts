@@ -5,7 +5,7 @@
 export async function transcribeAudioChunk(audioBlob: Blob, apiKey: string): Promise<string> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.webm');
-  formData.append('model', 'whisper-1');
+  formData.append('model', 'gpt-4o-mini-transcribe');
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
@@ -22,10 +22,38 @@ export async function transcribeAudioChunk(audioBlob: Blob, apiKey: string): Pro
   return data.text ?? '';
 }
 
+/** Safety cap — prevents runaway cost on very long meetings. The AI decides how much detail is appropriate within this limit. */
+export const MAX_SUMMARY_TOKENS = 2000;
+
+const BASE_SUMMARY_PROMPT =
+  'You are a meeting notes assistant. Summarize the transcript concisely using markdown. Use exactly these sections: ## Key Points, ## Decisions Made, ## Action Items. Be brief, factual, and use bullet points.';
+
+export interface SummarizeOptions {
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+  customInstructions?: string;
+}
+
 /**
- * Sends a raw transcript to GPT-4o-mini to produce a structured meeting summary.
+ * Sends a raw transcript to OpenAI GPT to produce a structured meeting summary.
  */
-export async function summarizeMeetingTranscript(rawText: string, apiKey: string): Promise<string> {
+export async function summarizeMeetingTranscript(
+  rawText: string,
+  apiKey: string,
+  options: SummarizeOptions = {},
+): Promise<string> {
+  const {
+    model = 'gpt-4o-mini',
+    maxTokens = 600,
+    temperature = 0.3,
+    customInstructions = '',
+  } = options;
+
+  const systemPrompt = customInstructions
+    ? `${BASE_SUMMARY_PROMPT}\n\n${customInstructions}`
+    : BASE_SUMMARY_PROMPT;
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -33,20 +61,13 @@ export async function summarizeMeetingTranscript(rawText: string, apiKey: string
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model,
       messages: [
-        {
-          role: 'system',
-          content:
-            'You are a meeting notes assistant. Summarize the transcript concisely using markdown. Use exactly these sections: ## Key Points, ## Decisions Made, ## Action Items. Be brief, factual, and use bullet points.',
-        },
-        {
-          role: 'user',
-          content: `Please summarize this meeting transcript:\n\n${rawText}`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Please summarize this meeting transcript:\n\n${rawText}` },
       ],
-      max_tokens: 600,
-      temperature: 0.3,
+      max_tokens: maxTokens,
+      temperature,
     }),
   });
 

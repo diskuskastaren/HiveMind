@@ -1,7 +1,28 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, RightPanelTab, ActiveView, DashboardSection } from '../types';
-import { getTemplateContent } from '../utils/templates';
+
+export interface AppSettings {
+  openaiApiKey: string;
+  gptModel: string;
+  temperature: number;
+  customSummaryInstructions: string;
+  defaultAudioMode: 'mic' | 'system';
+  chunkIntervalSeconds: number;
+  autoStopHours: number;
+  teamsEnabled: boolean;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  openaiApiKey: '',
+  gptModel: 'gpt-4o-mini',
+  temperature: 0.3,
+  customSummaryInstructions: '',
+  defaultAudioMode: 'system',
+  chunkIntervalSeconds: 60,
+  autoStopHours: 4,
+  teamsEnabled: true,
+};
 
 export const INTERNAL_TAB_ID = '__internal__';
 
@@ -27,7 +48,7 @@ const appStorage = {
   },
 };
 
-const SUPPLIER_COLORS = [
+export const SUPPLIER_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',
 ];
@@ -65,7 +86,6 @@ interface AppState {
   commandPaletteOpen: boolean;
   searchOpen: boolean;
   kanbanOpen: boolean;
-  nextMeetingPrepSupplierId: string | null;
   editingTaskId: string | null;
   editingDecisionId: string | null;
   activeView: ActiveView;
@@ -89,7 +109,7 @@ interface AppState {
   closeTab: (supplierId: string) => void;
   setActiveTab: (supplierId: string) => void;
 
-  addNote: (supplierId: string, useTemplate?: boolean) => string;
+  addNote: (supplierId: string) => string;
   addInternalNote: () => string;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
@@ -119,12 +139,19 @@ interface AppState {
   setTranscriptRecording: (recording: boolean) => void;
   setRecordingNote: (noteId: string | null) => void;
 
+  settings: AppSettings;
+  settingsOpen: boolean;
+  updateSettings: (updates: Partial<AppSettings>) => void;
+  toggleSettings: () => void;
+
+  teamsPromptOpen: boolean;
+  setTeamsPromptOpen: (open: boolean) => void;
+
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   toggleCommandPalette: () => void;
   toggleSearch: () => void;
   toggleKanban: () => void;
-  setNextMeetingPrepSupplier: (id: string | null) => void;
   navigateToNote: (noteId: string) => void;
   setActiveView: (view: ActiveView) => void;
   setDashboardSection: (section: DashboardSection) => void;
@@ -152,7 +179,6 @@ export const useStore = create<AppState>()(
       commandPaletteOpen: false,
       searchOpen: false,
       kanbanOpen: false,
-      nextMeetingPrepSupplierId: null,
       editingTaskId: null,
       editingDecisionId: null,
       activeView: 'notes' as ActiveView,
@@ -160,6 +186,9 @@ export const useStore = create<AppState>()(
       dashboardSection: 'tasks' as DashboardSection,
       transcriptRecording: false,
       recordingNoteId: null,
+      settings: DEFAULT_SETTINGS,
+      settingsOpen: false,
+      teamsPromptOpen: false,
 
       // --- Projects ---
 
@@ -208,7 +237,6 @@ export const useStore = create<AppState>()(
         }),
 
       setActiveProject: (id) => {
-        if (get().transcriptRecording) return;
         set(() => ({
           activeProjectId: id,
           openTabs: [],
@@ -329,14 +357,22 @@ export const useStore = create<AppState>()(
 
       closeTab: (supplierId) =>
         set((s) => {
+          // Never allow closing the tab that owns the active recording
+          if (s.transcriptRecording && s.recordingNoteId) {
+            const recordingNote = s.notes.find((n) => n.id === s.recordingNoteId);
+            if (recordingNote) {
+              const recordingTabId = recordingNote.internal || recordingNote.supplierIds.length === 0
+                ? INTERNAL_TAB_ID
+                : recordingNote.supplierIds[0];
+              if (supplierId === recordingTabId) return {};
+            }
+          }
           const tabs = s.openTabs.filter((t) => t !== supplierId);
           let nextTab = s.activeTabId;
           let nextNote = s.activeNoteId;
           if (s.activeTabId === supplierId) {
             const idx = s.openTabs.indexOf(supplierId);
             const candidate = tabs[Math.min(idx, tabs.length - 1)] || null;
-            // Block closing if it would null activeTabId during a recording
-            if (!candidate && s.transcriptRecording) return {};
             nextTab = candidate;
             if (nextTab) {
               const notes = nextTab === INTERNAL_TAB_ID
@@ -346,6 +382,7 @@ export const useStore = create<AppState>()(
             } else {
               nextNote = null;
             }
+
           }
           return { openTabs: tabs, activeTabId: nextTab, activeNoteId: nextNote };
         }),
@@ -360,15 +397,13 @@ export const useStore = create<AppState>()(
 
       // --- Notes ---
 
-      addNote: (supplierId, useTemplate = false) => {
+      addNote: (supplierId) => {
         const id = uid();
-        const { suppliers, activeProjectId } = get();
-        const supplier = suppliers.find((x) => x.id === supplierId);
-        const content = useTemplate && supplier?.defaultTemplate ? getTemplateContent(supplier.defaultTemplate) : '';
+        const { activeProjectId } = get();
         const now = Date.now();
         const projectIds = activeProjectId ? [activeProjectId] : [];
         set((s) => ({
-          notes: [...s.notes, { id, projectIds, supplierIds: [supplierId], title: '', content, attendees: '', createdAt: now, updatedAt: now }],
+          notes: [...s.notes, { id, projectIds, supplierIds: [supplierId], title: '', content: '', attendees: '', createdAt: now, updatedAt: now }],
           activeNoteId: id,
         }));
         return id;
@@ -464,7 +499,10 @@ export const useStore = create<AppState>()(
       updateTask: (id, updates) =>
         set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)) })),
 
-      deleteTask: (id) => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
+      deleteTask: (id) => set((s) => ({
+        tasks: s.tasks.filter((t) => t.id !== id),
+        followUps: s.followUps.map((f) => f.linkedTaskId === id ? { ...f, linkedTaskId: undefined } : f),
+      })),
 
       setEditingTask: (id) => set({ editingTaskId: id }),
 
@@ -498,7 +536,10 @@ export const useStore = create<AppState>()(
       updateFollowUp: (id, updates) =>
         set((s) => ({ followUps: s.followUps.map((f) => (f.id === id ? { ...f, ...updates } : f)) })),
 
-      deleteFollowUp: (id) => set((s) => ({ followUps: s.followUps.filter((f) => f.id !== id) })),
+      deleteFollowUp: (id) => set((s) => ({
+        followUps: s.followUps.filter((f) => f.id !== id),
+        tasks: s.tasks.map((t) => t.linkedFollowUpId === id ? { ...t, linkedFollowUpId: undefined } : t),
+      })),
 
       // --- Decisions ---
 
@@ -520,12 +561,15 @@ export const useStore = create<AppState>()(
       setTranscriptRecording: (recording) => set({ transcriptRecording: recording }),
       setRecordingNote: (noteId) => set({ recordingNoteId: noteId }),
 
+      updateSettings: (updates) => set((s) => ({ settings: { ...s.settings, ...updates } })),
+      toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+      setTeamsPromptOpen: (open) => set({ teamsPromptOpen: open }),
+
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
       toggleSearch: () => set((s) => ({ searchOpen: !s.searchOpen })),
       toggleKanban: () => set((s) => ({ kanbanOpen: !s.kanbanOpen })),
-      setNextMeetingPrepSupplier: (id) => set({ nextMeetingPrepSupplierId: id }),
       setActiveView: (view) => set({ activeView: view, previousView: null }),
       setDashboardSection: (section) => set({ dashboardSection: section }),
       goBackToPreviousView: () =>
@@ -619,7 +663,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'supplier-notes-storage',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -683,6 +727,15 @@ export const useStore = create<AppState>()(
             }),
           };
         }
+        if (version < 6) {
+          // Migrate openai-api-key from localStorage into settings
+          let localKey = '';
+          try { localKey = localStorage.getItem('openai-api-key') ?? ''; } catch {}
+          state = {
+            ...state,
+            settings: { ...DEFAULT_SETTINGS, openaiApiKey: localKey },
+          };
+        }
         return state;
       },
       partialize: (state) => ({
@@ -697,6 +750,7 @@ export const useStore = create<AppState>()(
         activeTabId: state.activeTabId,
         activeNoteId: state.activeNoteId,
         rightPanelOpen: state.rightPanelOpen,
+        settings: state.settings,
       }),
     },
   ),

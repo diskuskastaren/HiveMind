@@ -617,8 +617,8 @@ export function NoteEditor() {
             )}
           </button>
 
-          {/* Template */}
-          <div className="relative">
+          {/* Template — only show when the note is empty */}
+          {editor?.isEmpty && <div className="relative">
             <button
               onClick={() => setShowTemplateMenu(!showTemplateMenu)}
               className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
@@ -642,7 +642,7 @@ export function NoteEditor() {
                 </div>
               </>
             )}
-          </div>
+          </div>}
 
           {/* Export */}
           <div className="relative">

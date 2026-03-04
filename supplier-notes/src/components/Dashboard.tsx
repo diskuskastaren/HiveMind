@@ -1,34 +1,39 @@
 import { useState, useRef } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
+import { CustomSelect } from './ui/CustomSelect';
 import { format } from 'date-fns';
 import type { TaskStatus, Priority, DashboardSection } from '../types';
 import {
   CheckCircle2,
   Circle,
-  Clock,
   Lightbulb,
   Bookmark,
   FileText,
-  GripVertical,
   ChevronRight,
   Trash2,
   ArrowUpRight,
   CheckCheck,
   Pencil,
-  UserRound,
-  CalendarDays,
+  Link2,
+  Link2Off,
 } from 'lucide-react';
 
-const TASK_COLUMNS: { status: TaskStatus; label: string; colorClass: string }[] = [
-  { status: 'open', label: 'Open', colorClass: 'border-gray-300' },
-  { status: 'doing', label: 'In Progress', colorClass: 'border-yellow-400' },
-  { status: 'done', label: 'Done', colorClass: 'border-green-400' },
+const TASK_COLUMNS: { status: TaskStatus; label: string; colorClass: string; headerBadge: string }[] = [
+  { status: 'open',  label: 'Open',        colorClass: 'border-gray-300',  headerBadge: 'bg-gray-100 text-gray-500'  },
+  { status: 'doing', label: 'In Progress', colorClass: 'border-amber-400', headerBadge: 'bg-amber-50 text-amber-700' },
+  { status: 'done',  label: 'Done',        colorClass: 'border-green-400', headerBadge: 'bg-green-50 text-green-700' },
 ];
 
-const PRIORITY_DOT: Record<Priority, string> = {
-  low: 'bg-gray-400',
-  medium: 'bg-yellow-500',
-  high: 'bg-red-500',
+const PRIORITY_BORDER: Record<Priority, string> = {
+  low:    'border-l-gray-200',
+  medium: 'border-l-amber-400',
+  high:   'border-l-red-500',
+};
+
+const PRIORITY_LABEL: Record<Priority, { text: string; classes: string }> = {
+  low:    { text: 'Low',    classes: 'bg-gray-100 text-gray-500'  },
+  medium: { text: 'Medium', classes: 'bg-amber-50 text-amber-700' },
+  high:   { text: 'High',   classes: 'bg-red-50 text-red-600'    },
 };
 
 const PRIORITY_BADGE: Record<Priority, string> = {
@@ -37,10 +42,37 @@ const PRIORITY_BADGE: Record<Priority, string> = {
   high: 'bg-red-100 text-red-700',
 };
 
-const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
-  open: <Circle className="w-4 h-4 text-gray-400" />,
-  doing: <Clock className="w-4 h-4 text-yellow-500" />,
-  done: <CheckCircle2 className="w-4 h-4 text-green-500" />,
+function ownerInitials(owner: string): string {
+  return owner.trim().split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
+}
+
+function ownerHue(owner: string): number {
+  let hash = 0;
+  for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
+  return Math.abs(hash) % 360;
+}
+
+type DueDateUrgency = 'overdue' | 'soon' | 'normal';
+
+function getDueDateUrgency(dueDate: string): DueDateUrgency {
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return 'normal';
+  const diffDays = (d.getTime() - Date.now()) / 86_400_000;
+  if (diffDays < 0) return 'overdue';
+  if (diffDays < 3) return 'soon';
+  return 'normal';
+}
+
+function formatDueDate(dueDate: string): string {
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return dueDate;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
+  overdue: 'text-red-500 font-medium',
+  soon:    'text-amber-600',
+  normal:  'text-gray-400',
 };
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
@@ -69,27 +101,25 @@ function FilterBar({
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <CustomSelect
         value={filterProject}
-        onChange={(e) => { onProjectChange(e.target.value); onSupplierChange('all'); }}
-        className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
-      >
-        <option value="all">All projects</option>
-        {projects.filter((p) => !p.archived).map((p) => (
-          <option key={p.id} value={p.id}>{p.name}</option>
-        ))}
-      </select>
-      <select
+        onChange={(v) => { onProjectChange(v); onSupplierChange('all'); }}
+        className="text-xs px-2.5 py-1.5 text-gray-700"
+        options={[
+          { value: 'all', label: 'All projects' },
+          ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
+        ]}
+      />
+      <CustomSelect
         value={filterSupplier}
-        onChange={(e) => onSupplierChange(e.target.value)}
-        className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
-      >
-        <option value="all">All suppliers</option>
-        <option value={INTERNAL_TAB_ID}>Internal</option>
-        {visibleSuppliers.map((s) => (
-          <option key={s.id} value={s.id}>{s.name}</option>
-        ))}
-      </select>
+        onChange={onSupplierChange}
+        className="text-xs px-2.5 py-1.5 text-gray-700"
+        options={[
+          { value: 'all', label: 'All suppliers' },
+          { value: INTERNAL_TAB_ID, label: 'Internal' },
+          ...visibleSuppliers.map((s) => ({ value: s.id, label: s.name })),
+        ]}
+      />
     </div>
   );
 }
@@ -99,10 +129,12 @@ function TasksSection() {
   const projects = useStore((s) => s.projects);
   const suppliers = useStore((s) => s.suppliers);
   const notes = useStore((s) => s.notes);
+  const followUps = useStore((s) => s.followUps);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const navigateToNote = useStore((s) => s.navigateToNote);
+  const setDashboardSection = useStore((s) => s.setDashboardSection);
 
   const [filterProject, setFilterProject] = useState('all');
   const [filterSupplier, setFilterSupplier] = useState('all');
@@ -147,15 +179,12 @@ function TasksSection() {
             onProjectChange={(id) => { setFilterProject(id); setFilterOwner('all'); }}
             onSupplierChange={setFilterSupplier}
           />
-          <select
+          <CustomSelect
             value={filterOwner}
-            onChange={(e) => setFilterOwner(e.target.value)}
-            className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
-          >
-            {ownerOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+            onChange={setFilterOwner}
+            className="text-xs px-2.5 py-1.5 text-gray-700"
+            options={ownerOptions}
+          />
           {(openCount > 0 || doingCount > 0) && (
             <span className="text-xs text-gray-400">
               {openCount + doingCount} active
@@ -168,7 +197,11 @@ function TasksSection() {
         {TASK_COLUMNS.map((col) => {
           const colTasks = filtered
             .filter((t) => t.status === col.status)
-            .sort((a, b) => b.createdAt - a.createdAt);
+            .sort((a, b) => {
+              const priorityOrder = { high: 0, medium: 1, low: 2 };
+              const pd = priorityOrder[a.priority] - priorityOrder[b.priority];
+              return pd !== 0 ? pd : b.createdAt - a.createdAt;
+            });
 
           return (
             <div
@@ -179,9 +212,9 @@ function TasksSection() {
                 if (dragging) { updateTask(dragging, { status: col.status }); setDragging(null); }
               }}
             >
-              <div className="px-3 py-2.5 flex items-center justify-between flex-shrink-0">
-                <span className="text-sm font-semibold text-gray-700">{col.label}</span>
-                <span className="text-xs text-gray-400 bg-white rounded-full px-2 py-0.5 border border-gray-200">
+              <div className="px-3 pt-3 pb-2 flex items-center justify-between flex-shrink-0">
+                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{col.label}</span>
+                <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${col.headerBadge}`}>
                   {colTasks.length}
                 </span>
               </div>
@@ -191,6 +224,23 @@ function TasksSection() {
                   const supplier = task.supplierId ? suppliers.find((s) => s.id === task.supplierId) : null;
                   const project = projects.find((p) => p.id === task.projectId);
                   const note = notes.find((n) => n.id === task.noteId);
+                  const linkedFollowUp = task.linkedFollowUpId
+                    ? followUps.find((f) => f.id === task.linkedFollowUpId)
+                    : null;
+                  const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
+
+                  // Owner avatar appearance
+                  const ownerAvatar = (() => {
+                    if (!task.owner) return null;
+                    if (task.owner === 'Internal') {
+                      return { initials: 'I', bg: 'hsl(0 0% 75%)', title: 'Internal' };
+                    }
+                    const ownerSupplier = suppliers.find((s) => s.name === task.owner);
+                    if (ownerSupplier) {
+                      return { initials: ownerInitials(ownerSupplier.name), bg: ownerSupplier.color, title: ownerSupplier.name };
+                    }
+                    return { initials: ownerInitials(task.owner), bg: `hsl(${ownerHue(task.owner)} 55% 52%)`, title: task.owner };
+                  })();
 
                   return (
                     <div
@@ -198,92 +248,76 @@ function TasksSection() {
                       draggable
                       onDragStart={() => setDragging(task.id)}
                       onDragEnd={() => setDragging(null)}
-                      className={`group bg-white rounded-lg border border-gray-200 p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow ${
-                        dragging === task.id ? 'opacity-50' : ''
-                      }`}
                       onClick={() => setEditingTask(task.id)}
+                      className={`
+                        group bg-white rounded-lg border border-gray-200
+                        border-l-[3px] ${PRIORITY_BORDER[task.priority]}
+                        p-3 cursor-grab active:cursor-grabbing
+                        hover:shadow-md hover:-translate-y-px
+                        transition-all duration-150
+                        ${dragging === task.id ? 'opacity-40 scale-95' : ''}
+                      `}
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="flex flex-col items-center gap-1.5 flex-shrink-0 mt-0.5">
-                          <GripVertical className="w-3.5 h-3.5 text-gray-300" />
+                      {/* Title */}
+                      <p className={`text-sm font-medium leading-snug line-clamp-2 mb-2 ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                        {task.title}
+                      </p>
+
+                      {/* Tags row */}
+                      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                        <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${PRIORITY_LABEL[task.priority].classes}`}>
+                          {PRIORITY_LABEL[task.priority].text}
+                        </span>
+                        {project && (
                           <span
-                            className={`w-2 h-2 rounded-full ${PRIORITY_DOT[task.priority]}`}
-                            title={task.priority}
-                          />
+                            className="text-[11px] font-medium px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: project.color + '18', color: project.color }}
+                          >
+                            {project.name}
+                          </span>
+                        )}
+                        {supplier ? (
+                          <span
+                            className="text-[11px] font-medium px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: supplier.color + '18', color: supplier.color }}
+                          >
+                            {supplier.name}
+                          </span>
+                        ) : task.supplierId === null && (
+                          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">
+                            Internal
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Linked follow-up */}
+                      {linkedFollowUp && (
+                        <button
+                          className="flex items-center gap-1 mb-2 text-[11px] text-violet-500 hover:text-violet-700 transition-colors max-w-full"
+                          onClick={(e) => { e.stopPropagation(); setDashboardSection('followups'); }}
+                          title="Linked follow-up"
+                        >
+                          <Bookmark className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{linkedFollowUp.text}</span>
+                        </button>
+                      )}
+
+                      {/* Due date row */}
+                      {task.dueDate && urgency && (
+                        <div className="mb-1">
+                          <span className={`text-[11px] ${DUE_DATE_CLASSES[urgency]}`}>
+                            {urgency === 'overdue' ? '⚑ ' : ''}{formatDueDate(task.dueDate)}
+                          </span>
                         </div>
+                      )}
+
+                      {/* Footer row */}
+                      <div className="flex items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-gray-400' : ''}`}>
-                            {task.title}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            {project && (
-                              <span
-                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                                style={{ backgroundColor: project.color + '20', color: project.color }}
-                              >
-                                {project.name}
-                              </span>
-                            )}
-                            {supplier ? (
-                              <span
-                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                                style={{ backgroundColor: supplier.color + '20', color: supplier.color }}
-                              >
-                                {supplier.name}
-                              </span>
-                            ) : task.supplierId === null && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-medium">
-                                Internal
-                              </span>
-                            )}
-                          </div>
-                          {task.owner && (() => {
-                            if (task.owner === 'Internal') {
-                              return (
-                                <div className="flex items-center gap-1 mt-1.5">
-                                  <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-50 text-indigo-600">
-                                    <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
-                                    Internal
-                                  </span>
-                                </div>
-                              );
-                            }
-                            const ownerSupplier = suppliers.find((s) => s.name === task.owner);
-                            if (ownerSupplier) {
-                              return (
-                                <div className="flex items-center gap-1 mt-1.5">
-                                  <span
-                                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium"
-                                    style={{ backgroundColor: ownerSupplier.color + '20', color: ownerSupplier.color }}
-                                  >
-                                    <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
-                                    {ownerSupplier.name}
-                                  </span>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div className="flex items-center gap-1 mt-1.5">
-                                <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600">
-                                  <UserRound className="w-2.5 h-2.5 flex-shrink-0" />
-                                  {task.owner}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                          {task.dueDate && (
-                            <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400">
-                              <CalendarDays className="w-2.5 h-2.5 flex-shrink-0" />
-                              {task.dueDate}
-                            </div>
-                          )}
                           {note && (
                             <button
-                              className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigateToNote(task.noteId);
-                              }}
+                              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                              onClick={(e) => { e.stopPropagation(); navigateToNote(task.noteId); }}
                               title="Go to source note"
                             >
                               <FileText className="w-3 h-3 flex-shrink-0" />
@@ -291,24 +325,27 @@ function TasksSection() {
                             </button>
                           )}
                         </div>
-                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {ownerAvatar && (
+                            <span
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white flex-shrink-0"
+                              style={{ backgroundColor: ownerAvatar.bg }}
+                              title={ownerAvatar.title}
+                            >
+                              {ownerAvatar.initials}
+                            </span>
+                          )}
                           <button
-                            className="p-0.5 hover:bg-gray-100 rounded transition-colors"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
                             title={`Move to ${col.status === 'open' ? 'In Progress' : col.status === 'doing' ? 'Done' : 'Open'}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateTask(task.id, { status: NEXT_STATUS[col.status] });
-                            }}
+                            onClick={(e) => { e.stopPropagation(); updateTask(task.id, { status: NEXT_STATUS[col.status] }); }}
                           >
                             <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
                           </button>
                           <button
-                            className="p-0.5 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-red-50 rounded"
                             title="Delete task"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteTask(task.id);
-                            }}
+                            onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
                           >
                             <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
                           </button>
@@ -518,6 +555,7 @@ function FollowUpsSection() {
   const [filterProject, setFilterProject] = useState('all');
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [showResolved, setShowResolved] = useState(false);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
 
   const filteredTasks = tasks
     .filter((t) => t.isFollowUp)
@@ -561,6 +599,21 @@ function FollowUpsSection() {
     const project = projects.find((p) => p.id === projectId);
     const text = type === 'task' ? (item as typeof tasks[0]).title : (item as typeof followUps[0]).text;
     const isResolved = type === 'task' ? (item as typeof tasks[0]).status === 'done' : (item as typeof followUps[0]).status === 'resolved';
+
+    // Linked item resolution
+    const taskItem = type === 'task' ? (item as typeof tasks[0]) : null;
+    const followUpItem = type === 'followup' ? (item as typeof followUps[0]) : null;
+    const linkedTask = followUpItem?.linkedTaskId ? tasks.find((t) => t.id === followUpItem.linkedTaskId) : null;
+    const linkedFollowUp = taskItem?.linkedFollowUpId ? followUps.find((f) => f.id === taskItem.linkedFollowUpId) : null;
+
+    // Candidate tasks to link to a follow-up (same project, not already linked to another follow-up)
+    const linkableTasks = tasks.filter(
+      (t) => t.projectId === projectId &&
+        (supplierId === null ? t.supplierId === null : (supplierId ? t.supplierId === supplierId : true)) &&
+        (!t.linkedFollowUpId || t.linkedFollowUpId === item.id)
+    );
+
+    const isLinking = linkingId === item.id;
 
     return (
       <div
@@ -615,9 +668,117 @@ function FollowUpsSection() {
               </span>
             )}
           </div>
+
+          {/* Linked item display */}
+          {linkedTask && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <button
+                className="flex items-center gap-1 text-[10px] text-violet-500 hover:text-violet-700 transition-colors max-w-full"
+                onClick={() => setEditingTask(linkedTask.id)}
+                title="Open linked task"
+              >
+                <Link2 className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{linkedTask.title}</span>
+              </button>
+              <button
+                className="p-0.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+                onClick={() => {
+                  updateFollowUp(item.id, { linkedTaskId: undefined });
+                  updateTask(linkedTask.id, { linkedFollowUpId: undefined });
+                }}
+                title="Remove link"
+              >
+                <Link2Off className="w-2.5 h-2.5 text-gray-400 hover:text-red-400" />
+              </button>
+            </div>
+          )}
+          {linkedFollowUp && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <span className="flex items-center gap-1 text-[10px] text-violet-500 max-w-full">
+                <Link2 className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{linkedFollowUp.text}</span>
+              </span>
+              <button
+                className="p-0.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+                onClick={() => {
+                  updateTask(item.id, { linkedFollowUpId: undefined });
+                  updateFollowUp(linkedFollowUp.id, { linkedTaskId: undefined });
+                }}
+                title="Remove link"
+              >
+                <Link2Off className="w-2.5 h-2.5 text-gray-400 hover:text-red-400" />
+              </button>
+            </div>
+          )}
+
+          {/* Inline link picker */}
+          {isLinking && (
+            <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+              {type === 'followup' ? (
+                <select
+                  autoFocus
+                  className="w-full text-xs px-2 py-1.5 border border-violet-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const taskId = e.target.value;
+                    if (!taskId) { setLinkingId(null); return; }
+                    updateFollowUp(item.id, { linkedTaskId: taskId });
+                    updateTask(taskId, { linkedFollowUpId: item.id });
+                    setLinkingId(null);
+                  }}
+                  onBlur={() => setLinkingId(null)}
+                >
+                  <option value="">— pick a task —</option>
+                  {linkableTasks.map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  autoFocus
+                  className="w-full text-xs px-2 py-1.5 border border-violet-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const followUpId = e.target.value;
+                    if (!followUpId) { setLinkingId(null); return; }
+                    updateTask(item.id, { linkedFollowUpId: followUpId });
+                    updateFollowUp(followUpId, { linkedTaskId: item.id });
+                    setLinkingId(null);
+                  }}
+                  onBlur={() => setLinkingId(null)}
+                >
+                  <option value="">— pick a follow-up —</option>
+                  {followUps
+                    .filter((f) => f.projectId === projectId && !f.linkedTaskId)
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>{f.text}</option>
+                    ))}
+                </select>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          {/* Link button — only show when not already linked */}
+          {type === 'followup' && !linkedTask && !isLinking && (
+            <button
+              className="p-1 hover:bg-violet-50 rounded transition-colors"
+              onClick={(e) => { e.stopPropagation(); setLinkingId(item.id); }}
+              title="Link to task"
+            >
+              <Link2 className="w-3.5 h-3.5 text-gray-400 hover:text-violet-500" />
+            </button>
+          )}
+          {type === 'task' && !linkedFollowUp && !isLinking && (
+            <button
+              className="p-1 hover:bg-violet-50 rounded transition-colors"
+              onClick={(e) => { e.stopPropagation(); setLinkingId(item.id); }}
+              title="Link to follow-up"
+            >
+              <Link2 className="w-3.5 h-3.5 text-gray-400 hover:text-violet-500" />
+            </button>
+          )}
           {type === 'task' && (
             <button
               className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded hover:bg-violet-100 transition-colors"

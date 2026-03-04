@@ -51,6 +51,7 @@ export interface Task {
   description: string;
   createdAt: number;
   isFollowUp?: boolean;
+  linkedFollowUpId?: string;
 }
 
 export interface FollowUp {
@@ -60,6 +61,7 @@ export interface FollowUp {
   text: string;
   status: 'open' | 'resolved';
   createdAt: number;
+  linkedTaskId?: string;
 }
 
 export interface Decision {

@@ -38,16 +38,55 @@ const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   done: <CheckCircle2 className="w-4 h-4 text-green-500" />,
 };
 
-const PRIORITY_COLORS: Record<Priority, string> = {
-  low: 'bg-gray-100 text-gray-600',
-  medium: 'bg-yellow-100 text-yellow-700',
-  high: 'bg-red-100 text-red-700',
+const PRIORITY_BORDER: Record<Priority, string> = {
+  low:    'border-l-gray-200',
+  medium: 'border-l-amber-400',
+  high:   'border-l-red-500',
+};
+
+const PRIORITY_LABEL: Record<Priority, { text: string; classes: string }> = {
+  low:    { text: 'Low',    classes: 'bg-gray-100 text-gray-500'  },
+  medium: { text: 'Medium', classes: 'bg-amber-50 text-amber-700' },
+  high:   { text: 'High',   classes: 'bg-red-50 text-red-600'    },
 };
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   open: 'doing',
   doing: 'done',
   done: 'open',
+};
+
+function ownerInitials(owner: string): string {
+  return owner.trim().split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
+}
+
+function ownerHue(owner: string): number {
+  let hash = 0;
+  for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
+  return Math.abs(hash) % 360;
+}
+
+type DueDateUrgency = 'overdue' | 'soon' | 'normal';
+
+function getDueDateUrgency(dueDate: string): DueDateUrgency {
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return 'normal';
+  const diffDays = (d.getTime() - Date.now()) / 86_400_000;
+  if (diffDays < 0) return 'overdue';
+  if (diffDays < 3) return 'soon';
+  return 'normal';
+}
+
+function formatDueDate(dueDate: string): string {
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return dueDate;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
+  overdue: 'text-red-500 font-medium',
+  soon:    'text-amber-600',
+  normal:  'text-gray-400',
 };
 
 export function RightPanel() {
@@ -246,40 +285,90 @@ export function RightPanel() {
 
             {supplierTasks.map((task) => {
               const taskNote = notes.find((n) => n.id === task.noteId);
+              const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
+
+              const ownerAvatar = (() => {
+                if (!task.owner) return null;
+                if (task.owner === 'Internal') {
+                  return { initials: 'I', bg: 'hsl(0 0% 75%)', title: 'Internal' };
+                }
+                return { initials: ownerInitials(task.owner), bg: `hsl(${ownerHue(task.owner)} 55% 52%)`, title: task.owner };
+              })();
+
               return (
-              <div
-                key={task.id}
-                className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => setEditingTask(task.id)}
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateTask(task.id, { status: NEXT_STATUS[task.status] });
-                  }}
-                  className="mt-0.5 flex-shrink-0"
-                  title={`Status: ${task.status} — click to cycle`}
+                <div
+                  key={task.id}
+                  onClick={() => setEditingTask(task.id)}
+                  className={`
+                    group bg-white rounded-lg border border-gray-100
+                    border-l-[3px] ${PRIORITY_BORDER[task.priority]}
+                    p-2.5 cursor-pointer hover:shadow-sm
+                    transition-all duration-150
+                  `}
                 >
-                  {STATUS_ICONS[task.status]}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className={`text-sm ${task.status === 'done' ? 'line-through text-gray-400' : ''}`}>
-                    {task.title}
+                  {/* Title row */}
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); updateTask(task.id, { status: NEXT_STATUS[task.status] }); }}
+                      className="mt-0.5 flex-shrink-0"
+                      title={`Status: ${task.status} — click to cycle`}
+                    >
+                      {STATUS_ICONS[task.status]}
+                    </button>
+                    <p className={`flex-1 text-sm font-medium leading-snug line-clamp-2 ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                      {task.title}
+                    </p>
+                    {/* Bookmark + delete — always visible if bookmarked, otherwise on hover */}
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        className={`p-0.5 rounded transition-colors ${
+                          task.isFollowUp
+                            ? 'text-violet-500'
+                            : 'opacity-0 group-hover:opacity-100 text-gray-300 hover:text-violet-400'
+                        }`}
+                        onClick={(e) => { e.stopPropagation(); updateTask(task.id, { isFollowUp: !task.isFollowUp }); }}
+                        title={task.isFollowUp ? 'Remove from follow-ups' : 'Add to follow-ups'}
+                      >
+                        <Bookmark className="w-3.5 h-3.5" fill={task.isFollowUp ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 rounded transition-opacity"
+                        onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${PRIORITY_COLORS[task.priority]}`}>
-                      {task.priority}
-                    </span>
-                    {task.owner && <span className="text-[10px] text-gray-400">@{task.owner}</span>}
-                    {task.dueDate && <span className="text-[10px] text-gray-400">{task.dueDate}</span>}
+
+                  {/* Meta row */}
+                  <div className="flex items-center justify-between gap-2 mt-1.5 pl-6">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${PRIORITY_LABEL[task.priority].classes}`}>
+                        {PRIORITY_LABEL[task.priority].text}
+                      </span>
+                      {task.dueDate && urgency && (
+                        <span className={`text-[11px] ${DUE_DATE_CLASSES[urgency]}`}>
+                          {urgency === 'overdue' ? '⚑ ' : ''}{formatDueDate(task.dueDate)}
+                        </span>
+                      )}
+                    </div>
+                    {ownerAvatar && (
+                      <span
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
+                        style={{ backgroundColor: ownerAvatar.bg }}
+                        title={ownerAvatar.title}
+                      >
+                        {ownerAvatar.initials}
+                      </span>
+                    )}
                   </div>
+
+                  {/* Source note link */}
                   {filterMode === 'supplier' && taskNote && (
                     <button
-                      className="flex items-center gap-1 mt-1 text-[10px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateToNote(task.noteId);
-                      }}
+                      className="flex items-center gap-1 mt-1.5 pl-6 text-[11px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                      onClick={(e) => { e.stopPropagation(); navigateToNote(task.noteId); }}
                       title="Go to source note"
                     >
                       <FileText className="w-3 h-3 flex-shrink-0" />
@@ -287,35 +376,6 @@ export function RightPanel() {
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-0.5 flex-shrink-0">
-                  <button
-                    className={`p-0.5 rounded transition-colors ${
-                      task.isFollowUp
-                        ? 'text-violet-500'
-                        : 'opacity-0 group-hover:opacity-100 text-gray-300 hover:text-violet-400'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateTask(task.id, { isFollowUp: !task.isFollowUp });
-                    }}
-                    title={task.isFollowUp ? 'Remove from follow-ups' : 'Add to follow-ups'}
-                  >
-                    <Bookmark
-                      className="w-3.5 h-3.5"
-                      fill={task.isFollowUp ? 'currentColor' : 'none'}
-                    />
-                  </button>
-                  <button
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteTask(task.id);
-                    }}
-                  >
-                    <Trash2 className="w-3 h-3 text-gray-400" />
-                  </button>
-                </div>
-              </div>
               );
             })}
 

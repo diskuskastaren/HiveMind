@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
+import { CustomSelect } from './ui/CustomSelect';
 import { format } from 'date-fns';
 import { Search, X, FileText, CheckSquare, Lightbulb, Archive } from 'lucide-react';
 
@@ -192,31 +193,25 @@ export function SearchModal() {
             </button>
           ))}
           <div className="w-px h-4 bg-gray-200" />
-          <select
+          <CustomSelect
             value={filterProject}
-            onChange={(e) => setFilterProject(e.target.value)}
-            className="text-xs px-2 py-1 border border-gray-200 rounded-full bg-white focus:outline-none"
-          >
-            <option value="all">All projects</option>
-            {projects.filter((p) => !p.archived).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={setFilterProject}
+            className="text-xs px-2.5 py-1 text-gray-700 rounded-full"
+            options={[
+              { value: 'all', label: 'All projects' },
+              ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+          <CustomSelect
             value={filterSupplier}
-            onChange={(e) => setFilterSupplier(e.target.value)}
-            className="text-xs px-2 py-1 border border-gray-200 rounded-full bg-white focus:outline-none"
-          >
-            <option value="all">All suppliers</option>
-            <option value={INTERNAL_TAB_ID}>Internal</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterSupplier}
+            className="text-xs px-2.5 py-1 text-gray-700 rounded-full"
+            options={[
+              { value: 'all', label: 'All suppliers' },
+              { value: INTERNAL_TAB_ID, label: 'Internal' },
+              ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
         </div>
 
         {/* Results */}

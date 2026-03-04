@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronStore', {
   read: () => ipcRenderer.invoke('store:read'),
   write: (data) => ipcRenderer.invoke('store:write', data),
   getPath: () => ipcRenderer.invoke('store:path'),
+  openFolder: () => ipcRenderer.invoke('store:openFolder'),
 });
 
 contextBridge.exposeInMainWorld('electronImages', {
