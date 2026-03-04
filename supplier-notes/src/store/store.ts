@@ -147,6 +147,22 @@ interface AppState {
   teamsPromptOpen: boolean;
   setTeamsPromptOpen: (open: boolean) => void;
 
+  confirmDialog: {
+    message: string;
+    title?: string;
+    confirmLabel?: string;
+    variant?: 'danger' | 'default';
+    onConfirm: () => void;
+  } | null;
+  openConfirmDialog: (opts: {
+    message: string;
+    title?: string;
+    confirmLabel?: string;
+    variant?: 'danger' | 'default';
+    onConfirm: () => void;
+  }) => void;
+  closeConfirmDialog: () => void;
+
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   toggleCommandPalette: () => void;
@@ -189,6 +205,7 @@ export const useStore = create<AppState>()(
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
       teamsPromptOpen: false,
+      confirmDialog: null,
 
       // --- Projects ---
 
@@ -564,6 +581,9 @@ export const useStore = create<AppState>()(
       updateSettings: (updates) => set((s) => ({ settings: { ...s.settings, ...updates } })),
       toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
       setTeamsPromptOpen: (open) => set({ teamsPromptOpen: open }),
+
+      openConfirmDialog: (opts) => set({ confirmDialog: opts }),
+      closeConfirmDialog: () => set({ confirmDialog: null }),
 
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),

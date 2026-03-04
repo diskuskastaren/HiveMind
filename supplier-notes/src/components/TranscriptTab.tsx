@@ -77,6 +77,7 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   const updateTranscript = useStore((s) => s.updateTranscript);
   const deleteTranscript = useStore((s) => s.deleteTranscript);
   const updateNote = useStore((s) => s.updateNote);
+  const openConfirmDialog = useStore((s) => s.openConfirmDialog);
   const summarySettings = useStore(useShallow((s) => ({
     model: s.settings.gptModel,
     temperature: s.settings.temperature,
@@ -143,10 +144,16 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   }, [transcript, note, projects]);
 
   const handleDelete = useCallback(() => {
-    if (!window.confirm('Delete this recording?')) return;
-    deleteTranscript(noteId, transcript.id);
-    onBack();
-  }, [transcript.id, noteId, deleteTranscript, onBack]);
+    openConfirmDialog({
+      title: 'Delete recording',
+      message: 'Delete this recording?',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        deleteTranscript(noteId, transcript.id);
+        onBack();
+      },
+    });
+  }, [transcript.id, noteId, deleteTranscript, onBack, openConfirmDialog]);
 
   // Auto-trigger summary generation when arriving at a transcript that has text but no summary
   useEffect(() => {

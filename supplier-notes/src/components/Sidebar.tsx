@@ -55,6 +55,7 @@ export function Sidebar() {
   const deleteNote = useStore((s) => s.deleteNote);
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const toggleSettings = useStore((s) => s.toggleSettings);
+  const openConfirmDialog = useStore((s) => s.openConfirmDialog);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
@@ -285,9 +286,12 @@ export function Sidebar() {
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`Delete project "${activeProject.name}"? All notes, tasks, and decisions in this project will be removed.`)) {
-                      deleteProject(activeProject.id);
-                    }
+                    openConfirmDialog({
+                      title: 'Delete project',
+                      message: `Delete project "${activeProject.name}"? All notes, tasks, and decisions in this project will be removed.`,
+                      confirmLabel: 'Delete',
+                      onConfirm: () => deleteProject(activeProject.id),
+                    });
                   }}
                   className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
                   title="Delete project"
@@ -473,7 +477,12 @@ export function Sidebar() {
                           className="p-0.5 hover:bg-gray-200 rounded"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm('Delete this note and all its linked tasks and decisions?')) deleteNote(n.id);
+                            openConfirmDialog({
+                              title: 'Delete note',
+                              message: 'Delete this note and all its linked tasks and decisions?',
+                              confirmLabel: 'Delete',
+                              onConfirm: () => deleteNote(n.id),
+                            });
                           }}
                           title="Delete note"
                         >
@@ -526,11 +535,16 @@ export function Sidebar() {
                               </button>
                               <button
                                 className="p-0.5 hover:bg-gray-200 rounded"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (confirm('Delete this note and all its linked tasks and decisions?')) deleteNote(n.id);
-                                }}
-                                title="Delete note"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openConfirmDialog({
+                                  title: 'Delete note',
+                                  message: 'Delete this note and all its linked tasks and decisions?',
+                                  confirmLabel: 'Delete',
+                                  onConfirm: () => deleteNote(n.id),
+                                });
+                              }}
+                              title="Delete note"
                               >
                                 <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
                               </button>
@@ -581,9 +595,12 @@ export function Sidebar() {
                     <button
                       className="w-full px-3 py-1.5 text-sm text-left hover:bg-orange-50 text-orange-600 flex items-center gap-2"
                       onClick={() => {
-                        if (confirm(`Remove "${sup.name}" from this project? Notes in this project for this supplier will be deleted.`)) {
-                          unlinkSupplierFromProject(sup.id, activeProjectId);
-                        }
+                        openConfirmDialog({
+                          title: 'Remove from project',
+                          message: `Remove "${sup.name}" from this project? Notes in this project for this supplier will be deleted.`,
+                          confirmLabel: 'Remove',
+                          onConfirm: () => unlinkSupplierFromProject(sup.id, activeProjectId),
+                        });
                         setContextMenu(null);
                       }}
                     >
@@ -592,11 +609,14 @@ export function Sidebar() {
                   )}
                   <button
                     className="w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 text-red-600 flex items-center gap-2"
-                    onClick={() => {
-                      if (confirm(`Delete "${sup.name}" globally? This removes ALL notes, tasks, and decisions for this supplier across all projects.`)) {
-                        deleteSupplier(sup.id);
-                      }
-                      setContextMenu(null);
+                      onClick={() => {
+                        openConfirmDialog({
+                          title: 'Delete supplier',
+                          message: `Delete "${sup.name}" globally? This removes ALL notes, tasks, and decisions for this supplier across all projects.`,
+                          confirmLabel: 'Delete',
+                          onConfirm: () => deleteSupplier(sup.id),
+                        });
+                        setContextMenu(null);
                     }}
                   >
                     <Trash2 className="w-3.5 h-3.5" /> Delete supplier

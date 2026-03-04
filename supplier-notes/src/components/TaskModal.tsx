@@ -113,6 +113,7 @@ export function TaskModal() {
   const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const navigateToNote = useStore((s) => s.navigateToNote);
+  const openConfirmDialog = useStore((s) => s.openConfirmDialog);
 
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<TaskStatus>('open');
@@ -164,10 +165,15 @@ export function TaskModal() {
   };
 
   const handleDelete = () => {
-    if (confirm('Delete this task?')) {
-      deleteTask(editingTaskId);
-      setEditingTask(null);
-    }
+    openConfirmDialog({
+      title: 'Delete task',
+      message: 'Delete this task?',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        deleteTask(editingTaskId);
+        setEditingTask(null);
+      },
+    });
   };
 
 

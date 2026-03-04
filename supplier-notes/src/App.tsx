@@ -11,6 +11,7 @@ import { Dashboard } from './components/Dashboard';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { FileText, Keyboard, FolderOpen } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 
@@ -237,6 +238,7 @@ export default function App() {
       {settingsOpen && <SettingsModal />}
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
+      <ConfirmDialog />
     </div>
   );
 }
