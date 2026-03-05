@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.cjs",
     "electron:build": "vite build && electron-builder --win",
+    "electron:publish": "vite build && electron-builder --win --publish always",
     "electron:start": "electron ."
   },
   "build": {
@@ -23,7 +24,19 @@
       "electron/**/*"
     ],
     "win": {
-      "target": "portable"
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Combobulator"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "diskuskastaren",
+      "repo": "HiveMind"
     }
   },
   "dependencies": {
@@ -37,6 +50,7 @@
     "@tiptap/react": "^2.11.0",
     "@tiptap/starter-kit": "^2.11.0",
     "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^0.474.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

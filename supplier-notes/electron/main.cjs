@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { WebSocket } = require('ws');
 const { execFile } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
 // Debug logging — writes NDJSON to workspace root
 const DEBUG_LOG = path.join(__dirname, '..', 'debug-0a018f.log');
@@ -334,6 +335,7 @@ app.whenReady().then(() => {
 
   const win = createWindow();
   connectToTeams(win);
+  autoUpdater.checkForUpdatesAndNotify();
 });
 
 app.on('window-all-closed', () => {

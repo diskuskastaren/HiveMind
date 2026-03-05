@@ -276,8 +276,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: screen.id,
-            maxWidth: 1,
-            maxHeight: 1,
+            maxWidth: 320,
+            maxHeight: 240,
           },
         } as any,
       });
