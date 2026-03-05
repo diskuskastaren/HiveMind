@@ -250,9 +250,9 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       <div className="fixed inset-0 bg-black/30" onClick={toggleCommandPalette} />
-      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-lg overflow-hidden">
-        <div className="flex items-center px-4 border-b border-gray-200">
-          <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg overflow-hidden">
+        <div className="flex items-center px-4 border-b border-gray-200 dark:border-gray-700">
+          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -260,9 +260,9 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent"
+            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent dark:text-gray-100 dark:placeholder-gray-500"
           />
-          <kbd className="text-[10px] text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">ESC</kbd>
+          <kbd className="text-[10px] text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
         <div className="max-h-[300px] overflow-y-auto py-2">
@@ -270,18 +270,18 @@ export function CommandPalette() {
             <button
               key={cmd.id}
               className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors ${
-                idx === selectedIdx ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                idx === selectedIdx ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               onClick={cmd.action}
               onMouseEnter={() => setSelectedIdx(idx)}
             >
-              <span className="text-gray-400">{cmd.icon}</span>
+              <span className="text-gray-400 dark:text-gray-500">{cmd.icon}</span>
               <span className="flex-1">{cmd.label}</span>
-              {cmd.description && <span className="text-xs text-gray-400">{cmd.description}</span>}
+              {cmd.description && <span className="text-xs text-gray-400 dark:text-gray-500">{cmd.description}</span>}
             </button>
           ))}
           {filtered.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">No matching commands</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">No matching commands</p>
           )}
         </div>
       </div>

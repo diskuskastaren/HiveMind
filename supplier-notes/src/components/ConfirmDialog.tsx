@@ -22,16 +22,16 @@ export function ConfirmDialog() {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="fixed inset-0 bg-black/20" onClick={closeConfirmDialog} />
-      <div className="relative bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-xs p-5">
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-xs p-5">
         {dialog.title && (
-          <p className="text-sm font-semibold text-gray-900 mb-1">{dialog.title}</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{dialog.title}</p>
         )}
-        <p className="text-sm text-gray-500">{dialog.message}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{dialog.message}</p>
 
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={closeConfirmDialog}
-            className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             Cancel
           </button>

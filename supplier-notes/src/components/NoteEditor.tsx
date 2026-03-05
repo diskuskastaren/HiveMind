@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
@@ -33,7 +33,9 @@ import {
   Plus,
   X,
   Mic,
+  Paperclip,
 } from 'lucide-react';
+import type { NoteAttachment } from '../types';
 import { exportNoteMarkdown, exportEmailSummary, downloadFile } from '../utils/export';
 
 const TAB_CHAR = '\u00A0\u00A0\u00A0\u00A0';
@@ -55,7 +57,7 @@ const ToolbarBtn = ({
       onClick();
     }}
     title={title}
-    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${active ? 'bg-gray-200 text-blue-600' : 'text-gray-500'}`}
+    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${active ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
   >
     {children}
   </button>
@@ -98,7 +100,7 @@ const DateTimeEditor = ({ noteId, createdAt }: { noteId: string; createdAt: numb
     <button
       onClick={handleClick}
       title="Click to edit date & time"
-      className="flex-shrink-0 text-sm text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+      className="flex-shrink-0 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 transition-colors cursor-pointer"
     >
       {format(new Date(createdAt), 'EEEE, MMM d yyyy · HH:mm')}
     </button>
@@ -184,6 +186,8 @@ export function NoteEditor() {
   const tasks = useStore((s) => s.tasks);
   const decisions = useStore((s) => s.decisions);
   const updateNote = useStore((s) => s.updateNote);
+  const addAttachment = useStore((s) => s.addAttachment);
+  const removeAttachment = useStore((s) => s.removeAttachment);
   const addTask = useStore((s) => s.addTask);
   const addDecision = useStore((s) => s.addDecision);
   const addFollowUp = useStore((s) => s.addFollowUp);
@@ -194,6 +198,7 @@ export function NoteEditor() {
 
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showSupplierPicker, setShowSupplierPicker] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const switchingRef = useRef(false);
   const noteIdRef = useRef(activeNoteId);
@@ -352,10 +357,77 @@ export function NoteEditor() {
     setShowTemplateMenu(false);
   };
 
+  const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (!activeNoteId) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    const supported = files.filter((f) =>
+      f.name.toLowerCase().endsWith('.msg') || f.name.toLowerCase().endsWith('.eml'),
+    );
+
+    for (const file of supported) {
+      const filePath = (file as any).path as string | undefined;
+      if (!filePath) continue;
+
+      const savedName: string | null = electronAttachments
+        ? await electronAttachments.save(filePath, file.name)
+        : null;
+
+      if (!savedName) continue;
+
+      const attachment: NoteAttachment = {
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        savedName,
+        droppedAt: Date.now(),
+        type: 'email',
+      };
+      addAttachment(activeNoteId, attachment);
+    }
+  };
+
+  const handleOpenAttachment = (att: NoteAttachment) => {
+    if (electronAttachments) {
+      electronAttachments.open(att.savedName);
+    }
+  };
+
+  const handleRemoveAttachment = (att: NoteAttachment) => {
+    if (!activeNoteId) return;
+    removeAttachment(activeNoteId, att.id);
+    if (electronAttachments) {
+      electronAttachments.delete(att.savedName);
+    }
+  };
+
   if (!note) return null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className={`relative flex flex-col h-full transition-colors ${isDragOver ? 'bg-blue-50/60 dark:bg-blue-900/10 ring-2 ring-inset ring-blue-400/50' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div className="px-8 pt-6 pb-2 flex-shrink-0">
         <input
@@ -370,9 +442,9 @@ export function NoteEditor() {
               editor?.commands.focus('start');
             }
           }}
-          className="w-full text-2xl font-bold text-gray-900 placeholder-gray-300 border-none outline-none bg-transparent"
+          className="w-full text-2xl font-bold text-gray-900 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600 border-none outline-none bg-transparent"
         />
-        <div className="flex items-center gap-4 mt-2 text-sm text-gray-400 flex-wrap">
+        <div className="flex items-center gap-4 mt-2 text-sm text-gray-400 dark:text-gray-500 flex-wrap">
           <DateTimeEditor noteId={note.id} createdAt={note.createdAt} />
 
           {/* Project badges */}
@@ -402,7 +474,7 @@ export function NoteEditor() {
             <div className="relative">
               <button
                 onClick={() => { setShowProjectPicker(!showProjectPicker); setShowSupplierPicker(false); }}
-                className="p-0.5 rounded-full hover:bg-gray-200 text-gray-300 hover:text-gray-500 transition-colors"
+                className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
                 title="Link note to another project"
               >
                 <Plus className="w-3 h-3" />
@@ -410,14 +482,14 @@ export function NoteEditor() {
               {showProjectPicker && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProjectPicker(false)} />
-                  <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                    <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 font-medium">Link to project</p>
+                  <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
+                    <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">Link to project</p>
                     {allProjects.filter((p) => !p.archived).map((p) => {
                       const linked = note.projectIds.includes(p.id);
                       return (
                         <button
                           key={p.id}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
                           onClick={() => {
                             updateNote(note.id, {
                               projectIds: linked
@@ -469,7 +541,7 @@ export function NoteEditor() {
           <div className="relative">
             <button
               onClick={() => { setShowSupplierPicker(!showSupplierPicker); setShowProjectPicker(false); }}
-              className="text-xs text-gray-300 hover:text-gray-500 transition-colors"
+              className="text-xs text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
               title="Link note to another supplier"
             >
               + supplier
@@ -477,14 +549,14 @@ export function NoteEditor() {
             {showSupplierPicker && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowSupplierPicker(false)} />
-                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px] max-h-[220px] overflow-y-auto">
-                  <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 font-medium">Link to supplier</p>
+                <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px] max-h-[220px] overflow-y-auto">
+                  <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">Link to supplier</p>
                   {allSuppliers.map((s) => {
                     const linked = note.supplierIds.includes(s.id);
                     return (
                       <button
                         key={s.id}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
                         onClick={() => {
                           updateNote(note.id, {
                             supplierIds: linked
@@ -516,14 +588,14 @@ export function NoteEditor() {
                 editor?.commands.focus('start');
               }
             }}
-            className="flex-1 border-none outline-none bg-transparent text-gray-600 placeholder-gray-300 min-w-[120px]"
+            className="flex-1 border-none outline-none bg-transparent text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600 min-w-[120px]"
           />
         </div>
       </div>
 
       {/* Toolbar */}
       {editor && (
-        <div className="px-8 py-1 flex items-center gap-0.5 border-b border-gray-100 flex-shrink-0 flex-wrap">
+        <div className="px-8 py-1 flex items-center gap-0.5 border-b border-gray-100 dark:border-gray-800 flex-shrink-0 flex-wrap">
           <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
             <Bold className="w-4 h-4" />
           </ToolbarBtn>
@@ -539,7 +611,7 @@ export function NoteEditor() {
           <ToolbarBtn active={editor.isActive('highlight')} onClick={() => editor.chain().focus().toggleHighlight().run()} title="Highlight">
             <Highlighter className="w-4 h-4" />
           </ToolbarBtn>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
           <ToolbarBtn active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading">
             <Heading2 className="w-4 h-4" />
           </ToolbarBtn>
@@ -561,7 +633,7 @@ export function NoteEditor() {
           <ToolbarBtn active={false} onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider">
             <Minus className="w-4 h-4" />
           </ToolbarBtn>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
           <ToolbarBtn active={false} onClick={() => editor.chain().focus().undo().run()} title="Undo (Ctrl+Z)">
             <Undo2 className="w-4 h-4" />
           </ToolbarBtn>
@@ -570,33 +642,6 @@ export function NoteEditor() {
           </ToolbarBtn>
 
           <div className="flex-1" />
-
-          {/* Selection actions */}
-          {selectionText && (
-            <div className="flex items-center gap-1 mr-2">
-              <button
-                onClick={createTaskFromSelection}
-                className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
-                title="Alt+T"
-              >
-                + Task
-              </button>
-              <button
-                onClick={createDecisionFromSelection}
-                className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 transition-colors"
-                title="Alt+D"
-              >
-                + Decision
-              </button>
-              <button
-                onClick={createFollowUpFromSelection}
-                className="text-xs px-2 py-1 bg-violet-50 text-violet-700 rounded hover:bg-violet-100 transition-colors"
-                title="Alt+F"
-              >
-                + Follow-up
-              </button>
-            </div>
-          )}
 
           {/* Transcript / Record */}
           <button
@@ -607,8 +652,8 @@ export function NoteEditor() {
             title={isRecording ? 'Recording in progress — click to open transcript' : 'Record meeting transcript'}
             className={`p-1.5 rounded transition-colors relative ${
               isRecording
-                ? 'text-red-500 hover:bg-red-50'
-                : 'text-gray-500 hover:bg-gray-200'
+                ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
             <Mic className="w-4 h-4" />
@@ -629,11 +674,11 @@ export function NoteEditor() {
             {showTemplateMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowTemplateMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
+                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
                   {Object.entries(TEMPLATES).map(([key, t]) => (
                     <button
                       key={key}
-                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"
                       onClick={() => applyTemplate(key)}
                     >
                       {t.name}
@@ -656,9 +701,9 @@ export function NoteEditor() {
             {showExportMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[180px]">
+                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[180px]">
                   <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 flex items-center gap-2"
+                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
                     onClick={() => {
                       const projectNames = note.projectIds.map((id) => allProjects.find((p) => p.id === id)?.name || '').filter(Boolean).join(', ');
                       const supplierName = activeTabId === INTERNAL_TAB_ID ? 'Internal' : (supplier?.name || '');
@@ -670,7 +715,7 @@ export function NoteEditor() {
                     <FileDown className="w-3.5 h-3.5" /> Markdown
                   </button>
                   <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 flex items-center gap-2"
+                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
                     onClick={() => {
                       const projectNames = note.projectIds.map((id) => allProjects.find((p) => p.id === id)?.name || '').filter(Boolean).join(', ');
                       const supplierName = activeTabId === INTERNAL_TAB_ID ? 'Internal' : (supplier?.name || '');
@@ -688,13 +733,80 @@ export function NoteEditor() {
         </div>
       )}
 
+      {/* Selection actions row — always rendered to prevent layout shift */}
+      {editor && (
+        <div className="px-8 h-8 flex items-center gap-1 flex-shrink-0 border-b border-gray-100 dark:border-gray-800">
+          <div className={selectionText ? 'flex items-center gap-1' : 'invisible flex items-center gap-1'}>
+            <button
+              onClick={createTaskFromSelection}
+              className="text-xs px-2 py-1 bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
+              title="Alt+T"
+            >
+              + Task
+            </button>
+            <button
+              onClick={createDecisionFromSelection}
+              className="text-xs px-2 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
+              title="Alt+D"
+            >
+              + Decision
+            </button>
+            <button
+              onClick={createFollowUpFromSelection}
+              className="text-xs px-2 py-1 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 rounded hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors"
+              title="Alt+F"
+            >
+              + Follow-up
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Attachments strip */}
+      {note.attachments && note.attachments.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-8 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+          <Paperclip className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+          {note.attachments.map((att) => (
+            <div
+              key={att.id}
+              className="group flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-white/10 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
+            >
+              <button
+                onClick={() => handleOpenAttachment(att)}
+                className="max-w-[220px] truncate text-left hover:underline"
+                title={`Open ${att.fileName}`}
+              >
+                {att.fileName}
+              </button>
+              <button
+                onClick={() => handleRemoveAttachment(att)}
+                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-0.5 flex-shrink-0"
+                title="Remove attachment"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Drop hint overlay — shown when dragging a file over the editor */}
+      {isDragOver && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-white/90 dark:bg-gray-800/90 shadow-lg border border-blue-300 dark:border-blue-600">
+            <Paperclip className="w-6 h-6 text-blue-500" />
+            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Drop Outlook email to attach</p>
+          </div>
+        </div>
+      )}
+
       {/* Editor */}
-      <div className="flex-1 overflow-y-auto px-8 pb-16">
+      <div className="flex-1 overflow-y-auto px-8 pb-16 relative">
         <EditorContent editor={editor} />
       </div>
 
       {/* Autosave indicator */}
-      <div className="absolute bottom-2 right-2 text-xs text-gray-300 select-none pointer-events-none">
+      <div className="absolute bottom-2 right-2 text-xs text-gray-300 dark:text-gray-600 select-none pointer-events-none">
         Auto-saved · {format(new Date(note.updatedAt), 'HH:mm:ss')}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search } from 'lucide-react';
+import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search, CheckCircle2 } from 'lucide-react';
 
 export function TabBar() {
   const activeProjectId = useStore((s) => s.activeProjectId);
@@ -31,22 +31,22 @@ export function TabBar() {
     : null;
   const isInternal = activeTabId === INTERNAL_TAB_ID;
 
-  const showBackButton = activeView === 'notes' && previousView === 'dashboard';
+  const showBackButton = activeView === 'notes' && (previousView === 'dashboard' || previousView === 'tasks');
 
   return (
-    <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50/80 px-3 py-1.5 flex-shrink-0 h-10">
+    <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900 px-3 py-1.5 flex-shrink-0 h-10">
       {/* Left: back button or breadcrumb */}
       {showBackButton ? (
         <button
           onClick={goBackToPreviousView}
-          className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+          className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition-colors"
           title="Back to Dashboard"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Dashboard
         </button>
       ) : (
-        <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 min-w-0">
           {activeProject ? (
             <>
               <span
@@ -58,12 +58,12 @@ export function TabBar() {
               </span>
             </>
           ) : (
-            <span className="text-gray-400 italic">No project</span>
+            <span className="text-gray-400 dark:text-gray-500 italic">No project</span>
           )}
 
           {(activeSupplier || isInternal) && (
             <>
-              <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
+              <ChevronRight className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
               {activeSupplier ? (
                 <>
                   <span
@@ -75,7 +75,7 @@ export function TabBar() {
                   </span>
                 </>
               ) : (
-                <span className="text-gray-400">Internal</span>
+                <span className="text-gray-400 dark:text-gray-500">Internal</span>
               )}
             </>
           )}
@@ -87,7 +87,7 @@ export function TabBar() {
         {transcriptRecording && recordingNoteId && (
           <button
             onClick={handleJumpToRecording}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 transition-colors"
             title="Active recording — click to return to note"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
@@ -96,19 +96,19 @@ export function TabBar() {
         )}
         <button
           onClick={toggleSearch}
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
           title="Search (Ctrl+Shift+F)"
         >
           <Search className="w-3.5 h-3.5" />
         </button>
 
-        <div className="flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
+        <div className="flex items-center gap-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
           <button
             onClick={() => setActiveView('notes')}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               activeView === 'notes'
-                ? 'bg-gray-100 text-gray-800'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}
             title="Notes view"
           >
@@ -116,11 +116,23 @@ export function TabBar() {
             Notes
           </button>
           <button
+            onClick={() => setActiveView('tasks')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              activeView === 'tasks'
+                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+            title="Tasks view"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Tasks
+          </button>
+          <button
             onClick={() => setActiveView('dashboard')}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               activeView === 'dashboard'
-                ? 'bg-gray-100 text-gray-800'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}
             title="Dashboard view"
           >

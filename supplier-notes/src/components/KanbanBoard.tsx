@@ -5,21 +5,21 @@ import type { TaskStatus, Priority } from '../types';
 import { X, ChevronRight, FileText } from 'lucide-react';
 
 const COLUMNS: { status: TaskStatus; label: string; headerBadge: string; topBorder: string }[] = [
-  { status: 'open',  label: 'Open',  headerBadge: 'bg-gray-100 text-gray-500',    topBorder: 'border-gray-300' },
-  { status: 'doing', label: 'Doing', headerBadge: 'bg-amber-50 text-amber-700',   topBorder: 'border-amber-400' },
-  { status: 'done',  label: 'Done',  headerBadge: 'bg-green-50 text-green-700',   topBorder: 'border-green-400' },
+  { status: 'open',  label: 'Open',  headerBadge: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400',    topBorder: 'border-gray-300 dark:border-gray-600' },
+  { status: 'doing', label: 'Doing', headerBadge: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',   topBorder: 'border-amber-400' },
+  { status: 'done',  label: 'Done',  headerBadge: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400',   topBorder: 'border-green-400' },
 ];
 
 const PRIORITY_BORDER: Record<Priority, string> = {
-  low:    'border-l-gray-200',
+  low:    'border-l-gray-200 dark:border-l-gray-600',
   medium: 'border-l-amber-400',
   high:   'border-l-red-500',
 };
 
 const PRIORITY_LABEL: Record<Priority, { text: string; classes: string }> = {
-  low:    { text: 'Low',    classes: 'bg-gray-100 text-gray-500' },
-  medium: { text: 'Medium', classes: 'bg-amber-50 text-amber-700' },
-  high:   { text: 'High',   classes: 'bg-red-50 text-red-600' },
+  low:    { text: 'Low',    classes: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400' },
+  medium: { text: 'Medium', classes: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
+  high:   { text: 'High',   classes: 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' },
 };
 
 function ownerInitials(owner: string): string {
@@ -56,9 +56,9 @@ function formatDueDate(dueDate: string): string {
 }
 
 const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
-  overdue: 'text-red-500 font-medium',
-  soon:    'text-amber-600',
-  normal:  'text-gray-400',
+  overdue: 'text-red-500 dark:text-red-400 font-medium',
+  soon:    'text-amber-600 dark:text-amber-400',
+  normal:  'text-gray-400 dark:text-gray-500',
 };
 
 export function KanbanBoard() {
@@ -96,16 +96,16 @@ export function KanbanBoard() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/30" onClick={toggleKanban} />
-      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-5xl mx-4 max-h-[85vh] flex flex-col">
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-5xl mx-4 max-h-[85vh] flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-lg font-semibold tracking-tight">Task Board</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <h2 className="text-lg font-semibold tracking-tight dark:text-gray-100">Task Board</h2>
           <div className="flex items-center gap-3">
             <CustomSelect
               value={filterProject}
               onChange={(v) => { setFilterProject(v); setFilterSupplier('all'); }}
-              className="text-sm px-3 py-1.5 text-gray-700"
+              className="text-sm px-3 py-1.5 text-gray-700 dark:text-gray-300"
               options={[
                 { value: 'all', label: 'All projects' },
                 ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
@@ -114,15 +114,15 @@ export function KanbanBoard() {
             <CustomSelect
               value={filterSupplier}
               onChange={setFilterSupplier}
-              className="text-sm px-3 py-1.5 text-gray-700"
+              className="text-sm px-3 py-1.5 text-gray-700 dark:text-gray-300"
               options={[
                 { value: 'all', label: 'All suppliers' },
                 { value: INTERNAL_TAB_ID, label: 'Internal' },
                 ...projectSuppliers.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
-            <button onClick={toggleKanban} className="p-1 hover:bg-gray-100 rounded">
-              <X className="w-4 h-4" />
+            <button onClick={toggleKanban} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+              <X className="w-4 h-4 dark:text-gray-400" />
             </button>
           </div>
         </div>
@@ -142,13 +142,13 @@ export function KanbanBoard() {
               return (
                 <div
                   key={col.status}
-                  className={`flex-1 min-w-[260px] bg-gray-50 rounded-lg border-t-2 ${col.topBorder}`}
+                  className={`flex-1 min-w-[260px] bg-gray-50 dark:bg-gray-800 rounded-lg border-t-2 ${col.topBorder}`}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleDrop(col.status)}
                 >
                   {/* Column header */}
                   <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                       {col.label}
                     </span>
                     <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${col.headerBadge}`}>
@@ -175,7 +175,7 @@ export function KanbanBoard() {
                           onDragEnd={handleDragEnd}
                           onClick={() => setEditingTask(task.id)}
                           className={`
-                            group bg-white rounded-lg border border-gray-200
+                            group bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700
                             border-l-[3px] ${PRIORITY_BORDER[task.priority]}
                             p-3 cursor-grab active:cursor-grabbing
                             hover:shadow-md hover:-translate-y-px
@@ -184,7 +184,7 @@ export function KanbanBoard() {
                           `}
                         >
                           {/* Title */}
-                          <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 mb-2">
+                          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug line-clamp-2 mb-2">
                             {task.title}
                           </p>
 
@@ -215,7 +215,7 @@ export function KanbanBoard() {
                                 {supplier.name}
                               </span>
                             ) : task.supplierId === null && (
-                              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">
+                              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400">
                                 Internal
                               </span>
                             )}
@@ -235,7 +235,7 @@ export function KanbanBoard() {
                             <div className="flex-1 min-w-0">
                               {note && (
                                 <button
-                                  className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                                  className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors max-w-full"
                                   onClick={(e) => { e.stopPropagation(); navigateToNote(task.noteId); }}
                                   title="Go to source note"
                                 >
@@ -256,7 +256,7 @@ export function KanbanBoard() {
                               )}
                               {col.status !== 'done' && (
                                 <button
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                                   title={`Move to ${col.status === 'open' ? 'Doing' : 'Done'}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -265,7 +265,7 @@ export function KanbanBoard() {
                                     });
                                   }}
                                 >
-                                  <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                                  <ChevronRight className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                                 </button>
                               )}
                             </div>

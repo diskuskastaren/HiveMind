@@ -84,7 +84,7 @@ export function SearchModal() {
             id: t.id,
             projectIds: [t.projectId],
             supplierIds: t.supplierId ? [t.supplierId] : [],
-            noteId: t.noteId,
+            noteId: t.noteId ?? undefined,
             title: t.title,
             detail: `${t.status} · ${t.priority}${t.owner ? ` · @${t.owner}` : ''}`,
             date: t.createdAt,
@@ -101,7 +101,7 @@ export function SearchModal() {
             id: d.id,
             projectIds: [d.projectId],
             supplierIds: d.supplierId ? [d.supplierId] : [],
-            noteId: d.noteId,
+            noteId: d.noteId ?? undefined,
             title: d.text,
             detail: '',
             date: d.createdAt,
@@ -162,9 +162,9 @@ export function SearchModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
       <div className="fixed inset-0 bg-black/30" onClick={toggleSearch} />
-      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl overflow-hidden">
-        <div className="flex items-center px-4 border-b border-gray-200">
-          <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl overflow-hidden">
+        <div className="flex items-center px-4 border-b border-gray-200 dark:border-gray-700">
+          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -172,31 +172,31 @@ export function SearchModal() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={() => {}}
-            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent"
+            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent dark:text-gray-100 dark:placeholder-gray-500"
           />
-          <button onClick={toggleSearch} className="p-1 hover:bg-gray-100 rounded">
-            <X className="w-4 h-4 text-gray-400" />
+          <button onClick={toggleSearch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+            <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
           </button>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 flex-wrap">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex-wrap">
           {(['all', 'note', 'task', 'decision'] as const).map((type) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
               className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                filterType === type ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                filterType === type ? 'bg-gray-200 dark:bg-white/15 text-gray-900 dark:text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
               {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1) + 's'}
             </button>
           ))}
-          <div className="w-px h-4 bg-gray-200" />
+          <div className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
           <CustomSelect
             value={filterProject}
             onChange={setFilterProject}
-            className="text-xs px-2.5 py-1 text-gray-700 rounded-full"
+            className="text-xs px-2.5 py-1 text-gray-700 dark:text-gray-300 rounded-full"
             options={[
               { value: 'all', label: 'All projects' },
               ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
@@ -205,7 +205,7 @@ export function SearchModal() {
           <CustomSelect
             value={filterSupplier}
             onChange={setFilterSupplier}
-            className="text-xs px-2.5 py-1 text-gray-700 rounded-full"
+            className="text-xs px-2.5 py-1 text-gray-700 dark:text-gray-300 rounded-full"
             options={[
               { value: 'all', label: 'All suppliers' },
               { value: INTERNAL_TAB_ID, label: 'Internal' },
@@ -224,21 +224,21 @@ export function SearchModal() {
                 return (
                   <button
                     key={`${r.type}-${r.id}`}
-                    className="w-full flex items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     onClick={() => handleSelect(r)}
                   >
                     <span className="mt-0.5">{ICONS[r.type]}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-sm ${r.archived ? 'text-gray-400' : ''}`}>{r.title}</span>
+                        <span className={`text-sm dark:text-gray-200 ${r.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{r.title}</span>
                         {r.archived && (
-                          <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200 flex-shrink-0">
+                          <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full border border-amber-200 dark:border-amber-800 flex-shrink-0">
                             <Archive className="w-2.5 h-2.5" />
                             archived
                           </span>
                         )}
                       </div>
-                      {r.detail && <div className="text-xs text-gray-400 truncate">{r.detail}</div>}
+                      {r.detail && <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{r.detail}</div>}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div className="flex items-center gap-1 justify-end flex-wrap">
@@ -260,12 +260,12 @@ export function SearchModal() {
                             {s.name}
                           </span>
                         )) : r.supplierIds.length === 0 && r.type !== 'note' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded inline-block bg-indigo-50 text-indigo-500">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded inline-block bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400">
                             Internal
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">
+                      <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
                         {format(new Date(r.date), 'MMM d')}
                       </div>
                     </div>
@@ -274,9 +274,9 @@ export function SearchModal() {
               })}
             </div>
           ) : query ? (
-            <p className="text-sm text-gray-400 text-center py-8">No results found</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">No results found</p>
           ) : (
-            <p className="text-sm text-gray-400 text-center py-8">Start typing to search…</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">Start typing to search…</p>
           )}
         </div>
       </div>

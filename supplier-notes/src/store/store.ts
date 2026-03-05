@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, RightPanelTab, ActiveView, DashboardSection } from '../types';
+import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, NoteAttachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
   openaiApiKey: string;
@@ -11,6 +11,7 @@ export interface AppSettings {
   chunkIntervalSeconds: number;
   autoStopHours: number;
   teamsEnabled: boolean;
+  darkMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chunkIntervalSeconds: 60,
   autoStopHours: 4,
   teamsEnabled: true,
+  darkMode: false,
 };
 
 export const INTERNAL_TAB_ID = '__internal__';
@@ -114,6 +116,8 @@ interface AppState {
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   setActiveNote: (id: string | null) => void;
+  addAttachment: (noteId: string, attachment: NoteAttachment) => void;
+  removeAttachment: (noteId: string, attachmentId: string) => void;
 
   addTranscript: (noteId: string, transcript: Transcript) => void;
   updateTranscript: (noteId: string, transcriptId: string, updates: Partial<Omit<Transcript, 'id'>>) => void;
@@ -168,7 +172,7 @@ interface AppState {
   toggleCommandPalette: () => void;
   toggleSearch: () => void;
   toggleKanban: () => void;
-  navigateToNote: (noteId: string) => void;
+  navigateToNote: (noteId: string | null) => void;
   setActiveView: (view: ActiveView) => void;
   setDashboardSection: (section: DashboardSection) => void;
   goBackToPreviousView: () => void;
@@ -466,6 +470,24 @@ export const useStore = create<AppState>()(
 
       setActiveNote: (id) => set({ activeNoteId: id }),
 
+      addAttachment: (noteId, attachment) =>
+        set((s) => ({
+          notes: s.notes.map((n) =>
+            n.id === noteId
+              ? { ...n, attachments: [...(n.attachments ?? []), attachment], updatedAt: Date.now() }
+              : n,
+          ),
+        })),
+
+      removeAttachment: (noteId, attachmentId) =>
+        set((s) => ({
+          notes: s.notes.map((n) =>
+            n.id === noteId
+              ? { ...n, attachments: (n.attachments ?? []).filter((a) => a.id !== attachmentId) }
+              : n,
+          ),
+        })),
+
       // --- Transcripts ---
 
       addTranscript: (noteId, transcript) =>
@@ -597,6 +619,7 @@ export const useStore = create<AppState>()(
 
       navigateToNote: (noteId) =>
         set((s) => {
+          if (!noteId) return {};
           const note = s.notes.find((n) => n.id === noteId);
           if (!note) return {};
           const projectId = note.projectIds[0] ?? s.activeProjectId;

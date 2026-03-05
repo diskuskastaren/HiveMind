@@ -4,10 +4,10 @@
 
 @layer base {
   * {
-    @apply border-gray-200;
+    @apply border-gray-200 dark:border-gray-700;
   }
   body {
-    @apply bg-white text-gray-900 text-sm;
+    @apply bg-white text-gray-900 text-sm dark:bg-gray-900 dark:text-gray-100;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
   }
 }
@@ -24,13 +24,13 @@
 }
 
 .tiptap h1 {
-  @apply text-2xl font-bold text-gray-900;
+  @apply text-2xl font-bold text-gray-900 dark:text-gray-100;
 }
 .tiptap h2 {
-  @apply text-xl font-semibold text-gray-800 mt-6 mb-2;
+  @apply text-xl font-semibold text-gray-800 mt-6 mb-2 dark:text-gray-200;
 }
 .tiptap h3 {
-  @apply text-lg font-semibold text-gray-700 mt-4 mb-1;
+  @apply text-lg font-semibold text-gray-700 mt-4 mb-1 dark:text-gray-300;
 }
 
 .tiptap p {
@@ -51,11 +51,11 @@
 }
 
 .tiptap blockquote {
-  @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-3;
+  @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-3 dark:border-gray-600 dark:text-gray-400;
 }
 
 .tiptap code {
-  @apply bg-gray-100 text-pink-600 rounded px-1 py-0.5 text-xs font-mono;
+  @apply bg-gray-100 text-pink-600 rounded px-1 py-0.5 text-xs font-mono dark:bg-gray-800 dark:text-pink-400;
 }
 
 .tiptap pre {
@@ -66,11 +66,11 @@
 }
 
 .tiptap hr {
-  @apply border-t border-gray-200 my-4;
+  @apply border-t border-gray-200 my-4 dark:border-gray-700;
 }
 
 .tiptap mark {
-  @apply bg-yellow-200 rounded px-0.5;
+  @apply bg-yellow-200 rounded px-0.5 dark:bg-yellow-900 dark:text-yellow-200;
 }
 
 .tiptap strong {
@@ -129,10 +129,10 @@
   @apply bg-transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  @apply bg-gray-300 rounded-full dark:bg-gray-600;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  @apply bg-gray-400 dark:bg-gray-500;
 }
 
 /* Transitions */
@@ -142,12 +142,12 @@
 
 /* Selection in editor for task creation */
 .tiptap .selection-highlight {
-  @apply bg-blue-100;
+  @apply bg-blue-100 dark:bg-white/20;
 }
 
 /* Images */
 .tiptap img {
-  @apply max-w-full rounded-lg my-3 border border-gray-200;
+  @apply max-w-full rounded-lg my-3 border border-gray-200 dark:border-gray-700;
   display: block;
 }
 

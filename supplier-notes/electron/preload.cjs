@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('electronImages', {
   delete: (filename) => ipcRenderer.invoke('image:delete', filename),
 });
 
+contextBridge.exposeInMainWorld('electronAttachments', {
+  save: (sourcePath, originalName) => ipcRenderer.invoke('attachment:save', sourcePath, originalName),
+  open: (savedName) => ipcRenderer.invoke('attachment:open', savedName),
+  delete: (savedName) => ipcRenderer.invoke('attachment:delete', savedName),
+});
+
 contextBridge.exposeInMainWorld('electronCapture', {
   getSources: () => ipcRenderer.invoke('desktop:getSources'),
 });

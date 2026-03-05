@@ -32,23 +32,23 @@ export function CustomSelect({ value, onChange, options, className = '', label }
 
   return (
     <div ref={ref} className="relative">
-      {label && <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>}
+      {label && <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 text-left transition-colors ${className}`}
+        className={`flex items-center gap-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 text-left transition-colors ${className}`}
       >
         <span className="flex-1 truncate">{selected?.label ?? value}</span>
-        <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+        <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-gray-400 dark:text-gray-500" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[60] min-w-full">
+        <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-[60] min-w-full">
           {options.map((o) => (
             <button
               key={o.value}
               type="button"
-              className={`w-full flex items-center px-3 py-1.5 text-sm text-left hover:bg-gray-50 transition-colors whitespace-nowrap ${
-                o.value === value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              className={`w-full flex items-center px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap ${
+                o.value === value ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-medium' : 'text-gray-700 dark:text-gray-300'
               }`}
               onClick={() => { onChange(o.value); setOpen(false); }}
             >

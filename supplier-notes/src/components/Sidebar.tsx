@@ -15,6 +15,8 @@ import {
   Settings,
   Archive,
   ArchiveRestore,
+  Moon,
+  Sun,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -56,6 +58,8 @@ export function Sidebar() {
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
+  const darkMode = useStore((s) => s.settings.darkMode);
+  const updateSettings = useStore((s) => s.updateSettings);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
@@ -139,7 +143,7 @@ export function Sidebar() {
           title="Change color"
         />
         {open && (
-          <div className="absolute left-0 top-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1.5 w-[120px]">
+          <div className="absolute left-0 top-4 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1.5 w-[120px]">
             {SUPPLIER_COLORS.map((c) => (
               <button
                 key={c}
@@ -155,35 +159,38 @@ export function Sidebar() {
   };
 
   const SupplierRow = ({ supplier }: { supplier: (typeof suppliers)[0] }) => (
-    <button
-      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 transition-colors group ${
-        activeTabId === supplier.id ? 'bg-gray-100 font-medium' : ''
+    <div
+      role="button"
+      tabIndex={0}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group cursor-pointer ${
+        activeTabId === supplier.id ? 'bg-gray-100 dark:bg-gray-800 font-medium' : ''
       }`}
       onClick={() => openTab(supplier.id)}
+      onKeyDown={(e) => e.key === 'Enter' && openTab(supplier.id)}
       onContextMenu={(e) => handleContextMenu(e, supplier.id)}
     >
       <ColorDot supplier={supplier} />
       <span className="truncate flex-1">{supplier.name}</span>
       <button
-        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
+        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-opacity"
         onClick={(e) => {
           e.stopPropagation();
           handleContextMenu(e, supplier.id);
         }}
       >
-        <MoreHorizontal className="w-3.5 h-3.5 text-gray-400" />
+        <MoreHorizontal className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
       </button>
-    </button>
+    </div>
   );
 
   return (
-    <div className="w-60 border-r border-gray-200 flex flex-col bg-gray-50/50 h-full select-none flex-shrink-0">
+    <div className="w-60 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50/50 dark:bg-gray-900 h-full select-none flex-shrink-0">
       {/* Project selector */}
-      <div className="p-3 pb-1 border-b border-gray-200">
+      <div className="p-3 pb-1 border-b border-gray-200 dark:border-gray-700">
         <div className="relative">
           <button
             onClick={() => setProjectMenuOpen(!projectMenuOpen)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 hover:border-gray-300 transition-colors text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors text-sm"
           >
             {activeProject ? (
               <>
@@ -192,22 +199,22 @@ export function Sidebar() {
               </>
             ) : (
               <>
-                <FolderOpen className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                <span className="text-gray-400 flex-1 text-left">Select project…</span>
+                <FolderOpen className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                <span className="text-gray-400 dark:text-gray-500 flex-1 text-left">Select project…</span>
               </>
             )}
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           </button>
 
           {projectMenuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => { setProjectMenuOpen(false); setAddingProject(false); }} />
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 max-h-[300px] overflow-y-auto">
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 max-h-[300px] overflow-y-auto">
                 {projects.filter((p) => !p.archived).map((p) => (
                   <button
                     key={p.id}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-                      p.id === activeProjectId ? 'bg-blue-50 text-blue-700' : ''
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                      p.id === activeProjectId ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : ''
                     }`}
                     onClick={() => {
                       setActiveProject(p.id);
@@ -219,9 +226,9 @@ export function Sidebar() {
                   </button>
                 ))}
                 {projects.length === 0 && !addingProject && (
-                  <p className="text-xs text-gray-400 px-3 py-2">No projects yet</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No projects yet</p>
                 )}
-                <div className="border-t border-gray-100 mt-1 pt-1">
+                <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
                   {addingProject ? (
                     <div className="px-2 py-1">
                       <input
@@ -236,13 +243,13 @@ export function Sidebar() {
                           if (e.key === 'Escape') { setAddingProject(false); setNewProjectName(''); }
                         }}
                         onBlur={() => { if (!newProjectName.trim()) { setAddingProject(false); setNewProjectName(''); } }}
-                        className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-500 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-100"
                       />
                     </div>
                   ) : (
                     <button
                       onClick={() => setAddingProject(true)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" /> New project
                     </button>
@@ -273,13 +280,13 @@ export function Sidebar() {
                   if (editProjectName.trim()) updateProject(activeProject.id, { name: editProjectName.trim() });
                   setEditingProject(false);
                 }}
-                className="flex-1 px-2 py-0.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-100"
               />
             ) : (
               <>
                 <button
                   onClick={() => { setEditProjectName(activeProject.name); setEditingProject(true); }}
-                  className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
                   title="Rename project"
                 >
                   <Settings className="w-3 h-3" />
@@ -293,7 +300,7 @@ export function Sidebar() {
                       onConfirm: () => deleteProject(activeProject.id),
                     });
                   }}
-                  className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
+                  className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400 dark:text-gray-500 hover:text-red-500"
                   title="Delete project"
                 >
                   <Trash2 className="w-3 h-3" />
@@ -308,13 +315,13 @@ export function Sidebar() {
       {activeProjectId && (
         <div className="p-3 pb-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder="Search suppliers…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
             />
           </div>
         </div>
@@ -326,7 +333,7 @@ export function Sidebar() {
           <>
             <div className="mb-1">
               <button
-                className="flex items-center gap-1 px-1 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider hover:text-gray-700 w-full"
+                className="flex items-center gap-1 px-1 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-gray-200 w-full"
                 onClick={() => setSuppliersCollapsed(!suppliersCollapsed)}
               >
                 {suppliersCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -339,7 +346,7 @@ export function Sidebar() {
                     <SupplierRow key={s.id} supplier={s} />
                   ))}
                   {filtered.length === 0 && (
-                    <p className="text-xs text-gray-400 px-3 py-2">
+                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">
                       {search ? 'No matches' : 'No suppliers in this project'}
                     </p>
                   )}
@@ -349,18 +356,13 @@ export function Sidebar() {
 
             {/* Internal workspace */}
             <button
-              className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 transition-colors mt-1 ${
-                isInternalTab ? 'bg-gray-100 font-medium' : ''
+              className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mt-1 ${
+                isInternalTab ? 'bg-gray-100 dark:bg-gray-800 font-medium' : ''
               }`}
               onClick={() => openTab(INTERNAL_TAB_ID)}
             >
-              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-gray-400" />
-              <span className="truncate flex-1 text-gray-600">Internal</span>
-              {internalNoteCount > 0 && (
-                <span className="text-[10px] bg-indigo-100 text-indigo-600 rounded-full px-1.5 py-0.5 flex-shrink-0">
-                  {internalNoteCount}
-                </span>
-              )}
+              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-gray-400 dark:bg-gray-600" />
+              <span className="truncate flex-1 text-gray-600 dark:text-gray-400">Internal</span>
             </button>
 
             {/* Add supplier */}
@@ -386,14 +388,14 @@ export function Sidebar() {
                       setNewSupplierName('');
                     }
                   }}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-blue-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:text-gray-100"
                 />
               </div>
             ) : (
               <div className="space-y-0.5">
                 <button
                   onClick={() => setAddingSupplier(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md w-full transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md w-full transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add supplier
                 </button>
@@ -401,18 +403,18 @@ export function Sidebar() {
                   <div className="relative">
                     <button
                       onClick={() => setLinkMenuOpen(!linkMenuOpen)}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md w-full transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md w-full transition-colors"
                     >
                       <Link2 className="w-3.5 h-3.5" /> Link existing supplier
                     </button>
                     {linkMenuOpen && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setLinkMenuOpen(false)} />
-                        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[180px] max-h-[200px] overflow-y-auto">
+                        <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[180px] max-h-[200px] overflow-y-auto">
                           {unlinkableSuppliers.map((s) => (
                             <button
                               key={s.id}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
                               onClick={() => {
                                 linkSupplierToProject(s.id, activeProjectId);
                                 setLinkMenuOpen(false);
@@ -432,15 +434,15 @@ export function Sidebar() {
 
             {/* Notes for active supplier / internal */}
             {activeTabId && (
-              <div className="mt-4 border-t border-gray-200 pt-3">
+              <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">
                 <div className="flex items-center justify-between px-1 mb-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     {isInternalTab ? 'Internal Notes' : `Notes${activeSupplier ? ` — ${activeSupplier.name}` : ''}`}
                   </span>
                   <div className="flex items-center gap-1">
                       <button
                       onClick={() => isInternalTab ? addInternalNote() : addNote(activeTabId)}
-                      className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-600"
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-blue-600"
                       title="New blank note"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -452,29 +454,29 @@ export function Sidebar() {
                   {activeNotes.map((n) => (
                     <div
                       key={n.id}
-                      className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 transition-colors ${
-                        activeNoteId === n.id ? 'bg-blue-50 border border-blue-100' : ''
+                      className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                        activeNoteId === n.id ? 'bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15' : ''
                       }`}
                       onClick={() => navigateToNote(n.id)}
                     >
-                      <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <FileText className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{n.title || 'Untitled'}</div>
-                        <div className="text-xs text-gray-400">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
+                        <div className="text-sm font-medium truncate dark:text-gray-300">{n.title || 'Untitled'}</div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
                         {n.content && (
-                          <div className="text-xs text-gray-400 truncate mt-0.5">{htmlPreview(n.content)}</div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{htmlPreview(n.content)}</div>
                         )}
                       </div>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                         <button
-                          className="p-0.5 hover:bg-gray-200 rounded"
+                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                           onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
                           title="Archive note"
                         >
                           <Archive className="w-3 h-3 text-gray-400 hover:text-amber-500" />
                         </button>
                         <button
-                          className="p-0.5 hover:bg-gray-200 rounded"
+                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                           onClick={(e) => {
                             e.stopPropagation();
                             openConfirmDialog({
@@ -492,10 +494,10 @@ export function Sidebar() {
                     </div>
                   ))}
                   {activeNotes.length === 0 && archivedNotes.length === 0 && (
-                    <p className="text-xs text-gray-400 px-3 py-2">No notes yet. Create one above.</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No notes yet. Create one above.</p>
                   )}
                   {activeNotes.length === 0 && archivedNotes.length > 0 && (
-                    <p className="text-xs text-gray-400 px-3 py-2">All notes are archived.</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">All notes are archived.</p>
                   )}
                 </div>
 
@@ -503,7 +505,7 @@ export function Sidebar() {
                 {archivedNotes.length > 0 && (
                   <div className="mt-2">
                     <button
-                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-gray-400 hover:text-gray-600 w-full transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 w-full transition-colors"
                       onClick={() => setArchivedNotesExpanded((v) => !v)}
                     >
                       {archivedNotesExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -515,26 +517,26 @@ export function Sidebar() {
                         {archivedNotes.map((n) => (
                           <div
                             key={n.id}
-                            className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 transition-colors opacity-60 ${
-                              activeNoteId === n.id ? 'bg-blue-50 border border-blue-100 opacity-100' : ''
+                            className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors opacity-60 ${
+                              activeNoteId === n.id ? 'bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 opacity-100' : ''
                             }`}
                             onClick={() => navigateToNote(n.id)}
                           >
-                            <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <FileText className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate text-gray-500">{n.title || 'Untitled'}</div>
-                              <div className="text-xs text-gray-400">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
+                              <div className="text-sm font-medium truncate text-gray-500 dark:text-gray-400">{n.title || 'Untitled'}</div>
+                              <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
                             </div>
                             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                               <button
-                                className="p-0.5 hover:bg-gray-200 rounded"
+                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                                 onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
                                 title="Unarchive note"
                               >
                                 <ArchiveRestore className="w-3 h-3 text-gray-400 hover:text-blue-500" />
                               </button>
                               <button
-                                className="p-0.5 hover:bg-gray-200 rounded"
+                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openConfirmDialog({
@@ -560,21 +562,28 @@ export function Sidebar() {
           </>
         ) : (
           <div className="px-3 py-8 text-center">
-            <FolderOpen className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-            <p className="text-xs text-gray-400">Select or create a project to get started</p>
+            <FolderOpen className="w-8 h-8 text-gray-200 dark:text-gray-700 mx-auto mb-2" />
+            <p className="text-xs text-gray-400 dark:text-gray-500">Select or create a project to get started</p>
           </div>
         )}
       </div>
 
       {/* Settings footer */}
-      <div className="flex-shrink-0 border-t border-gray-200 p-2">
+      <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 p-2 flex items-center gap-1">
         <button
           onClick={toggleSettings}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md w-full transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md flex-1 transition-colors"
           title="Settings (Ctrl+,)"
         >
           <Settings className="w-3.5 h-3.5" />
           Settings
+        </button>
+        <button
+          onClick={() => updateSettings({ darkMode: !darkMode })}
+          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0"
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
       </div>
 
@@ -583,7 +592,7 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
           <div
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+            className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[180px]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {(() => {
@@ -593,7 +602,7 @@ export function Sidebar() {
                 <>
                   {activeProjectId && (
                     <button
-                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-orange-50 text-orange-600 flex items-center gap-2"
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center gap-2"
                       onClick={() => {
                         openConfirmDialog({
                           title: 'Remove from project',
@@ -608,7 +617,7 @@ export function Sidebar() {
                     </button>
                   )}
                   <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 text-red-600 flex items-center gap-2"
+                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center gap-2"
                       onClick={() => {
                         openConfirmDialog({
                           title: 'Delete supplier',

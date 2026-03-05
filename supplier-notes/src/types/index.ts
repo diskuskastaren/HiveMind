@@ -24,6 +24,14 @@ export interface Transcript {
   recordedAt: number;
 }
 
+export interface NoteAttachment {
+  id: string;
+  fileName: string;
+  savedName: string;
+  droppedAt: number;
+  type: 'email' | 'file';
+}
+
 export interface Note {
   id: string;
   projectIds: string[];
@@ -36,13 +44,14 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   transcripts?: Transcript[];
+  attachments?: NoteAttachment[];
 }
 
 export interface Task {
   id: string;
   projectId: string;
   supplierId: string | null;
-  noteId: string;
+  noteId: string | null;
   title: string;
   status: TaskStatus;
   priority: Priority;
@@ -68,7 +77,7 @@ export interface Decision {
   id: string;
   projectId: string;
   supplierId: string | null;
-  noteId: string;
+  noteId: string | null;
   text: string;
   createdAt: number;
 }
@@ -76,5 +85,5 @@ export interface Decision {
 export type RightPanelTab = 'tasks' | 'decisions' | 'transcript';
 export type TaskStatus = 'open' | 'doing' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
-export type ActiveView = 'notes' | 'dashboard';
+export type ActiveView = 'notes' | 'tasks' | 'dashboard';
 export type DashboardSection = 'tasks' | 'decisions' | 'followups';

@@ -16,12 +16,14 @@ import {
   Pencil,
   Link2,
   Link2Off,
+  Plus,
+  X,
 } from 'lucide-react';
 
 const TASK_COLUMNS: { status: TaskStatus; label: string; colorClass: string; headerBadge: string }[] = [
-  { status: 'open',  label: 'Open',        colorClass: 'border-gray-300',  headerBadge: 'bg-gray-100 text-gray-500'  },
-  { status: 'doing', label: 'In Progress', colorClass: 'border-amber-400', headerBadge: 'bg-amber-50 text-amber-700' },
-  { status: 'done',  label: 'Done',        colorClass: 'border-green-400', headerBadge: 'bg-green-50 text-green-700' },
+  { status: 'open',  label: 'Open',        colorClass: 'border-gray-300',  headerBadge: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'  },
+  { status: 'doing', label: 'In Progress', colorClass: 'border-amber-400', headerBadge: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
+  { status: 'done',  label: 'Done',        colorClass: 'border-green-400', headerBadge: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400' },
 ];
 
 const PRIORITY_BORDER: Record<Priority, string> = {
@@ -31,15 +33,15 @@ const PRIORITY_BORDER: Record<Priority, string> = {
 };
 
 const PRIORITY_LABEL: Record<Priority, { text: string; classes: string }> = {
-  low:    { text: 'Low',    classes: 'bg-gray-100 text-gray-500'  },
-  medium: { text: 'Medium', classes: 'bg-amber-50 text-amber-700' },
-  high:   { text: 'High',   classes: 'bg-red-50 text-red-600'    },
+  low:    { text: 'Low',    classes: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'  },
+  medium: { text: 'Medium', classes: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
+  high:   { text: 'High',   classes: 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400'    },
 };
 
 const PRIORITY_BADGE: Record<Priority, string> = {
-  low: 'bg-gray-100 text-gray-600',
-  medium: 'bg-yellow-100 text-yellow-700',
-  high: 'bg-red-100 text-red-700',
+  low: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
+  medium: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+  high: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
 };
 
 function ownerInitials(owner: string): string {
@@ -70,9 +72,9 @@ function formatDueDate(dueDate: string): string {
 }
 
 const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
-  overdue: 'text-red-500 font-medium',
-  soon:    'text-amber-600',
-  normal:  'text-gray-400',
+  overdue: 'text-red-500 dark:text-red-400 font-medium',
+  soon:    'text-amber-600 dark:text-amber-400',
+  normal:  'text-gray-400 dark:text-gray-500',
 };
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
@@ -104,7 +106,7 @@ function FilterBar({
       <CustomSelect
         value={filterProject}
         onChange={(v) => { onProjectChange(v); onSupplierChange('all'); }}
-        className="text-xs px-2.5 py-1.5 text-gray-700"
+        className="text-xs px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
         options={[
           { value: 'all', label: 'All projects' },
           ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
@@ -113,13 +115,165 @@ function FilterBar({
       <CustomSelect
         value={filterSupplier}
         onChange={onSupplierChange}
-        className="text-xs px-2.5 py-1.5 text-gray-700"
+        className="text-xs px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
         options={[
           { value: 'all', label: 'All suppliers' },
           { value: INTERNAL_TAB_ID, label: 'Internal' },
           ...visibleSuppliers.map((s) => ({ value: s.id, label: s.name })),
         ]}
       />
+    </div>
+  );
+}
+
+function CreateTaskModal({ onClose }: { onClose: () => void }) {
+  const projects = useStore((s) => s.projects);
+  const suppliers = useStore((s) => s.suppliers);
+  const addTask = useStore((s) => s.addTask);
+
+  const visibleProjects = projects.filter((p) => !p.archived);
+  const [title, setTitle] = useState('');
+  const [priority, setPriority] = useState<Priority>('medium');
+  const [status, setStatus] = useState<TaskStatus>('open');
+  const [owner, setOwner] = useState('');
+  const [projectId, setProjectId] = useState(visibleProjects[0]?.id ?? '');
+  const [supplierId, setSupplierIdState] = useState<string | null>(null);
+  const [dueDate, setDueDate] = useState('');
+
+  const visibleSuppliers = projectId
+    ? suppliers.filter((s) => s.projectIds.includes(projectId))
+    : suppliers;
+
+  const handleSave = () => {
+    if (!title.trim() || !projectId) return;
+    addTask({
+      title: title.trim(),
+      priority,
+      status,
+      owner,
+      projectId,
+      supplierId,
+      noteId: null,
+      dueDate,
+      description: '',
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold dark:text-gray-100">New Task</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+            <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Task title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+            className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-800 dark:text-gray-100"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Project</label>
+            <CustomSelect
+              value={projectId}
+              onChange={(v) => { setProjectId(v); setSupplierIdState(null); }}
+              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={visibleProjects.map((p) => ({ value: p.id, label: p.name }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Supplier</label>
+            <CustomSelect
+              value={supplierId ?? '__internal__'}
+              onChange={(v) => setSupplierIdState(v === '__internal__' ? null : v)}
+              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={[
+                { value: '__internal__', label: 'Internal' },
+                ...visibleSuppliers.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Priority</label>
+            <CustomSelect
+              value={priority}
+              onChange={(v) => setPriority(v as Priority)}
+              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={[
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+              ]}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Status</label>
+            <CustomSelect
+              value={status}
+              onChange={(v) => setStatus(v as TaskStatus)}
+              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'doing', label: 'In Progress' },
+                { value: 'done', label: 'Done' },
+              ]}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Owner</label>
+            <input
+              type="text"
+              placeholder="Unassigned"
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+              className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-800 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Due date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-800 dark:text-gray-200"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!title.trim() || !projectId}
+            className="px-4 py-2 text-sm rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Add task
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -140,6 +294,7 @@ function TasksSection() {
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [filterOwner, setFilterOwner] = useState('all');
   const [dragging, setDragging] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const ownerOptions = (() => {
     const projectSuppliers = filterProject === 'all'
@@ -171,6 +326,7 @@ function TasksSection() {
 
   return (
     <div className="flex flex-col h-full">
+      {showCreateModal && <CreateTaskModal onClose={() => setShowCreateModal(false)} />}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <FilterBar
@@ -182,15 +338,22 @@ function TasksSection() {
           <CustomSelect
             value={filterOwner}
             onChange={setFilterOwner}
-            className="text-xs px-2.5 py-1.5 text-gray-700"
+            className="text-xs px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
             options={ownerOptions}
           />
           {(openCount > 0 || doingCount > 0) && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400 dark:text-gray-500">
               {openCount + doingCount} active
             </span>
           )}
         </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add task
+        </button>
       </div>
 
       <div className="flex gap-4 flex-1 overflow-x-auto min-h-0">
@@ -206,14 +369,14 @@ function TasksSection() {
           return (
             <div
               key={col.status}
-              className={`flex-1 min-w-[240px] max-w-xs bg-gray-50 rounded-xl border-t-2 ${col.colorClass} flex flex-col`}
+              className={`flex-1 min-w-[240px] max-w-xs bg-gray-50 dark:bg-gray-800 rounded-xl border-t-2 ${col.colorClass} flex flex-col`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
                 if (dragging) { updateTask(dragging, { status: col.status }); setDragging(null); }
               }}
             >
               <div className="px-3 pt-3 pb-2 flex items-center justify-between flex-shrink-0">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{col.label}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{col.label}</span>
                 <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${col.headerBadge}`}>
                   {colTasks.length}
                 </span>
@@ -250,7 +413,7 @@ function TasksSection() {
                       onDragEnd={() => setDragging(null)}
                       onClick={() => setEditingTask(task.id)}
                       className={`
-                        group bg-white rounded-lg border border-gray-200
+                        group bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700
                         border-l-[3px] ${PRIORITY_BORDER[task.priority]}
                         p-3 cursor-grab active:cursor-grabbing
                         hover:shadow-md hover:-translate-y-px
@@ -259,7 +422,7 @@ function TasksSection() {
                       `}
                     >
                       {/* Title */}
-                      <p className={`text-sm font-medium leading-snug line-clamp-2 mb-2 ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                      <p className={`text-sm font-medium leading-snug line-clamp-2 mb-2 ${task.status === 'done' ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
                         {task.title}
                       </p>
 
@@ -284,7 +447,7 @@ function TasksSection() {
                             {supplier.name}
                           </span>
                         ) : task.supplierId === null && (
-                          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">
+                          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400">
                             Internal
                           </span>
                         )}
@@ -316,7 +479,7 @@ function TasksSection() {
                         <div className="flex-1 min-w-0">
                           {note && (
                             <button
-                              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-blue-600 transition-colors max-w-full"
+                              className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500 hover:text-blue-600 transition-colors max-w-full"
                               onClick={(e) => { e.stopPropagation(); navigateToNote(task.noteId); }}
                               title="Go to source note"
                             >
@@ -336,14 +499,14 @@ function TasksSection() {
                             </span>
                           )}
                           <button
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                             title={`Move to ${col.status === 'open' ? 'In Progress' : col.status === 'doing' ? 'Done' : 'Open'}`}
                             onClick={(e) => { e.stopPropagation(); updateTask(task.id, { status: NEXT_STATUS[col.status] }); }}
                           >
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                           </button>
                           <button
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-red-50 rounded"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                             title="Delete task"
                             onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
                           >
@@ -355,7 +518,7 @@ function TasksSection() {
                   );
                 })}
                 {colTasks.length === 0 && (
-                  <div className="py-6 text-center text-xs text-gray-300">No tasks</div>
+                  <div className="py-6 text-center text-xs text-gray-300 dark:text-gray-600">No tasks</div>
                 )}
               </div>
             </div>
@@ -373,6 +536,7 @@ function DecisionsSection() {
   const notes = useStore((s) => s.notes);
   const deleteDecision = useStore((s) => s.deleteDecision);
   const updateDecision = useStore((s) => s.updateDecision);
+  const addDecision = useStore((s) => s.addDecision);
   const editingDecisionId = useStore((s) => s.editingDecisionId);
   const setEditingDecision = useStore((s) => s.setEditingDecision);
   const navigateToNote = useStore((s) => s.navigateToNote);
@@ -381,6 +545,31 @@ function DecisionsSection() {
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [editText, setEditText] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  const visibleProjects = projects.filter((p) => !p.archived);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addText, setAddText] = useState('');
+  const [addProjectId, setAddProjectId] = useState(() => visibleProjects[0]?.id ?? '');
+  const [addSupplierId, setAddSupplierId] = useState<string | null>(null);
+
+  const addFormSuppliers = addProjectId
+    ? suppliers.filter((s) => s.projectIds.includes(addProjectId))
+    : suppliers;
+
+  const handleAddDecision = () => {
+    if (!addText.trim() || !addProjectId) return;
+    addDecision({ projectId: addProjectId, supplierId: addSupplierId, noteId: null, text: addText.trim() });
+    setAddText('');
+    setShowAddForm(false);
+  };
+
+  const openAddForm = () => {
+    setAddProjectId(visibleProjects[0]?.id ?? '');
+    setAddSupplierId(null);
+    setAddText('');
+    setShowAddForm(true);
+  };
 
   const filtered = decisions
     .filter((d) => filterProject === 'all' || d.projectId === filterProject)
@@ -403,24 +592,80 @@ function DecisionsSection() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 mb-4 flex-shrink-0">
-        <FilterBar
-          filterProject={filterProject}
-          filterSupplier={filterSupplier}
-          onProjectChange={setFilterProject}
-          onSupplierChange={setFilterSupplier}
-        />
-        {filtered.length > 0 && (
-          <span className="text-xs text-gray-400">{filtered.length} decision{filtered.length !== 1 ? 's' : ''}</span>
-        )}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <FilterBar
+            filterProject={filterProject}
+            filterSupplier={filterSupplier}
+            onProjectChange={setFilterProject}
+            onSupplierChange={setFilterSupplier}
+          />
+          {filtered.length > 0 && (
+            <span className="text-xs text-gray-400 dark:text-gray-500">{filtered.length} decision{filtered.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+        <button
+          onClick={openAddForm}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add decision
+        </button>
       </div>
 
+      {showAddForm && (
+        <div className="mb-4 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+          <input
+            ref={addInputRef}
+            autoFocus
+            type="text"
+            placeholder="Decision text"
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddDecision(); if (e.key === 'Escape') setShowAddForm(false); }}
+            className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-green-400 dark:bg-gray-700 dark:text-gray-100"
+          />
+          <div className="flex items-center gap-2 mb-3">
+            <CustomSelect
+              value={addProjectId}
+              onChange={(v) => { setAddProjectId(v); setAddSupplierId(null); }}
+              className="flex-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={visibleProjects.map((p) => ({ value: p.id, label: p.name }))}
+            />
+            <CustomSelect
+              value={addSupplierId ?? '__internal__'}
+              onChange={(v) => setAddSupplierId(v === '__internal__' ? null : v)}
+              className="flex-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={[
+                { value: '__internal__', label: 'Internal' },
+                ...addFormSuppliers.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddDecision}
+              disabled={!addText.trim() || !addProjectId}
+              className="px-3 py-1.5 text-xs rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Add decision
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto space-y-6">
-        {groupKeys.length === 0 && (
+        {groupKeys.length === 0 && !showAddForm && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Lightbulb className="w-10 h-10 text-gray-200 mb-3" />
-            <p className="text-sm text-gray-400">No decisions captured yet.</p>
-            <p className="text-xs text-gray-300 mt-1">Select text in a note and press Alt+D to add one.</p>
+            <Lightbulb className="w-10 h-10 text-gray-200 dark:text-gray-700 mb-3" />
+            <p className="text-sm text-gray-400 dark:text-gray-500">No decisions captured yet.</p>
+            <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">Select text in a note and press Alt+D to add one.</p>
           </div>
         )}
 
@@ -434,15 +679,15 @@ function DecisionsSection() {
                 {supplier ? (
                   <>
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: supplier.color }} />
-                    <span className="text-xs font-semibold text-gray-600">{supplier.name}</span>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">{supplier.name}</span>
                   </>
                 ) : (
                   <>
                     <span className="w-2 h-2 rounded-full bg-indigo-400" />
-                    <span className="text-xs font-semibold text-indigo-600">Internal</span>
+                    <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Internal</span>
                   </>
                 )}
-                <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-1.5 py-0.5">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5">
                   {groupDecisions.length}
                 </span>
               </div>
@@ -455,7 +700,7 @@ function DecisionsSection() {
                   return (
                     <div
                       key={d.id}
-                      className="group flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
+                      className="group flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm transition-all"
                     >
                       <Lightbulb className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -477,11 +722,11 @@ function DecisionsSection() {
                               if (editText.trim()) updateDecision(d.id, { text: editText.trim() });
                               setEditingDecision(null);
                             }}
-                            className="w-full text-sm px-2 py-1 border border-green-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-400"
+                            className="w-full text-sm px-2 py-1 border border-green-300 dark:border-green-700 rounded-md focus:outline-none focus:ring-1 focus:ring-green-400 dark:bg-gray-700 dark:text-gray-100"
                           />
                         ) : (
                           <p
-                            className="text-sm text-gray-800 cursor-pointer hover:text-gray-600"
+                            className="text-sm text-gray-800 dark:text-gray-200 cursor-pointer hover:text-gray-600 dark:hover:text-gray-400"
                             onClick={() => { setEditingDecision(d.id); setEditText(d.text); }}
                             title="Click to edit"
                           >
@@ -497,12 +742,12 @@ function DecisionsSection() {
                               {project.name}
                             </span>
                           )}
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500">
                             {format(new Date(d.createdAt), 'MMM d, HH:mm')}
                           </span>
                           {note && (
                             <button
-                              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-blue-600 transition-colors"
+                              className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 hover:text-blue-600 transition-colors"
                               onClick={() => navigateToNote(d.noteId)}
                               title="Go to source note"
                             >
@@ -515,14 +760,14 @@ function DecisionsSection() {
                       {!isEditing && (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                           <button
-                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                             onClick={() => { setEditingDecision(d.id); setEditText(d.text); }}
                             title="Edit decision"
                           >
-                            <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                            <Pencil className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                           </button>
                           <button
-                            className="p-1 hover:bg-red-50 rounded transition-colors"
+                            className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                             onClick={() => deleteDecision(d.id)}
                             title="Delete decision"
                           >
@@ -549,6 +794,7 @@ function FollowUpsSection() {
   const suppliers = useStore((s) => s.suppliers);
   const updateTask = useStore((s) => s.updateTask);
   const updateFollowUp = useStore((s) => s.updateFollowUp);
+  const addFollowUp = useStore((s) => s.addFollowUp);
   const deleteFollowUp = useStore((s) => s.deleteFollowUp);
   const setEditingTask = useStore((s) => s.setEditingTask);
 
@@ -556,6 +802,30 @@ function FollowUpsSection() {
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [showResolved, setShowResolved] = useState(false);
   const [linkingId, setLinkingId] = useState<string | null>(null);
+
+  const visibleProjects = projects.filter((p) => !p.archived);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addText, setAddText] = useState('');
+  const [addProjectId, setAddProjectId] = useState(() => visibleProjects[0]?.id ?? '');
+  const [addSupplierId, setAddSupplierId] = useState<string | null>(null);
+
+  const addFormSuppliers = addProjectId
+    ? suppliers.filter((s) => s.projectIds.includes(addProjectId))
+    : suppliers;
+
+  const handleAddFollowUp = () => {
+    if (!addText.trim() || !addProjectId) return;
+    addFollowUp({ projectId: addProjectId, supplierId: addSupplierId, text: addText.trim(), status: 'open' });
+    setAddText('');
+    setShowAddForm(false);
+  };
+
+  const openAddForm = () => {
+    setAddProjectId(visibleProjects[0]?.id ?? '');
+    setAddSupplierId(null);
+    setAddText('');
+    setShowAddForm(true);
+  };
 
   const filteredTasks = tasks
     .filter((t) => t.isFollowUp)
@@ -618,7 +888,7 @@ function FollowUpsSection() {
     return (
       <div
         key={`${type}-${item.id}`}
-        className="group flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
+        className="group flex items-start gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm transition-all"
       >
         <button
           className="mt-0.5 flex-shrink-0"
@@ -633,12 +903,12 @@ function FollowUpsSection() {
         >
           {isResolved
             ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-            : <Circle className="w-4 h-4 text-gray-300 hover:text-violet-400 transition-colors" />
+            : <Circle className="w-4 h-4 text-gray-300 dark:text-gray-600 hover:text-violet-400 transition-colors" />
           }
         </button>
 
         <div className="flex-1 min-w-0">
-          <span className={`text-sm ${isResolved ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+          <span className={`text-sm ${isResolved ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
             {text}
           </span>
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -658,7 +928,7 @@ function FollowUpsSection() {
                 {supplier.name}
               </span>
             ) : supplierId === null && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-medium">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 font-medium">
                 Internal
               </span>
             )}
@@ -717,7 +987,7 @@ function FollowUpsSection() {
               {type === 'followup' ? (
                 <select
                   autoFocus
-                  className="w-full text-xs px-2 py-1.5 border border-violet-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white"
+                  className="w-full text-xs px-2 py-1.5 border border-violet-300 dark:border-violet-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white dark:bg-gray-700 dark:text-gray-100"
                   defaultValue=""
                   onChange={(e) => {
                     const taskId = e.target.value;
@@ -736,7 +1006,7 @@ function FollowUpsSection() {
               ) : (
                 <select
                   autoFocus
-                  className="w-full text-xs px-2 py-1.5 border border-violet-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white"
+                  className="w-full text-xs px-2 py-1.5 border border-violet-300 dark:border-violet-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white dark:bg-gray-700 dark:text-gray-100"
                   defaultValue=""
                   onChange={(e) => {
                     const followUpId = e.target.value;
@@ -763,25 +1033,25 @@ function FollowUpsSection() {
           {/* Link button — only show when not already linked */}
           {type === 'followup' && !linkedTask && !isLinking && (
             <button
-              className="p-1 hover:bg-violet-50 rounded transition-colors"
+              className="p-1 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded transition-colors"
               onClick={(e) => { e.stopPropagation(); setLinkingId(item.id); }}
               title="Link to task"
             >
-              <Link2 className="w-3.5 h-3.5 text-gray-400 hover:text-violet-500" />
+              <Link2 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-violet-500" />
             </button>
           )}
           {type === 'task' && !linkedFollowUp && !isLinking && (
             <button
-              className="p-1 hover:bg-violet-50 rounded transition-colors"
+              className="p-1 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded transition-colors"
               onClick={(e) => { e.stopPropagation(); setLinkingId(item.id); }}
               title="Link to follow-up"
             >
-              <Link2 className="w-3.5 h-3.5 text-gray-400 hover:text-violet-500" />
+              <Link2 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-violet-500" />
             </button>
           )}
           {type === 'task' && (
             <button
-              className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded hover:bg-violet-100 transition-colors"
+              className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors"
               onClick={() => setEditingTask(item.id)}
               title="Open task"
             >
@@ -790,7 +1060,7 @@ function FollowUpsSection() {
           )}
           {type === 'followup' && (
             <button
-              className="p-1 hover:bg-red-50 rounded transition-colors"
+              className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
               onClick={() => deleteFollowUp(item.id)}
               title="Delete"
             >
@@ -804,26 +1074,81 @@ function FollowUpsSection() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 mb-4 flex-shrink-0">
-        <FilterBar
-          filterProject={filterProject}
-          filterSupplier={filterSupplier}
-          onProjectChange={setFilterProject}
-          onSupplierChange={setFilterSupplier}
-        />
-        {openCount > 0 && (
-          <span className="text-xs bg-violet-100 text-violet-700 rounded px-2 py-0.5 font-medium">
-            {openCount} open
-          </span>
-        )}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <FilterBar
+            filterProject={filterProject}
+            filterSupplier={filterSupplier}
+            onProjectChange={setFilterProject}
+            onSupplierChange={setFilterSupplier}
+          />
+          {openCount > 0 && (
+            <span className="text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 rounded px-2 py-0.5 font-medium">
+              {openCount} open
+            </span>
+          )}
+        </div>
+        <button
+          onClick={openAddForm}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add follow-up
+        </button>
       </div>
 
+      {showAddForm && (
+        <div className="mb-4 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Follow-up text"
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddFollowUp(); if (e.key === 'Escape') setShowAddForm(false); }}
+            className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-violet-400 dark:bg-gray-700 dark:text-gray-100"
+          />
+          <div className="flex items-center gap-2 mb-3">
+            <CustomSelect
+              value={addProjectId}
+              onChange={(v) => { setAddProjectId(v); setAddSupplierId(null); }}
+              className="flex-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={visibleProjects.map((p) => ({ value: p.id, label: p.name }))}
+            />
+            <CustomSelect
+              value={addSupplierId ?? '__internal__'}
+              onChange={(v) => setAddSupplierId(v === '__internal__' ? null : v)}
+              className="flex-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              options={[
+                { value: '__internal__', label: 'Internal' },
+                ...addFormSuppliers.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddFollowUp}
+              disabled={!addText.trim() || !addProjectId}
+              className="px-3 py-1.5 text-xs rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Add follow-up
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
-        {openCount === 0 && resolvedCount === 0 ? (
+        {openCount === 0 && resolvedCount === 0 && !showAddForm ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Bookmark className="w-10 h-10 text-gray-200 mb-3" />
-            <p className="text-sm text-gray-400">No follow-ups yet.</p>
-            <p className="text-xs text-gray-300 mt-1">Flag a task with the bookmark icon or press Alt+F.</p>
+            <Bookmark className="w-10 h-10 text-gray-200 dark:text-gray-700 mb-3" />
+            <p className="text-sm text-gray-400 dark:text-gray-500">No follow-ups yet.</p>
+            <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">Flag a task with the bookmark icon or press Alt+F.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -832,7 +1157,7 @@ function FollowUpsSection() {
             {resolvedCount > 0 && (
               <div className="pt-2">
                 <button
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors mb-2 px-1"
+                  className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 transition-colors mb-2 px-1"
                   onClick={() => setShowResolved((v) => !v)}
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
@@ -864,6 +1189,8 @@ export function Dashboard() {
   const tasks = useStore((s) => s.tasks);
   const decisions = useStore((s) => s.decisions);
   const followUps = useStore((s) => s.followUps);
+  const suppliers = useStore((s) => s.suppliers);
+  const notes = useStore((s) => s.notes);
 
   const counts: Record<DashboardSection, number> = {
     tasks: tasks.filter((t) => t.status !== 'done').length,
@@ -873,18 +1200,35 @@ export function Dashboard() {
       followUps.filter((f) => f.status === 'open').length,
   };
 
+  const stats = [
+    { label: 'Suppliers', value: suppliers.length },
+    { label: 'Notes', value: notes.filter((n) => !n.archived).length },
+    { label: 'Open tasks', value: tasks.filter((t) => t.status !== 'done').length },
+    { label: 'Follow-ups', value: followUps.filter((f) => f.status === 'open').length },
+  ];
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30 min-h-0">
+    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30 dark:bg-gray-900 min-h-0">
+      {/* Stats bar */}
+      <div className="grid grid-cols-4 gap-3 px-6 pt-4 pb-4 flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
+        {stats.map(({ label, value }) => (
+          <div key={label} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 text-center">
+            <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">{value}</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{label}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Section tabs */}
-      <div className="flex items-center gap-1 px-6 pt-4 pb-0 flex-shrink-0 border-b border-gray-200 bg-white">
+      <div className="flex items-center gap-1 px-6 pt-0 pb-0 flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         {SECTION_CONFIG.map(({ id, label, icon }) => (
           <button
             key={id}
             onClick={() => setDashboardSection(id)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               dashboardSection === id
-                ? 'border-blue-600 text-blue-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
             }`}
           >
             {icon}
@@ -892,8 +1236,8 @@ export function Dashboard() {
             {counts[id] > 0 && (
               <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${
                 dashboardSection === id
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-500'
+                  ? 'bg-gray-200 dark:bg-white/15 text-gray-900 dark:text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}>
                 {counts[id]}
               </span>
