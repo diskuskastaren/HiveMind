@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { WebSocket } = require('ws');
@@ -12,11 +12,8 @@ ipcMain.on('debug:log', (_event, payload) => {
 
 const DATA_FILE = path.join(app.getPath('userData'), 'supplier-notes-data.json');
 const IMAGES_DIR = path.join(app.getPath('userData'), 'images');
-const ATTACHMENTS_DIR = path.join(app.getPath('userData'), 'attachments');
-
-// Ensure images and attachments directories exist
+// Ensure images directory exists
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
-if (!fs.existsSync(ATTACHMENTS_DIR)) fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 
 // Register custom protocol for serving local images
 protocol.registerSchemesAsPrivileged([
@@ -82,34 +79,18 @@ ipcMain.handle('image:delete', (_event, filename) => {
   }
 });
 
-// Copy a dragged file (e.g. .msg from Outlook) into the attachments folder
-ipcMain.handle('attachment:save', (_event, sourcePath, originalName) => {
-  try {
-    const ext = path.extname(originalName) || '.msg';
-    const savedName = `att-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    const destPath = path.join(ATTACHMENTS_DIR, savedName);
-    fs.copyFileSync(sourcePath, destPath);
-    return savedName;
-  } catch (e) {
-    console.error('Failed to save attachment:', e);
-    return null;
-  }
+// Show native file picker and return selected file paths
+ipcMain.handle('dialog:openFiles', async (_event) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win || BrowserWindow.getAllWindows()[0], {
+    properties: ['openFile', 'multiSelections'],
+  });
+  return result.canceled ? [] : result.filePaths;
 });
 
-// Open a saved attachment with its default Windows application
-ipcMain.handle('attachment:open', (_event, savedName) => {
-  const filepath = path.join(ATTACHMENTS_DIR, savedName);
-  return shell.openPath(filepath);
-});
-
-// Delete a saved attachment file from disk
-ipcMain.handle('attachment:delete', (_event, savedName) => {
-  try {
-    const filepath = path.join(ATTACHMENTS_DIR, savedName);
-    if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-  } catch (e) {
-    console.error('Failed to delete attachment:', e);
-  }
+// Open a referenced attachment from its original location
+ipcMain.handle('attachment:open', (_event, filePath) => {
+  return shell.openPath(filePath);
 });
 
 // Open URL in system default app (e.g. mailto: → Outlook)

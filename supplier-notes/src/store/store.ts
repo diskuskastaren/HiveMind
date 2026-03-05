@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, NoteAttachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
+import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
   openaiApiKey: string;
@@ -116,8 +116,10 @@ interface AppState {
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   setActiveNote: (id: string | null) => void;
-  addAttachment: (noteId: string, attachment: NoteAttachment) => void;
+  addAttachment: (noteId: string, attachment: Attachment) => void;
   removeAttachment: (noteId: string, attachmentId: string) => void;
+  addTaskAttachment: (taskId: string, attachment: Attachment) => void;
+  removeTaskAttachment: (taskId: string, attachmentId: string) => void;
 
   addTranscript: (noteId: string, transcript: Transcript) => void;
   updateTranscript: (noteId: string, transcriptId: string, updates: Partial<Omit<Transcript, 'id'>>) => void;
@@ -488,6 +490,24 @@ export const useStore = create<AppState>()(
           ),
         })),
 
+      addTaskAttachment: (taskId, attachment) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, attachments: [...(t.attachments ?? []), attachment] }
+              : t,
+          ),
+        })),
+
+      removeTaskAttachment: (taskId, attachmentId) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, attachments: (t.attachments ?? []).filter((a) => a.id !== attachmentId) }
+              : t,
+          ),
+        })),
+
       // --- Transcripts ---
 
       addTranscript: (noteId, transcript) =>
@@ -706,7 +726,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'supplier-notes-storage',
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -777,6 +797,26 @@ export const useStore = create<AppState>()(
           state = {
             ...state,
             settings: { ...DEFAULT_SETTINGS, openaiApiKey: localKey },
+          };
+        }
+        if (version < 7) {
+          // Clean up orphaned bidirectional follow-up links.
+          // A task's linkedFollowUpId is orphaned if the follow-up no longer exists;
+          // a follow-up's linkedTaskId is orphaned if the task no longer exists.
+          const followUpIds = new Set((state.followUps || []).map((f: any) => f.id));
+          const taskIds = new Set((state.tasks || []).map((t: any) => t.id));
+          state = {
+            ...state,
+            tasks: (state.tasks || []).map((t: any) =>
+              t.linkedFollowUpId && !followUpIds.has(t.linkedFollowUpId)
+                ? { ...t, linkedFollowUpId: undefined }
+                : t
+            ),
+            followUps: (state.followUps || []).map((f: any) =>
+              f.linkedTaskId && !taskIds.has(f.linkedTaskId)
+                ? { ...f, linkedTaskId: undefined }
+                : f
+            ),
           };
         }
         return state;

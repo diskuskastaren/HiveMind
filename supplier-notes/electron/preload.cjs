@@ -13,9 +13,8 @@ contextBridge.exposeInMainWorld('electronImages', {
 });
 
 contextBridge.exposeInMainWorld('electronAttachments', {
-  save: (sourcePath, originalName) => ipcRenderer.invoke('attachment:save', sourcePath, originalName),
-  open: (savedName) => ipcRenderer.invoke('attachment:open', savedName),
-  delete: (savedName) => ipcRenderer.invoke('attachment:delete', savedName),
+  pick: () => ipcRenderer.invoke('dialog:openFiles'),
+  open: (filePath) => ipcRenderer.invoke('attachment:open', filePath),
 });
 
 contextBridge.exposeInMainWorld('electronCapture', {

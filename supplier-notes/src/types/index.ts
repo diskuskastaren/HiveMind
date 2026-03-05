@@ -24,12 +24,11 @@ export interface Transcript {
   recordedAt: number;
 }
 
-export interface NoteAttachment {
+export interface Attachment {
   id: string;
   fileName: string;
-  savedName: string;
-  droppedAt: number;
-  type: 'email' | 'file';
+  filePath: string;
+  attachedAt: number;
 }
 
 export interface Note {
@@ -44,7 +43,7 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   transcripts?: Transcript[];
-  attachments?: NoteAttachment[];
+  attachments?: Attachment[];
 }
 
 export interface Task {
@@ -61,6 +60,7 @@ export interface Task {
   createdAt: number;
   isFollowUp?: boolean;
   linkedFollowUpId?: string;
+  attachments?: Attachment[];
 }
 
 export interface FollowUp {

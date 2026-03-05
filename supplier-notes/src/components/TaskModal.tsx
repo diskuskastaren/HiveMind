@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/store';
-import type { TaskStatus, Priority } from '../types';
+import type { TaskStatus, Priority, Attachment } from '../types';
 import { CustomSelect } from './ui/CustomSelect';
 
 function ownerInitials(owner: string): string {
@@ -12,7 +12,7 @@ function ownerHue(owner: string): number {
   for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
   return Math.abs(hash) % 360;
 }
-import { X, Trash2, FileText, Link2, Link2Off, Bookmark, Plus } from 'lucide-react';
+import { X, Trash2, FileText, Link2, Link2Off, Bookmark, Plus, Paperclip } from 'lucide-react';
 
 type OwnerOption = { value: string; label: string; color?: string };
 
@@ -114,6 +114,8 @@ export function TaskModal() {
   const setEditingTask = useStore((s) => s.setEditingTask);
   const navigateToNote = useStore((s) => s.navigateToNote);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
+  const addTaskAttachment = useStore((s) => s.addTaskAttachment);
+  const removeTaskAttachment = useStore((s) => s.removeTaskAttachment);
 
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<TaskStatus>('open');
@@ -125,6 +127,7 @@ export function TaskModal() {
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
   const [newFollowUpText, setNewFollowUpText] = useState('');
   const newFollowUpRef = useRef<HTMLInputElement>(null);
+  const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
 
   useEffect(() => {
     if (task) {
@@ -142,12 +145,29 @@ export function TaskModal() {
 
   const projects = useStore((s) => s.projects);
 
+  const handlePickFiles = async () => {
+    if (!editingTaskId || !electronAttachments?.pick) return;
+    const filePaths: string[] = await electronAttachments.pick();
+    for (const filePath of filePaths) {
+      const fileName = filePath.split(/[\\/]/).pop() || filePath;
+      addTaskAttachment(editingTaskId, {
+        id: crypto.randomUUID(),
+        fileName,
+        filePath,
+        attachedAt: Date.now(),
+      });
+    }
+  };
+
   if (!editingTaskId || !task) return null;
 
   const note = notes.find((n) => n.id === task.noteId);
   const supplier = suppliers.find((s) => s.id === task.supplierId);
   const project = projects.find((p) => p.id === task.projectId);
-  const linkedFollowUp = task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null;
+  const linkedFollowUp =
+    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null)
+    ?? followUps.find((f) => f.linkedTaskId === task.id)
+    ?? null;
   const linkableFollowUps = followUps.filter(
     (f) => f.projectId === task.projectId && (!f.linkedTaskId || f.linkedTaskId === task.id)
   );
@@ -281,8 +301,67 @@ export function TaskModal() {
             />
           </div>
 
+          {/* Attachments */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Attachments</label>
+              <button
+                type="button"
+                onClick={handlePickFiles}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                title="Attach file"
+              >
+                <Paperclip className="w-3 h-3" />
+                Attach
+              </button>
+            </div>
+            {task.attachments && task.attachments.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {task.attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-100 dark:bg-white/10 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => electronAttachments && electronAttachments.open(att.filePath)}
+                      className="max-w-[180px] truncate text-left hover:underline"
+                      title={`Open ${att.fileName}`}
+                    >
+                      {att.fileName}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeTaskAttachment(editingTaskId, att.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
+                      title="Remove attachment"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-300 dark:text-gray-600">No attachments yet</p>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Linked Follow-up</label>
+            {task.isFollowUp && (
+              <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
+                <Bookmark className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+                <span className="flex-1 text-sm text-violet-800 dark:text-violet-300">Bookmarked as a follow-up</span>
+                <button
+                  type="button"
+                  onClick={() => updateTask(editingTaskId, { isFollowUp: false })}
+                  className="flex-shrink-0 p-0.5 hover:bg-violet-100 dark:hover:bg-violet-900/40 rounded transition-colors"
+                  title="Remove bookmark"
+                >
+                  <X className="w-3.5 h-3.5 text-violet-400 hover:text-red-500" />
+                </button>
+              </div>
+            )}
             {linkedFollowUp ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
                 <Bookmark className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
@@ -435,6 +514,7 @@ export function TaskModal() {
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );

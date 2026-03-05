@@ -35,7 +35,7 @@ import {
   Mic,
   Paperclip,
 } from 'lucide-react';
-import type { NoteAttachment } from '../types';
+import type { Attachment } from '../types';
 import { exportNoteMarkdown, exportEmailSummary, downloadFile } from '../utils/export';
 
 const TAB_CHAR = '\u00A0\u00A0\u00A0\u00A0';
@@ -198,7 +198,6 @@ export function NoteEditor() {
 
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showSupplierPicker, setShowSupplierPicker] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
 
   const switchingRef = useRef(false);
   const noteIdRef = useRef(activeNoteId);
@@ -359,75 +358,33 @@ export function NoteEditor() {
 
   const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
 
-  const handleDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDragOver(false);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (!activeNoteId) return;
-
-    const files = Array.from(e.dataTransfer.files);
-    const supported = files.filter((f) =>
-      f.name.toLowerCase().endsWith('.msg') || f.name.toLowerCase().endsWith('.eml'),
-    );
-
-    for (const file of supported) {
-      const filePath = (file as any).path as string | undefined;
-      if (!filePath) continue;
-
-      const savedName: string | null = electronAttachments
-        ? await electronAttachments.save(filePath, file.name)
-        : null;
-
-      if (!savedName) continue;
-
-      const attachment: NoteAttachment = {
+  const handlePickFiles = async () => {
+    if (!activeNoteId || !electronAttachments?.pick) return;
+    const filePaths: string[] = await electronAttachments.pick();
+    for (const filePath of filePaths) {
+      const fileName = filePath.split(/[\\/]/).pop() || filePath;
+      addAttachment(activeNoteId, {
         id: crypto.randomUUID(),
-        fileName: file.name,
-        savedName,
-        droppedAt: Date.now(),
-        type: 'email',
-      };
-      addAttachment(activeNoteId, attachment);
+        fileName,
+        filePath,
+        attachedAt: Date.now(),
+      });
     }
   };
 
-  const handleOpenAttachment = (att: NoteAttachment) => {
-    if (electronAttachments) {
-      electronAttachments.open(att.savedName);
-    }
+  const handleOpenAttachment = (att: Attachment) => {
+    if (electronAttachments) electronAttachments.open(att.filePath);
   };
 
-  const handleRemoveAttachment = (att: NoteAttachment) => {
+  const handleRemoveAttachment = (att: Attachment) => {
     if (!activeNoteId) return;
     removeAttachment(activeNoteId, att.id);
-    if (electronAttachments) {
-      electronAttachments.delete(att.savedName);
-    }
   };
 
   if (!note) return null;
 
   return (
-    <div
-      className={`relative flex flex-col h-full transition-colors ${isDragOver ? 'bg-blue-50/60 dark:bg-blue-900/10 ring-2 ring-inset ring-blue-400/50' : ''}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-8 pt-6 pb-2 flex-shrink-0">
         <input
@@ -643,6 +600,15 @@ export function NoteEditor() {
 
           <div className="flex-1" />
 
+          {/* Attach email file */}
+          <button
+            onClick={handlePickFiles}
+            title="Attach file"
+            className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+
           {/* Transcript / Record */}
           <button
             onClick={() => {
@@ -790,18 +756,8 @@ export function NoteEditor() {
         </div>
       )}
 
-      {/* Drop hint overlay — shown when dragging a file over the editor */}
-      {isDragOver && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-white/90 dark:bg-gray-800/90 shadow-lg border border-blue-300 dark:border-blue-600">
-            <Paperclip className="w-6 h-6 text-blue-500" />
-            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Drop Outlook email to attach</p>
-          </div>
-        </div>
-      )}
-
       {/* Editor */}
-      <div className="flex-1 overflow-y-auto px-8 pb-16 relative">
+      <div className="flex-1 overflow-y-auto px-8 pb-16">
         <EditorContent editor={editor} />
       </div>
 
