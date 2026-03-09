@@ -46,6 +46,9 @@ ipcMain.handle('store:path', () => DATA_FILE);
 
 ipcMain.handle('store:openFolder', () => shell.openPath(path.dirname(DATA_FILE)));
 
+ipcMain.handle('updater:check', () => autoUpdater.checkForUpdates());
+ipcMain.handle('updater:install', () => { autoUpdater.quitAndInstall(); });
+
 // Return screen source IDs so the renderer can capture system audio
 ipcMain.handle('desktop:getSources', async () => {
   try {
@@ -335,7 +338,21 @@ app.whenReady().then(() => {
 
   const win = createWindow();
   connectToTeams(win);
-  autoUpdater.checkForUpdatesAndNotify();
+
+  autoUpdater.on('update-available', (info) => {
+    win.webContents.send('updater:update-available', { version: info.version });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    win.webContents.send('updater:update-downloaded', { version: info.version });
+  });
+  autoUpdater.on('update-not-available', () => {
+    win.webContents.send('updater:update-not-available');
+  });
+  autoUpdater.on('error', (err) => {
+    win.webContents.send('updater:error', { message: err.message });
+  });
+
+  autoUpdater.checkForUpdates();
 });
 
 app.on('window-all-closed', () => {

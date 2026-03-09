@@ -44,3 +44,16 @@ contextBridge.exposeInMainWorld('electronOverlay', {
   startRecording: () => ipcRenderer.send('overlay:start-recording'),
   dismiss:        () => ipcRenderer.send('overlay:dismiss'),
 });
+
+contextBridge.exposeInMainWorld('electronUpdater', {
+  check:   () => ipcRenderer.invoke('updater:check'),
+  install: () => ipcRenderer.invoke('updater:install'),
+  onUpdateAvailable:     (cb) => ipcRenderer.on('updater:update-available', cb),
+  onUpdateDownloaded:    (cb) => ipcRenderer.on('updater:update-downloaded', cb),
+  onUpdateNotAvailable:  (cb) => ipcRenderer.on('updater:update-not-available', cb),
+  onError:               (cb) => ipcRenderer.on('updater:error', cb),
+  offUpdateAvailable:    (cb) => ipcRenderer.removeListener('updater:update-available', cb),
+  offUpdateDownloaded:   (cb) => ipcRenderer.removeListener('updater:update-downloaded', cb),
+  offUpdateNotAvailable: (cb) => ipcRenderer.removeListener('updater:update-not-available', cb),
+  offError:              (cb) => ipcRenderer.removeListener('updater:error', cb),
+});

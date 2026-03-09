@@ -12,6 +12,7 @@ import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { UpdateDialog } from './components/UpdateDialog';
 import { FileText, Keyboard, FolderOpen, Pin, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 
@@ -459,6 +460,7 @@ export default function App() {
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
       <ConfirmDialog />
+      <UpdateDialog />
     </div>
   );
 }

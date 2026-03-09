@@ -17,8 +17,10 @@ import {
   Palette,
   Moon,
   Sun,
+  RefreshCw,
 } from 'lucide-react';
 import { useStore } from '../store/store';
+import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
 import { CustomSelect } from './ui/CustomSelect';
 
@@ -144,6 +146,7 @@ export function SettingsModal() {
   const [testError, setTestError] = useState('');
   const [clearConfirm, setClearConfirm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
 
   // Sync draft when settings change from outside (e.g. migration)
   useEffect(() => {
@@ -211,6 +214,24 @@ export function SettingsModal() {
     }
   };
 
+  const handleCheckForUpdates = async () => {
+    const updater = (window as any).electronUpdater;
+    if (!updater) return;
+    setUpdateCheckStatus('checking');
+    const onAvailable = () => { setUpdateCheckStatus('available'); cleanup(); };
+    const onNotAvailable = () => { setUpdateCheckStatus('up-to-date'); cleanup(); };
+    const onError = () => { setUpdateCheckStatus('error'); cleanup(); };
+    const cleanup = () => {
+      updater.offUpdateAvailable(onAvailable);
+      updater.offUpdateNotAvailable(onNotAvailable);
+      updater.offError(onError);
+    };
+    updater.onUpdateAvailable(onAvailable);
+    updater.onUpdateNotAvailable(onNotAvailable);
+    updater.onError(onError);
+    await updater.check();
+  };
+
   const handleClearData = () => {
     if (clearConfirm !== 'DELETE') return;
     useStore.setState({
@@ -265,6 +286,9 @@ export function SettingsModal() {
               </button>
             ))}
           </nav>
+          <div className="mt-auto px-5 pt-4">
+            <span className="text-xs text-gray-400 dark:text-gray-500">v{version}</span>
+          </div>
         </div>
 
         {/* Content area */}
@@ -606,6 +630,37 @@ export function SettingsModal() {
                 </p>
 
                 <Divider />
+                {(window as any).electronUpdater && (
+                  <>
+                    <SectionHeading>Application</SectionHeading>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={handleCheckForUpdates}
+                          disabled={updateCheckStatus === 'checking'}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <RefreshCw className={`w-4 h-4 text-gray-500 dark:text-gray-400 ${updateCheckStatus === 'checking' ? 'animate-spin' : ''}`} />
+                          Check for updates
+                        </button>
+                        {updateCheckStatus === 'checking' && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">Checking…</span>
+                        )}
+                        {updateCheckStatus === 'up-to-date' && (
+                          <span className="text-xs text-green-500 dark:text-green-400">You're up to date</span>
+                        )}
+                        {updateCheckStatus === 'available' && (
+                          <span className="text-xs text-blue-500 dark:text-blue-400">Update available — downloading…</span>
+                        )}
+                        {updateCheckStatus === 'error' && (
+                          <span className="text-xs text-red-400">Could not check for updates</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">v{version}</span>
+                    </div>
+                    <Divider />
+                  </>
+                )}
 
                 {/* Danger zone */}
                 <div className="border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-3">
