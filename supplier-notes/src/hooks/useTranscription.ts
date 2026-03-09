@@ -336,7 +336,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const start = useCallback(
     async (onLiveText: (text: string) => void) => {
       // #region agent log
-      fetch('http://127.0.0.1:7896/ingest/c146e78a-3d4e-4dca-921a-e6b2eea30863',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6cf3ea'},body:JSON.stringify({sessionId:'6cf3ea',location:'useTranscription.ts:start',message:'start() called',data:{noteId,mode,hasApiKey:!!apiKeyRef.current},timestamp:Date.now(),hypothesisId:'H3,H4'})}).catch(()=>{});
+      try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'useTranscription.ts:start',message:'start() called',data:{noteId,mode,hasApiKey:!!apiKeyRef.current},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
       // #endregion
       recordingNoteIdRef.current = noteId;
       accumulatedRef.current = '';

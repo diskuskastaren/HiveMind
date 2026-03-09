@@ -491,7 +491,7 @@ export function TranscriptTab() {
     recordingNoteIdRef.current = note?.id ?? '';
     recordingStartTimeRef.current = Date.now();
     // #region agent log
-    fetch('http://127.0.0.1:7896/ingest/c146e78a-3d4e-4dca-921a-e6b2eea30863',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6cf3ea'},body:JSON.stringify({sessionId:'6cf3ea',location:'TranscriptTab.tsx:handleStart',message:'handleStart called',data:{noteId:note?.id,isRecording,mode},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+    try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'TranscriptTab.tsx:handleStart',message:'handleStart called',data:{noteId:note?.id,isRecording,mode},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
     // #endregion
     const ok = await start(setLiveText);
     if (ok && transcriptIdRef.current) {

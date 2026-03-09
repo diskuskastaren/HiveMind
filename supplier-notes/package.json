@@ -1,7 +1,7 @@
 {
   "name": "supplier-notes",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.2.5",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -24,7 +24,8 @@
       "electron/**/*"
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "electron/icon.png"
     },
     "nsis": {
       "oneClick": false,

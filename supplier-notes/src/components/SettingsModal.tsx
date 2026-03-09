@@ -147,11 +147,25 @@ export function SettingsModal() {
   const [clearConfirm, setClearConfirm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
+  const [currentDataDir, setCurrentDataDir] = useState<string>('');
+  const [isCustomDataDir, setIsCustomDataDir] = useState(false);
+  const [dataDirChanging, setDataDirChanging] = useState(false);
 
   // Sync draft when settings change from outside (e.g. migration)
   useEffect(() => {
     setApiKeyDraft(settings.openaiApiKey);
   }, [settings.openaiApiKey]);
+
+  // Load current data directory path
+  useEffect(() => {
+    const electronStore = (window as any).electronStore;
+    if (electronStore?.getDataDir) {
+      electronStore.getDataDir().then((result: { dir: string; isCustom: boolean }) => {
+        setCurrentDataDir(result?.dir || '');
+        setIsCustomDataDir(result?.isCustom ?? false);
+      });
+    }
+  }, []);
 
   const saveApiKey = () => {
     updateSettings({ openaiApiKey: apiKeyDraft.trim() });
@@ -211,6 +225,30 @@ export function SettingsModal() {
       const folder = filePath.replace(/[^\\/]+$/, '');
       const openExternal = (window as any).electronOpenExternal?.open;
       if (openExternal) openExternal('file:///' + folder.replace(/\\/g, '/'));
+    }
+  };
+
+  const handleChangeDataDir = async () => {
+    const electronStore = (window as any).electronStore;
+    if (!electronStore?.changeDataDir) return;
+    setDataDirChanging(true);
+    try {
+      await electronStore.changeDataDir();
+      // App will relaunch — no further action needed
+    } finally {
+      setDataDirChanging(false);
+    }
+  };
+
+  const handleResetDataDir = async () => {
+    const electronStore = (window as any).electronStore;
+    if (!electronStore?.resetDataDir) return;
+    if (!confirm('Reset data folder to the default location? The app will restart.')) return;
+    setDataDirChanging(true);
+    try {
+      await electronStore.resetDataDir();
+    } finally {
+      setDataDirChanging(false);
     }
   };
 
@@ -618,16 +656,49 @@ export function SettingsModal() {
                 <Divider />
                 <SectionHeading>Storage</SectionHeading>
 
-                <button
-                  onClick={handleOpenFolder}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 transition-colors w-full"
-                >
-                  <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  Open data folder
-                </button>
+                {/* Current data folder path */}
+                {currentDataDir && (
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
+                    <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Current data folder</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300 font-mono break-all leading-relaxed">{currentDataDir}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleOpenFolder}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 transition-colors flex-1"
+                  >
+                    <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    Open folder
+                  </button>
+
+                  {(window as any).electronStore?.changeDataDir && (
+                    <button
+                      onClick={handleChangeDataDir}
+                      disabled={dataDirChanging}
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-1"
+                    >
+                      <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      {dataDirChanging ? 'Changing…' : 'Change folder…'}
+                    </button>
+                  )}
+                </div>
+
                 <p className="text-xs text-gray-400 dark:text-gray-500 -mt-2 leading-relaxed">
-                  Opens the folder where your data file is stored. Useful for manual backups or troubleshooting.
+                  Changing the folder copies your existing data to the new location and restarts the app.
+                  Point both computers to the same shared drive to access your data from anywhere.
                 </p>
+
+                {isCustomDataDir && (window as any).electronStore?.resetDataDir && (
+                  <button
+                    onClick={handleResetDataDir}
+                    disabled={dataDirChanging}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Reset to default folder
+                  </button>
+                )}
 
                 <Divider />
                 {(window as any).electronUpdater && (

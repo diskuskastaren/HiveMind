@@ -140,6 +140,10 @@
   transition: width 150ms ease, opacity 150ms ease;
 }
 
+.no-transition * {
+  transition: none !important;
+}
+
 /* Selection in editor for task creation */
 .tiptap .selection-highlight {
   @apply bg-blue-100 dark:bg-white/20;

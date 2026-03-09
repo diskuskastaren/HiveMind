@@ -20,7 +20,7 @@ export function TeamsRecordingPrompt() {
   const currentNote = allNotes.find((n) => n.id === activeNoteId) ?? null;
 
   // #region agent log
-  fetch('http://127.0.0.1:7896/ingest/c146e78a-3d4e-4dca-921a-e6b2eea30863',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6cf3ea'},body:JSON.stringify({sessionId:'6cf3ea',location:'TeamsRecordingPrompt.tsx:render',message:'component rendering',data:{supplierCount:suppliers.length,suppliersWithoutProjectIds:suppliers.filter((s:any)=>!s.projectIds).map((s:any)=>s.id),activeProjectId,activeNoteId,hasCurrentNote:!!currentNote},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'TeamsRecordingPrompt.tsx:render',message:'component rendering',data:{supplierCount:suppliers.length,suppliersWithoutProjectIds:suppliers.filter((s:any)=>!s.projectIds).map((s:any)=>s.id),activeProjectId,activeNoteId,hasCurrentNote:!!currentNote},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
   // #endregion
 
   // null = top-level, string = drilled into a supplier
