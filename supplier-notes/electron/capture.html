@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  let recorder      = null;
+  let audioCtx      = null;
+  let capturedStream = null;
+  let micStream     = null;
+
+  // Register stop handler immediately so it is always ready.
+  window.captureIpc.onStop(() => {
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.onstop = () => {
+        if (capturedStream) capturedStream.getTracks().forEach(t => t.stop());
+        if (micStream)      micStream.getTracks().forEach(t => t.stop());
+        if (audioCtx)       audioCtx.close().catch(() => {});
+        window.captureIpc.sendStopped();
+      };
+      recorder.stop();
+    } else {
+      // Recorder never started (e.g. getUserMedia failed); still ack the stop.
+      window.captureIpc.sendStopped();
+    }
+  });
+
+  // Start capture when the main process sends the desktop source ID.
+  window.captureIpc.onStart(async (sourceId) => {
+    try {
+      // Request desktop audio + a 1×1 video track.
+      // Chromium requires a video track to grant system audio; we stop it immediately.
+      capturedStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          mandatory: {
+            chromeMediaSource:   'desktop',
+            chromeMediaSourceId: sourceId,
+          },
+        },
+        video: {
+          mandatory: {
+            chromeMediaSource:   'desktop',
+            chromeMediaSourceId: sourceId,
+            maxWidth:  1,
+            maxHeight: 1,
+          },
+        },
+      });
+
+      // Drop the video track right away — we only needed it to unlock audio.
+      capturedStream.getVideoTracks().forEach(t => t.stop());
+
+      // Mix system audio + microphone into a single destination stream.
+      audioCtx = new AudioContext();
+      const dest      = audioCtx.createMediaStreamDestination();
+      const sysAudio  = new MediaStream(capturedStream.getAudioTracks());
+      audioCtx.createMediaStreamSource(sysAudio).connect(dest);
+
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioCtx.createMediaStreamSource(micStream).connect(dest);
+      } catch {
+        // Mic unavailable — record system audio only.
+      }
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+
+      recorder = new MediaRecorder(dest.stream, { mimeType });
+
+      recorder.ondataavailable = async (e) => {
+        if (e.data.size > 0) {
+          const buf = await e.data.arrayBuffer();
+          window.captureIpc.sendChunk(buf);
+        }
+      };
+
+      recorder.start(1000);
+      window.captureIpc.sendReady(mimeType);
+    } catch (err) {
+      window.captureIpc.sendError(err?.message ?? String(err));
+    }
+  });
+}());
+</script>
+</body>
+</html>

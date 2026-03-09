@@ -51,6 +51,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const sysInitChunkRef = useRef<Blob | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // System-audio capture via hidden BrowserWindow (avoids GPU crash in main renderer)
+  const isSystemModeRef           = useRef(false);
+  const captureMimeTypeRef        = useRef('audio/webm');
+  const captureChunkHandlerRef    = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const captureErrorHandlerRef    = useRef<((msg: string) => void) | null>(null);
+
   // Auto-stop safety net — fires after 4 hours in case the user forgets to stop
   const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ref to the stop function so the auto-stop timeout always calls the latest version
@@ -265,74 +271,47 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       if (!screen) throw new Error('No screen source found for audio capture');
 
-      const stream = await (navigator.mediaDevices as any).getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: screen.id,
-          },
-        } as any,
-        video: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: screen.id,
-            maxWidth: 320,
-            maxHeight: 240,
-          },
-        } as any,
-      });
+      // Delegate getUserMedia to an isolated hidden BrowserWindow so that the
+      // GPU-process crash (common when Teams is running) cannot take down the main app.
+      const mimeType: string = await electronCapture.startCapture(screen.id);
+      captureMimeTypeRef.current = mimeType;
+      isSystemModeRef.current = true;
 
-      // Drop the video track — we only need audio
-      stream.getVideoTracks().forEach((t: MediaStreamTrack) => t.stop());
+      // Accumulate audio chunk ArrayBuffers forwarded from the hidden window via IPC.
+      const chunkHandler = (buf: ArrayBuffer) => {
+        const blob = new Blob([buf], { type: mimeType });
+        if (!sysInitChunkRef.current) {
+          // First chunk is the WebM init segment — keep it as a header prefix.
+          sysInitChunkRef.current = blob;
+        } else {
+          audioChunksRef.current.push(blob);
+        }
+      };
+      electronCapture.onChunk(chunkHandler);
+      captureChunkHandlerRef.current = chunkHandler;
 
-      const audioTracks: MediaStreamTrack[] = stream.getAudioTracks();
-      if (audioTracks.length === 0) throw new Error('No audio tracks captured from system audio');
+      // Surface capture-window errors in the debug status bar.
+      const errorHandler = (msg: string) => {
+        setDebugStatus(`Capture error: ${msg}`);
+      };
+      electronCapture.onError(errorHandler);
+      captureErrorHandlerRef.current = errorHandler;
 
-      streamRef.current = stream;
-
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
-
-      // Mix system audio and mic into a single stream via AudioContext so only one
-      // Whisper call is needed per interval (halves billed audio minutes)
-      const audioCtx = new AudioContext();
-      audioContextRef.current = audioCtx;
-      const dest = audioCtx.createMediaStreamDestination();
-
-      const systemStream = new MediaStream(audioTracks);
-      audioCtx.createMediaStreamSource(systemStream).connect(dest);
-
+      // Acquire a mic stream in the main renderer for the audio visualizer only.
+      // (Actual mic audio is mixed inside the hidden capture window.)
       try {
         const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         micStreamRef.current = micStream;
-        audioCtx.createMediaStreamSource(micStream).connect(dest);
+        setVisualizerStream(micStream);
       } catch {
-        // Mic unavailable — system audio only
+        // Visualizer won't work but transcription continues.
       }
 
-      setVisualizerStream(systemStream);
-
-      const recorder = new MediaRecorder(dest.stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          if (!sysInitChunkRef.current) {
-            // First chunk is the WebM init segment (EBML header + codec info); save it
-            // separately so every subsequent batch blob can be prefixed with it
-            sysInitChunkRef.current = e.data;
-          } else {
-            audioChunksRef.current.push(e.data);
-          }
-        }
-      };
-      recorder.start(1000);
-
+      // Periodic Whisper transcription — same logic as before.
       const processChunks = async () => {
         if (audioChunksRef.current.length === 0) return;
         const chunks = audioChunksRef.current;
         audioChunksRef.current = [];
-        // Always prepend the init segment so every batch is a self-contained valid WebM
         const parts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...chunks] : chunks;
         const blob = new Blob(parts, { type: mimeType });
         try {
@@ -348,13 +327,17 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       return true;
     } catch (e: any) {
       console.error('System audio capture failed:', e);
+      isSystemModeRef.current = false;
       alert(`Failed to capture system audio: ${e?.message ?? 'Unknown error'}`);
       return false;
     }
-  }, [apiKey, appendText]);
+  }, [apiKey, appendText, setDebugStatus]);
 
   const start = useCallback(
     async (onLiveText: (text: string) => void) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/c146e78a-3d4e-4dca-921a-e6b2eea30863',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6cf3ea'},body:JSON.stringify({sessionId:'6cf3ea',location:'useTranscription.ts:start',message:'start() called',data:{noteId,mode,hasApiKey:!!apiKeyRef.current},timestamp:Date.now(),hypothesisId:'H3,H4'})}).catch(()=>{});
+      // #endregion
       recordingNoteIdRef.current = noteId;
       accumulatedRef.current = '';
       startTimeRef.current = Date.now();
@@ -426,23 +409,62 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       chunkIntervalRef.current = null;
     }
 
-    // Flush remaining audio from both recorders and transcribe
-    const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
     const results: string[] = [];
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      await drainRecorder(mediaRecorderRef.current);
+    // ── System audio via hidden capture window ───────────────────────────────
+    if (isSystemModeRef.current) {
+      const electronCapture = (window as any).electronCapture;
+
+      // Wait for the hidden window to flush its final audio chunk before we
+      // remove the listener (stopCapture resolves only after capture:stopped).
+      if (electronCapture) {
+        try { await electronCapture.stopCapture(); } catch { /* window may have crashed */ }
+      }
+
+      // Now safe to remove handlers — no more chunks will arrive.
+      if (captureChunkHandlerRef.current && electronCapture) {
+        electronCapture.offChunk(captureChunkHandlerRef.current);
+        captureChunkHandlerRef.current = null;
+      }
+      if (captureErrorHandlerRef.current && electronCapture) {
+        electronCapture.offError(captureErrorHandlerRef.current);
+        captureErrorHandlerRef.current = null;
+      }
+
+      // Transcribe any chunks that arrived after the last interval tick.
+      const mimeTypeSys = captureMimeTypeRef.current || 'audio/webm';
       if (audioChunksRef.current.length > 0 && apiKey) {
         const sysParts = sysInitChunkRef.current
           ? [sysInitChunkRef.current, ...audioChunksRef.current]
           : audioChunksRef.current;
-        const blob = new Blob(sysParts, { type: mimeType });
+        const blob = new Blob(sysParts, { type: mimeTypeSys });
         audioChunksRef.current = [];
         try {
           const text = await transcribeAudioChunk(blob, apiKey);
           if (text) results.push(text);
         } catch (e: any) {
           console.error('Whisper final system-audio error:', e);
+        }
+      }
+      sysInitChunkRef.current = null;
+      isSystemModeRef.current = false;
+    }
+
+    // ── Mic Whisper fallback (MediaRecorder running in main renderer) ────────
+    const micMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      await drainRecorder(mediaRecorderRef.current);
+      if (audioChunksRef.current.length > 0 && apiKey) {
+        const micParts = sysInitChunkRef.current
+          ? [sysInitChunkRef.current, ...audioChunksRef.current]
+          : audioChunksRef.current;
+        const blob = new Blob(micParts, { type: micMimeType });
+        audioChunksRef.current = [];
+        try {
+          const text = await transcribeAudioChunk(blob, apiKey);
+          if (text) results.push(text);
+        } catch (e: any) {
+          console.error('Whisper final mic-audio error:', e);
         }
       }
       sysInitChunkRef.current = null;

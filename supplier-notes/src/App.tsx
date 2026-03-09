@@ -421,7 +421,10 @@ export default function App() {
     if (!electronTeams) return;
 
     const onJoined = () => {
+      // #region agent log
       const s = useStore.getState();
+      fetch('http://127.0.0.1:7896/ingest/c146e78a-3d4e-4dca-921a-e6b2eea30863',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6cf3ea'},body:JSON.stringify({sessionId:'6cf3ea',location:'App.tsx:onJoined',message:'teams:meeting-joined fired',data:{transcriptRecording:s.transcriptRecording,teamsPromptOpen:s.teamsPromptOpen,activeNoteId:s.activeNoteId,activeTabId:s.activeTabId},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       if (!s.transcriptRecording) s.setTeamsPromptOpen(true);
     };
 

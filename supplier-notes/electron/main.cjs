@@ -7,8 +7,10 @@ const { autoUpdater } = require('electron-updater');
 
 // Debug logging — writes NDJSON to workspace root
 const DEBUG_LOG = path.join(__dirname, '..', 'debug-0a018f.log');
+const DEBUG_LOG_6CF3EA = path.join(__dirname, '..', 'debug-6cf3ea.log');
 ipcMain.on('debug:log', (_event, payload) => {
-  try { fs.appendFileSync(DEBUG_LOG, JSON.stringify(payload) + '\n'); } catch {}
+  const target = payload && payload.sessionId === '6cf3ea' ? DEBUG_LOG_6CF3EA : DEBUG_LOG;
+  try { fs.appendFileSync(target, JSON.stringify(payload) + '\n'); } catch {}
 });
 
 const DATA_FILE = path.join(app.getPath('userData'), 'supplier-notes-data.json');
@@ -170,6 +172,9 @@ function closeOverlay() {
 }
 
 ipcMain.on('overlay:start-recording', (_event) => {
+  // #region agent log
+  try { fs.appendFileSync(path.join(__dirname, '..', 'debug-6cf3ea.log'), JSON.stringify({sessionId:'6cf3ea',location:'main.cjs:overlay:start-recording',message:'overlay start-recording IPC received',data:{allWindowsCount:BrowserWindow.getAllWindows().length,overlayWindowExists:!!(overlayWindow&&!overlayWindow.isDestroyed())},timestamp:Date.now(),hypothesisId:'H5'}) + '\n'); } catch {}
+  // #endregion
   const mainWindow = BrowserWindow.getAllWindows().find((w) => w !== overlayWindow);
   closeOverlay();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -181,6 +186,120 @@ ipcMain.on('overlay:start-recording', (_event) => {
 
 ipcMain.on('overlay:dismiss', () => {
   closeOverlay();
+});
+
+// ── Isolated audio-capture window ─────────────────────────────────────────────
+// We run getUserMedia({ chromeMediaSource:'desktop' }) inside a separate hidden
+// BrowserWindow so that a GPU-process crash (common when Teams is active) only
+// kills the capture window, not the main app.
+
+let captureWindow     = null;
+let captureMainWindow = null; // main renderer that started the current capture
+
+function createCaptureWindow() {
+  if (captureWindow && !captureWindow.isDestroyed()) return captureWindow;
+
+  captureWindow = new BrowserWindow({
+    width:       1,
+    height:      1,
+    show:        false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload:          path.join(__dirname, 'capture-preload.cjs'),
+      nodeIntegration:  false,
+      contextIsolation: true,
+    },
+  });
+
+  captureWindow.loadFile(path.join(__dirname, 'capture.html'));
+
+  // If the GPU process inside the capture window crashes, notify the main renderer
+  // but leave the main app running.
+  captureWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (captureMainWindow && !captureMainWindow.isDestroyed()) {
+      captureMainWindow.webContents.send(
+        'capture:error',
+        `Audio capture process stopped unexpectedly (${details.reason}). ` +
+        'Try restarting the recording.',
+      );
+    }
+    captureWindow = null;
+  });
+
+  captureWindow.on('closed', () => { captureWindow = null; });
+
+  return captureWindow;
+}
+
+// Main renderer → start capture in the hidden window and wait for it to be ready.
+ipcMain.handle('desktop:startCapture', async (event, sourceId) => {
+  captureMainWindow = BrowserWindow.fromWebContents(event.sender);
+  const win = createCaptureWindow();
+
+  // Wait for the capture window's HTML + preload to finish loading.
+  if (win.webContents.isLoading()) {
+    await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+  }
+
+  // Ask the capture window to start, then wait for either success or failure.
+  return new Promise((resolve, reject) => {
+    const onReady = (_e, mimeType) => {
+      ipcMain.removeListener('capture:error', onError);
+      resolve(mimeType);
+    };
+    const onError = (_e, msg) => {
+      ipcMain.removeListener('capture:ready', onReady);
+      reject(new Error(msg));
+    };
+    ipcMain.once('capture:ready', onReady);
+    ipcMain.once('capture:error', onError);
+    win.webContents.send('capture:do-start', sourceId);
+  });
+});
+
+// Main renderer → stop capture; resolves only after all final chunks are delivered.
+ipcMain.handle('desktop:stopCapture', async () => {
+  if (!captureWindow || captureWindow.isDestroyed()) return;
+
+  return new Promise(resolve => {
+    // Safety timeout so stop() never hangs if the capture window crashes mid-drain.
+    const timer = setTimeout(() => {
+      ipcMain.removeListener('capture:stopped', onStopped);
+      resolve();
+    }, 5000);
+
+    const onStopped = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ipcMain.once('capture:stopped', onStopped);
+    captureWindow.webContents.send('capture:do-stop');
+  });
+});
+
+// Forward audio chunks from the capture window to the main renderer.
+ipcMain.on('capture:chunk', (_event, buffer) => {
+  if (captureMainWindow && !captureMainWindow.isDestroyed()) {
+    captureMainWindow.webContents.send('capture:chunk', buffer);
+  }
+});
+
+// Forward runtime errors from the capture window to the main renderer.
+// (Start-phase errors are handled via ipcMain.once inside desktop:startCapture.)
+ipcMain.on('capture:error', (_event, msg) => {
+  if (captureMainWindow && !captureMainWindow.isDestroyed()) {
+    captureMainWindow.webContents.send('capture:error', msg);
+  }
+});
+
+// Capture window signals that all audio has been flushed; forward then destroy.
+ipcMain.on('capture:stopped', () => {
+  if (captureMainWindow && !captureMainWindow.isDestroyed()) {
+    captureMainWindow.webContents.send('capture:stopped');
+  }
+  if (captureWindow && !captureWindow.isDestroyed()) {
+    captureWindow.close();
+  }
 });
 
 // ── Teams Local WebSocket API integration ─────────────────────────────────────
@@ -359,6 +478,7 @@ app.on('window-all-closed', () => {
   if (teamsRetryTimer) { clearTimeout(teamsRetryTimer); teamsRetryTimer = null; }
   if (teamsWs) { teamsWs.terminate(); teamsWs = null; }
   closeOverlay();
+  if (captureWindow && !captureWindow.isDestroyed()) { captureWindow.close(); captureWindow = null; }
   app.quit();
 });
 
