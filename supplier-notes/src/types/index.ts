@@ -46,6 +46,12 @@ export interface Note {
   attachments?: Attachment[];
 }
 
+export interface TaskUpdate {
+  id: string;
+  timestamp: number;
+  text: string;
+}
+
 export interface Task {
   id: string;
   projectId: string;
@@ -61,6 +67,7 @@ export interface Task {
   isFollowUp?: boolean;
   linkedFollowUpId?: string;
   attachments?: Attachment[];
+  updates?: TaskUpdate[];
 }
 
 export interface FollowUp {

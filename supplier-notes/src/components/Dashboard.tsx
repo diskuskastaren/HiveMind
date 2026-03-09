@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { CustomSelect } from './ui/CustomSelect';
+import { OwnerDropdown } from './TaskModal';
 import { format } from 'date-fns';
 import type { TaskStatus, Priority, DashboardSection } from '../types';
 import {
@@ -139,6 +140,7 @@ function CreateTaskModal({ onClose }: { onClose: () => void }) {
   const [projectId, setProjectId] = useState(visibleProjects[0]?.id ?? '');
   const [supplierId, setSupplierIdState] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
+  const [description, setDescription] = useState('');
 
   const visibleSuppliers = projectId
     ? suppliers.filter((s) => s.projectIds.includes(projectId))
@@ -155,7 +157,7 @@ function CreateTaskModal({ onClose }: { onClose: () => void }) {
       supplierId,
       noteId: null,
       dueDate,
-      description: '',
+      description,
     });
     onClose();
   };
@@ -236,19 +238,14 @@ function CreateTaskModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <OwnerDropdown
+            owner={owner}
+            onChange={setOwner}
+            suppliers={visibleSuppliers.map((s) => ({ id: s.id, name: s.name, color: s.color }))}
+          />
           <div>
-            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Owner</label>
-            <input
-              type="text"
-              placeholder="Unassigned"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-800 dark:text-gray-200"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Due date</label>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due date</label>
             <input
               type="date"
               value={dueDate}
@@ -256,6 +253,17 @@ function CreateTaskModal({ onClose }: { onClose: () => void }) {
               className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-800 dark:text-gray-200"
             />
           </div>
+        </div>
+
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add more detail about this task…"
+            rows={3}
+            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+          />
         </div>
 
         <div className="flex justify-end gap-2">

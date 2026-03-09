@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/store';
-import type { TaskStatus, Priority, Attachment } from '../types';
+import type { TaskStatus, Priority, Attachment, TaskUpdate } from '../types';
 import { CustomSelect } from './ui/CustomSelect';
 
 function ownerInitials(owner: string): string {
@@ -12,7 +12,8 @@ function ownerHue(owner: string): number {
   for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
   return Math.abs(hash) % 360;
 }
-import { X, Trash2, FileText, Link2, Link2Off, Bookmark, Plus, Paperclip } from 'lucide-react';
+import { X, Trash2, FileText, Link2, Link2Off, Bookmark, Plus, Paperclip, ClipboardList } from 'lucide-react';
+import { format } from 'date-fns';
 
 type OwnerOption = { value: string; label: string; color?: string };
 
@@ -29,7 +30,7 @@ function OwnerAvatar({ value, color }: { value: string; color?: string }) {
   );
 }
 
-function OwnerDropdown({
+export function OwnerDropdown({
   owner,
   onChange,
   suppliers,
@@ -123,6 +124,8 @@ export function TaskModal() {
   const [owner, setOwner] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [description, setDescription] = useState('');
+  const [updates, setUpdates] = useState<TaskUpdate[]>([]);
+  const [newUpdateText, setNewUpdateText] = useState('');
   const [showFollowUpPicker, setShowFollowUpPicker] = useState(false);
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
   const [newFollowUpText, setNewFollowUpText] = useState('');
@@ -137,6 +140,8 @@ export function TaskModal() {
       setOwner(task.owner);
       setDueDate(task.dueDate);
       setDescription(task.description ?? '');
+      setUpdates(task.updates ?? []);
+      setNewUpdateText('');
       setShowFollowUpPicker(false);
       setCreatingFollowUp(false);
       setNewFollowUpText('');
@@ -172,6 +177,18 @@ export function TaskModal() {
     (f) => f.projectId === task.projectId && (!f.linkedTaskId || f.linkedTaskId === task.id)
   );
 
+  const handleAddUpdate = () => {
+    const text = newUpdateText.trim();
+    if (!text) return;
+    const entry: TaskUpdate = { id: crypto.randomUUID(), timestamp: Date.now(), text };
+    setUpdates((prev) => [entry, ...prev]);
+    setNewUpdateText('');
+  };
+
+  const handleDeleteUpdate = (id: string) => {
+    setUpdates((prev) => prev.filter((u) => u.id !== id));
+  };
+
   const save = () => {
     updateTask(editingTaskId, {
       title,
@@ -180,6 +197,7 @@ export function TaskModal() {
       owner,
       dueDate,
       description,
+      updates,
     });
     setEditingTask(null);
   };
@@ -299,6 +317,64 @@ export function TaskModal() {
               rows={4}
               className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
             />
+          </div>
+
+          {/* Progress Updates */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <ClipboardList className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Progress Updates</label>
+            </div>
+
+            {/* Existing updates log */}
+            {updates.length > 0 && (
+              <div className="mb-2 max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
+                {updates.map((u) => (
+                  <div
+                    key={u.id}
+                    className="group flex items-start gap-2 px-2.5 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700"
+                  >
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap mt-0.5 flex-shrink-0">
+                      {format(new Date(u.timestamp), 'MMM d, HH:mm')}
+                    </span>
+                    <p className="flex-1 text-xs text-gray-700 dark:text-gray-300 leading-relaxed min-w-0 break-words">{u.text}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUpdate(u.id)}
+                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+                      title="Remove update"
+                    >
+                      <X className="w-3 h-3 text-gray-300 hover:text-red-500 dark:hover:text-red-400" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* New update input */}
+            <div className="flex gap-2">
+              <textarea
+                value={newUpdateText}
+                onChange={(e) => setNewUpdateText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleAddUpdate();
+                  }
+                }}
+                placeholder="Add a progress note… (Ctrl+Enter to save)"
+                rows={2}
+                className="flex-1 px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddUpdate}
+                disabled={!newUpdateText.trim()}
+                className="self-end px-3 py-2 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           {/* Attachments */}
