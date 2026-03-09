@@ -67,7 +67,7 @@ function getDataDir() {
   return cfg.customDataDir || app.getPath('userData');
 }
 
-let DATA_FILE = path.join(getDataDir(), 'supplier-notes-data.json');
+let DATA_FILE = path.join(getDataDir(), 'Combobulator-data.json');
 let IMAGES_DIR = path.join(getDataDir(), 'images');
 // Ensure images directory exists
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -119,7 +119,7 @@ ipcMain.handle('store:changeDataDir', async () => {
   const newDir = result.filePaths[0];
   const oldDataFile = DATA_FILE;
   const oldImagesDir = IMAGES_DIR;
-  const newDataFile = path.join(newDir, 'supplier-notes-data.json');
+  const newDataFile = path.join(newDir, 'Combobulator-data.json');
   const newImagesDir = path.join(newDir, 'images');
 
   // Copy existing data file if present and new location doesn't already have one

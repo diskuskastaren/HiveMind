@@ -145,5 +145,5 @@ export function downloadFile(content: string, filename: string, mime = 'text/pla
 
 export function exportAllData(data: object) {
   const json = JSON.stringify(data, null, 2);
-  downloadFile(json, `supplier-notes-backup-${format(new Date(), 'yyyy-MM-dd-HHmm')}.json`, 'application/json');
+  downloadFile(json, `Combobulator-data-backup-${format(new Date(), 'yyyy-MM-dd-HHmm')}.json`, 'application/json');
 }

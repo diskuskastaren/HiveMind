@@ -725,7 +725,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'supplier-notes-storage',
+      name: 'Combobulator-data',
       version: 7,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
