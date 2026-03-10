@@ -55,6 +55,18 @@ function formatDueDate(dueDate: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function formatTimeLeft(dueDate: string): string {
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return '';
+  const diffMs = d.getTime() - Date.now();
+  const absDays = Math.floor(Math.abs(diffMs) / 86_400_000);
+  const absHours = Math.floor(Math.abs(diffMs) / 3_600_000);
+  if (diffMs < 0) return absDays >= 1 ? `${absDays}d overdue` : `${absHours}h overdue`;
+  if (absDays >= 1) return `${absDays}d left`;
+  if (absHours >= 1) return `${absHours}h left`;
+  return 'due soon';
+}
+
 const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
   overdue: 'text-red-500 dark:text-red-400 font-medium',
   soon:    'text-amber-600 dark:text-amber-400',
@@ -225,7 +237,7 @@ export function KanbanBoard() {
                           {task.dueDate && urgency && (
                             <div className="mt-1">
                               <span className={`text-[11px] ${DUE_DATE_CLASSES[urgency]}`}>
-                                {urgency === 'overdue' ? '⚑ ' : ''}{formatDueDate(task.dueDate)}
+                                {urgency === 'overdue' ? '⚑ ' : ''}{formatDueDate(task.dueDate)} · {formatTimeLeft(task.dueDate)}
                               </span>
                             </div>
                           )}
