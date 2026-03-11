@@ -11,7 +11,15 @@ export interface AppSettings {
   chunkIntervalSeconds: number;
   autoStopHours: number;
   teamsEnabled: boolean;
-  darkMode: boolean;
+  theme: 'light' | 'dark' | 'ladysucker';
+  releaseVersionDraft: string;
+  releaseNotesDraft: string;
+  releaseHistory: Array<{
+    id: string;
+    version: string;
+    notes: string;
+    createdAt: number;
+  }>;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -23,7 +31,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chunkIntervalSeconds: 60,
   autoStopHours: 4,
   teamsEnabled: true,
-  darkMode: false,
+  theme: 'light',
+  releaseVersionDraft: '',
+  releaseNotesDraft: '',
+  releaseHistory: [],
 };
 
 export const INTERNAL_TAB_ID = '__internal__';
@@ -726,7 +737,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'Combobulator-data',
-      version: 7,
+      version: 9,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -817,6 +828,25 @@ export const useStore = create<AppState>()(
                 ? { ...f, linkedTaskId: undefined }
                 : f
             ),
+          };
+        }
+        if (version < 8) {
+          state = {
+            ...state,
+            settings: {
+              ...state.settings,
+              theme: state.settings?.darkMode ? 'dark' : 'light',
+            },
+          };
+        }
+        if (version < 9) {
+          state = {
+            ...state,
+            settings: {
+              ...DEFAULT_SETTINGS,
+              ...(state.settings || {}),
+              releaseHistory: Array.isArray(state.settings?.releaseHistory) ? state.settings.releaseHistory : [],
+            },
           };
         }
         return state;

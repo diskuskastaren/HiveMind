@@ -18,19 +18,21 @@ import {
   Moon,
   Sun,
   RefreshCw,
+  History,
 } from 'lucide-react';
 import { useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
 import { CustomSelect } from './ui/CustomSelect';
 
-type SettingsTab = 'appearance' | 'ai' | 'recording' | 'teams' | 'data';
+type SettingsTab = 'appearance' | 'ai' | 'recording' | 'teams' | 'releases' | 'data';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'appearance', label: 'Appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'ai', label: 'AI & Summarization', icon: <Bot className="w-4 h-4" /> },
   { id: 'recording', label: 'Recording', icon: <Mic className="w-4 h-4" /> },
   { id: 'teams', label: 'Teams', icon: <Video className="w-4 h-4" /> },
+  { id: 'releases', label: 'Version history', icon: <History className="w-4 h-4" /> },
   { id: 'data', label: 'Data & Storage', icon: <Database className="w-4 h-4" /> },
 ];
 
@@ -150,6 +152,9 @@ export function SettingsModal() {
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
   const [dataDirChanging, setDataDirChanging] = useState(false);
+  const [githubReleases, setGithubReleases] = useState<Array<{ tag_name: string; body: string | null; published_at: string | null }>>([]);
+  const [githubReleasesLoading, setGithubReleasesLoading] = useState(false);
+  const [githubReleasesError, setGithubReleasesError] = useState<string | null>(null);
 
   // Sync draft when settings change from outside (e.g. migration)
   useEffect(() => {
@@ -166,6 +171,29 @@ export function SettingsModal() {
       });
     }
   }, []);
+
+  // Fetch GitHub releases when Version history tab is open
+  const fetchGithubReleases = () => {
+    setGithubReleasesLoading(true);
+    setGithubReleasesError(null);
+    fetch('https://api.github.com/repos/diskuskastaren/HiveMind/releases', {
+      headers: { Accept: 'application/vnd.github.v3+json' },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 404 ? 'Repo or releases not found' : `HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: Array<{ tag_name: string; body: string | null; published_at: string | null; draft?: boolean }>) => {
+        const published = (data || []).filter((r) => !r.draft).slice(0, 30);
+        setGithubReleases(published);
+      })
+      .catch((e: Error) => setGithubReleasesError(e?.message ?? 'Failed to load releases'))
+      .finally(() => setGithubReleasesLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'releases') fetchGithubReleases();
+  }, [activeTab]);
 
   const saveApiKey = () => {
     updateSettings({ openaiApiKey: apiKeyDraft.trim() });
@@ -352,31 +380,34 @@ export function SettingsModal() {
               <>
                 <SectionHeading>Theme</SectionHeading>
 
-                <div className="flex items-start justify-between gap-4 py-1">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Dark mode</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
-                      Reduces eye strain during long sessions. Toggle instantly with the moon icon in the sidebar.
-                    </p>
+                <div className="space-y-2 py-1">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Color theme</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+                    Choose your preferred color scheme. You can also cycle through themes with the icon in the sidebar footer.
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    {([
+                      { id: 'light',      label: 'Light',      icon: <Sun className="w-4 h-4" /> },
+                      { id: 'dark',       label: 'Dark',       icon: <Moon className="w-4 h-4" /> },
+                      { id: 'ladysucker', label: 'Ladysucker', icon: <img src="/icon.png" alt="" className="w-4 h-4 object-contain" /> },
+                    ] as const).map(({ id, label, icon }) => {
+                      const active = settings.theme === id;
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => updateSettings({ theme: id })}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                            active
+                              ? 'border-gray-700 dark:border-gray-300 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          {icon}
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button
-                    role="switch"
-                    aria-checked={settings.darkMode}
-                    onClick={() => updateSettings({ darkMode: !settings.darkMode })}
-                    className={`flex-shrink-0 relative w-10 h-6 rounded-full transition-colors ${
-                      settings.darkMode ? 'bg-gray-700 dark:bg-gray-300' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform flex items-center justify-center ${
-                        settings.darkMode ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    >
-                      {settings.darkMode
-                        ? <Moon className="w-2.5 h-2.5 text-gray-600 dark:text-gray-700" />
-                        : <Sun className="w-2.5 h-2.5 text-amber-400" />}
-                    </span>
-                  </button>
                 </div>
               </>
             )}
@@ -615,6 +646,60 @@ export function SettingsModal() {
                     <li>Restart this app — it will pair automatically when you join a meeting</li>
                   </ol>
                 </div>
+              </>
+            )}
+
+            {/* ── Version history tab (GitHub releases, read-only) ─── */}
+            {activeTab === 'releases' && (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <SectionHeading>Release notes</SectionHeading>
+                  <button
+                    onClick={fetchGithubReleases}
+                    disabled={githubReleasesLoading}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${githubReleasesLoading ? 'animate-spin' : ''}`} />
+                    {githubReleasesLoading ? 'Loading…' : 'Refresh'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
+                  Fetched from GitHub. Only published releases are shown.
+                </p>
+
+                {githubReleasesError && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2.5 text-sm text-red-700 dark:text-red-300">
+                    {githubReleasesError}
+                  </div>
+                )}
+
+                {!githubReleasesError && githubReleasesLoading && githubReleases.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading releases…</p>
+                )}
+
+                {!githubReleasesError && !githubReleasesLoading && githubReleases.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No releases found.</p>
+                )}
+
+                {!githubReleasesError && (githubReleases.length > 0 || githubReleasesLoading) && (
+                  <div className="space-y-3">
+                    {githubReleases.map((r) => (
+                      <div key={r.tag_name} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{r.tag_name}</p>
+                        {r.published_at && (
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                            {new Date(r.published_at).toLocaleString()}
+                          </p>
+                        )}
+                        {r.body ? (
+                          <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed mt-2 whitespace-pre-wrap">{r.body}</p>
+                        ) : (
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 italic">No release notes.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
 

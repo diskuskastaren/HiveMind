@@ -158,3 +158,163 @@
 .tiptap img.ProseMirror-selectednode {
   @apply outline outline-2 outline-blue-400;
 }
+
+/* ─── Ladysucker theme ──────────────────────────────────────────────────────
+   Palette:
+     #1D1210  Dark Coffee  — main background
+     #4D2C27  Espresso     — secondary background / panels
+     #9EA323  Lime Moss    — secondary text / muted accents
+     #D6DD33  Lemon Lime   — primary text / highlights
+     #7E544A  Clay Soil    — borders, muted elements
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.ladysucker body {
+  background-color: #1D1210;
+  color: #D6DD33;
+}
+
+/* Global border colour */
+.ladysucker * {
+  border-color: #7E544A !important;
+}
+
+/* ── Backgrounds ─────────────────────────────────────────────────────────── */
+.ladysucker .bg-white           { background-color: #1D1210 !important; }
+.ladysucker .bg-gray-50         { background-color: #3d2522 !important; }
+.ladysucker .bg-gray-100        { background-color: #4D2C27 !important; }
+.ladysucker .bg-gray-200        { background-color: #5a3630 !important; }
+.ladysucker .bg-gray-700        { background-color: #5a3630 !important; }
+.ladysucker .bg-gray-800        { background-color: #4D2C27 !important; }
+.ladysucker .bg-gray-900        { background-color: #1D1210 !important; }
+.ladysucker .bg-gray-950        { background-color: #2e1a18 !important; }
+
+/* Hover backgrounds */
+.ladysucker .hover\:bg-gray-50:hover   { background-color: #3d2522 !important; }
+.ladysucker .hover\:bg-gray-100:hover  { background-color: #4D2C27 !important; }
+.ladysucker .hover\:bg-gray-200:hover  { background-color: #5a3630 !important; }
+.ladysucker .hover\:bg-gray-700:hover  { background-color: #5a3630 !important; }
+.ladysucker .hover\:bg-gray-800:hover  { background-color: #4D2C27 !important; }
+
+/* Dark-variant overrides (Tailwind applies these when .dark is on html;
+   .ladysucker takes over instead, so we mirror the patterns) */
+.ladysucker .dark\:bg-gray-700  { background-color: #5a3630 !important; }
+.ladysucker .dark\:bg-gray-800  { background-color: #4D2C27 !important; }
+.ladysucker .dark\:bg-gray-900  { background-color: #1D1210 !important; }
+.ladysucker .dark\:bg-gray-950  { background-color: #2e1a18 !important; }
+
+.ladysucker .dark\:hover\:bg-gray-700:hover { background-color: #5a3630 !important; }
+.ladysucker .dark\:hover\:bg-gray-800:hover { background-color: #4D2C27 !important; }
+
+/* ── Text colours ────────────────────────────────────────────────────────── */
+.ladysucker .text-gray-900      { color: #D6DD33 !important; }
+.ladysucker .text-gray-800      { color: #D6DD33 !important; }
+.ladysucker .text-gray-700      { color: #c4cb2e !important; }
+.ladysucker .text-gray-600      { color: #9EA323 !important; }
+.ladysucker .text-gray-500      { color: #8a9020 !important; }
+.ladysucker .text-gray-400      { color: #7E544A !important; }
+.ladysucker .text-gray-300      { color: #9EA323 !important; }
+.ladysucker .text-gray-200      { color: #D6DD33 !important; }
+.ladysucker .text-gray-100      { color: #D6DD33 !important; }
+
+/* Dark-variant text overrides */
+.ladysucker .dark\:text-gray-100 { color: #D6DD33 !important; }
+.ladysucker .dark\:text-gray-200 { color: #D6DD33 !important; }
+.ladysucker .dark\:text-gray-300 { color: #c4cb2e !important; }
+.ladysucker .dark\:text-gray-400 { color: #9EA323 !important; }
+.ladysucker .dark\:text-gray-500 { color: #7E544A !important; }
+.ladysucker .dark\:text-gray-600 { color: #7E544A !important; }
+
+/* Hover text */
+.ladysucker .hover\:text-gray-600:hover  { color: #9EA323 !important; }
+.ladysucker .hover\:text-gray-700:hover  { color: #c4cb2e !important; }
+.ladysucker .hover\:text-gray-800:hover  { color: #D6DD33 !important; }
+.ladysucker .hover\:text-gray-900:hover  { color: #D6DD33 !important; }
+.ladysucker .dark\:hover\:text-gray-200:hover { color: #D6DD33 !important; }
+.ladysucker .dark\:hover\:text-gray-300:hover { color: #c4cb2e !important; }
+
+/* ── Borders ─────────────────────────────────────────────────────────────── */
+.ladysucker .border-gray-100    { border-color: #5a3630 !important; }
+.ladysucker .border-gray-200    { border-color: #7E544A !important; }
+.ladysucker .border-gray-300    { border-color: #7E544A !important; }
+.ladysucker .border-gray-600    { border-color: #7E544A !important; }
+.ladysucker .border-gray-700    { border-color: #7E544A !important; }
+.ladysucker .border-gray-800    { border-color: #5a3630 !important; }
+.ladysucker .dark\:border-gray-600 { border-color: #7E544A !important; }
+.ladysucker .dark\:border-gray-700 { border-color: #7E544A !important; }
+.ladysucker .dark\:border-gray-800 { border-color: #5a3630 !important; }
+
+/* ── Divide colours ──────────────────────────────────────────────────────── */
+.ladysucker .divide-gray-200 > * + * { border-color: #7E544A !important; }
+.ladysucker .divide-gray-700 > * + * { border-color: #7E544A !important; }
+.ladysucker .dark\:divide-gray-700 > * + * { border-color: #7E544A !important; }
+
+/* ── Ring / outline colours ──────────────────────────────────────────────── */
+.ladysucker .ring-gray-200  { --tw-ring-color: #7E544A !important; }
+.ladysucker .ring-gray-700  { --tw-ring-color: #7E544A !important; }
+.ladysucker .focus\:ring-gray-200:focus { --tw-ring-color: #7E544A !important; }
+.ladysucker .focus\:ring-2:focus { --tw-ring-color: #D6DD33 !important; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+.ladysucker ::-webkit-scrollbar-thumb {
+  background-color: #7E544A !important;
+}
+.ladysucker ::-webkit-scrollbar-thumb:hover {
+  background-color: #9EA323 !important;
+}
+.ladysucker ::-webkit-scrollbar-track {
+  background-color: transparent !important;
+}
+
+/* ── TipTap editor ───────────────────────────────────────────────────────── */
+.ladysucker .tiptap h1 { color: #D6DD33 !important; }
+.ladysucker .tiptap h2 { color: #D6DD33 !important; }
+.ladysucker .tiptap h3 { color: #c4cb2e !important; }
+.ladysucker .tiptap blockquote {
+  border-left-color: #7E544A !important;
+  color: #9EA323 !important;
+}
+.ladysucker .tiptap code {
+  background-color: #4D2C27 !important;
+  color: #D6DD33 !important;
+}
+.ladysucker .tiptap pre {
+  background-color: #2e1a18 !important;
+  color: #D6DD33 !important;
+}
+.ladysucker .tiptap hr { border-top-color: #7E544A !important; }
+.ladysucker .tiptap mark {
+  background-color: #9EA323 !important;
+  color: #1D1210 !important;
+}
+.ladysucker .tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  color: #7E544A !important;
+}
+.ladysucker .tiptap p.is-editor-empty:first-child::before {
+  color: #7E544A !important;
+}
+.ladysucker .tiptap img {
+  border-color: #7E544A !important;
+}
+
+/* ── Input / form elements ───────────────────────────────────────────────── */
+.ladysucker input,
+.ladysucker textarea,
+.ladysucker select {
+  background-color: #4D2C27 !important;
+  color: #D6DD33 !important;
+  border-color: #7E544A !important;
+}
+.ladysucker input::placeholder,
+.ladysucker textarea::placeholder {
+  color: #7E544A !important;
+}
+.ladysucker input:focus,
+.ladysucker textarea:focus,
+.ladysucker select:focus {
+  outline-color: #D6DD33 !important;
+  border-color: #9EA323 !important;
+}
+
+/* ── Accent / brand colours kept intact ─────────────────────────────────── */
+/* Blue, orange, amber, green accents are intentionally preserved so that
+   supplier colour chips, status badges, and action buttons retain contrast */

@@ -58,7 +58,7 @@ export function Sidebar() {
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
-  const darkMode = useStore((s) => s.settings.darkMode);
+  const theme = useStore((s) => s.settings.theme);
   const updateSettings = useStore((s) => s.updateSettings);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -579,11 +579,16 @@ export function Sidebar() {
           Settings
         </button>
         <button
-          onClick={() => updateSettings({ darkMode: !darkMode })}
+          onClick={() => {
+            const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'ladysucker' : 'light';
+            updateSettings({ theme: next });
+          }}
           className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0"
-          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to Ladysucker theme' : 'Switch to light mode'}
         >
-          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {theme === 'light' && <Moon className="w-4 h-4" />}
+          {theme === 'dark' && <img src="/icon.png" alt="Ladysucker" className="w-4 h-4 object-contain" />}
+          {theme === 'ladysucker' && <Sun className="w-4 h-4" />}
         </button>
       </div>
 

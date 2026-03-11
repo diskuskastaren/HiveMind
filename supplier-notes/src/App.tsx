@@ -334,14 +334,16 @@ export default function App() {
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
   const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
-  const darkMode = useStore((s) => s.settings.darkMode);
+  const theme = useStore((s) => s.settings.theme);
 
   useEffect(() => {
     document.documentElement.classList.add('no-transition');
-    document.documentElement.classList.toggle('dark', darkMode);
+    document.documentElement.classList.remove('dark', 'ladysucker');
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+    else if (theme === 'ladysucker') document.documentElement.classList.add('ladysucker');
     document.documentElement.offsetHeight;
     document.documentElement.classList.remove('no-transition');
-  }, [darkMode]);
+  }, [theme]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
