@@ -587,7 +587,7 @@ export function Sidebar() {
           title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to Ladysucker theme' : 'Switch to light mode'}
         >
           {theme === 'light' && <Moon className="w-4 h-4" />}
-          {theme === 'dark' && <img src="/icon.png" alt="Ladysucker" className="w-4 h-4 object-contain" />}
+          {theme === 'dark' && <img src={import.meta.env.BASE_URL + 'icon.png'} alt="Ladysucker" className="w-4 h-4 object-contain" />}
           {theme === 'ladysucker' && <Sun className="w-4 h-4" />}
         </button>
       </div>

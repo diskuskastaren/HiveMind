@@ -169,7 +169,27 @@ ipcMain.handle('store:resetDataDir', async () => {
   return { changed: true };
 });
 
-ipcMain.handle('updater:check', () => autoUpdater.checkForUpdates());
+ipcMain.handle('updater:check', () =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Update check timed out')); }, 30_000);
+
+    const onAvailable    = (info) => { cleanup(); resolve({ status: 'available', version: info.version }); };
+    const onNotAvailable = ()     => { cleanup(); resolve({ status: 'up-to-date' }); };
+    const onError        = (err)  => { cleanup(); reject(err); };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      autoUpdater.removeListener('update-available', onAvailable);
+      autoUpdater.removeListener('update-not-available', onNotAvailable);
+      autoUpdater.removeListener('error', onError);
+    };
+
+    autoUpdater.once('update-available', onAvailable);
+    autoUpdater.once('update-not-available', onNotAvailable);
+    autoUpdater.once('error', onError);
+    autoUpdater.checkForUpdates().catch((err) => { cleanup(); reject(err); });
+  })
+);
 ipcMain.handle('updater:install', () => { autoUpdater.quitAndInstall(); });
 
 // Return screen source IDs so the renderer can capture system audio

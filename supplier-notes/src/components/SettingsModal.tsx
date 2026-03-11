@@ -284,18 +284,12 @@ export function SettingsModal() {
     const updater = (window as any).electronUpdater;
     if (!updater) return;
     setUpdateCheckStatus('checking');
-    const onAvailable = () => { setUpdateCheckStatus('available'); cleanup(); };
-    const onNotAvailable = () => { setUpdateCheckStatus('up-to-date'); cleanup(); };
-    const onError = () => { setUpdateCheckStatus('error'); cleanup(); };
-    const cleanup = () => {
-      updater.offUpdateAvailable(onAvailable);
-      updater.offUpdateNotAvailable(onNotAvailable);
-      updater.offError(onError);
-    };
-    updater.onUpdateAvailable(onAvailable);
-    updater.onUpdateNotAvailable(onNotAvailable);
-    updater.onError(onError);
-    await updater.check();
+    try {
+      const result = await updater.check();
+      setUpdateCheckStatus(result?.status ?? 'up-to-date');
+    } catch {
+      setUpdateCheckStatus('error');
+    }
   };
 
   const handleClearData = () => {
@@ -389,7 +383,7 @@ export function SettingsModal() {
                     {([
                       { id: 'light',      label: 'Light',      icon: <Sun className="w-4 h-4" /> },
                       { id: 'dark',       label: 'Dark',       icon: <Moon className="w-4 h-4" /> },
-                      { id: 'ladysucker', label: 'Ladysucker', icon: <img src="/icon.png" alt="" className="w-4 h-4 object-contain" /> },
+                      { id: 'ladysucker', label: 'Ladysucker', icon: <img src={import.meta.env.BASE_URL + 'icon.png'} alt="" className="w-4 h-4 object-contain" /> },
                     ] as const).map(({ id, label, icon }) => {
                       const active = settings.theme === id;
                       return (

@@ -1,7 +1,7 @@
 {
   "name": "supplier-notes",
   "private": true,
-  "version": "1.2.9",
+  "version": "1.2.9.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
