@@ -1,10 +1,16 @@
-## LIST OF BUGS/IMPROVEMENTS ##
+## LIST OF BUGS/IMPROVEMENTS
 
 ## TRANSCRIPTION
 - Audio visualizer not working with other audio than mic
 - AI summary instructions not good. Needs to just be asking ChatGPT to summarize without giving instructions on Key Points/Actions/Decisions specificially.
 Consider changing API. 
 
+
 ## TASKS
 
+- The linked-follow doesnt display properly both in the follow-up tab and the task module. 
+
 ## OTHER
+- Before sharing, investigate possible NDA problems with transcriptions etc
+    - User guide? 
+- Heimdahl flags it as "malicious" causing updates not to work properly. 
