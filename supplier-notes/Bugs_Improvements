@@ -9,6 +9,7 @@ Consider changing API.
 ## TASKS
 
 - The linked-follow doesnt display properly both in the follow-up tab and the task module. 
+- Make it possible to edit follow-ups created. 
 
 ## OTHER
 - Before sharing, investigate possible NDA problems with transcriptions etc
