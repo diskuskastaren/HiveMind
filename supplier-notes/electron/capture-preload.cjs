@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('captureIpc', {
   sendReady:   (mime) => ipcRenderer.send('capture:ready',   mime),
   sendError:   (msg)  => ipcRenderer.send('capture:error',   msg),
   sendStopped: ()     => ipcRenderer.send('capture:stopped'),
+  sendLevels:  (data) => ipcRenderer.send('capture:levels',  data),
 });

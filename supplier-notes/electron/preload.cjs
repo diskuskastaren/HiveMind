@@ -21,8 +21,9 @@ contextBridge.exposeInMainWorld('electronAttachments', {
 });
 
 // Maps from caller-supplied callback → IPC wrapper, so we can removeListener correctly.
-const _captureChunkWrappers = new Map();
-const _captureErrorWrappers = new Map();
+const _captureChunkWrappers  = new Map();
+const _captureErrorWrappers  = new Map();
+const _captureLevelsWrappers = new Map();
 
 contextBridge.exposeInMainWorld('electronCapture', {
   getSources: () => ipcRenderer.invoke('desktop:getSources'),
@@ -58,6 +59,20 @@ contextBridge.exposeInMainWorld('electronCapture', {
     if (wrapper) {
       ipcRenderer.removeListener('capture:error', wrapper);
       _captureErrorWrappers.delete(cb);
+    }
+  },
+
+  // Register/unregister a handler for visualizer frequency level arrays (~30 fps).
+  onLevels: (cb) => {
+    const wrapper = (_e, data) => cb(data);
+    _captureLevelsWrappers.set(cb, wrapper);
+    ipcRenderer.on('capture:levels', wrapper);
+  },
+  offLevels: (cb) => {
+    const wrapper = _captureLevelsWrappers.get(cb);
+    if (wrapper) {
+      ipcRenderer.removeListener('capture:levels', wrapper);
+      _captureLevelsWrappers.delete(cb);
     }
   },
 });

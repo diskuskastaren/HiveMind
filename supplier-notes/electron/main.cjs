@@ -456,6 +456,13 @@ ipcMain.on('capture:chunk', (_event, buffer) => {
   }
 });
 
+// Forward visualizer frequency levels from the capture window to the main renderer.
+ipcMain.on('capture:levels', (_event, data) => {
+  if (captureMainWindow && !captureMainWindow.isDestroyed()) {
+    captureMainWindow.webContents.send('capture:levels', data);
+  }
+});
+
 // Forward runtime errors from the capture window to the main renderer.
 // (Start-phase errors are handled via ipcMain.once inside desktop:startCapture.)
 ipcMain.on('capture:error', (_event, msg) => {

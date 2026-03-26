@@ -438,7 +438,7 @@ export function TranscriptTab() {
   // Captures wall-clock start time so the elapsed timer never resets when switching notes
   const recordingStartTimeRef = useRef<number>(0);
 
-  const { start, stop, visualizerStream, debugStatus, transcriptIdRef } = useTranscription({
+  const { start, stop, visualizerStream, visualizerLevels, debugStatus, transcriptIdRef } = useTranscription({
     noteId: note?.id ?? '',
     apiKey,
     mode,
@@ -544,7 +544,7 @@ export function TranscriptTab() {
         </div>
 
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-          <AudioVisualizer stream={visualizerStream} />
+          <AudioVisualizer stream={visualizerStream} levels={visualizerLevels} />
         </div>
 
         <div ref={liveScrollRef} className="flex-1 overflow-y-auto p-4">

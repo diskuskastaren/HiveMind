@@ -407,9 +407,10 @@ function TasksSection() {
                   const supplier = task.supplierId ? suppliers.find((s) => s.id === task.supplierId) : null;
                   const project = projects.find((p) => p.id === task.projectId);
                   const note = notes.find((n) => n.id === task.noteId);
-                  const linkedFollowUp = task.linkedFollowUpId
-                    ? followUps.find((f) => f.id === task.linkedFollowUpId)
-                    : null;
+                  const linkedFollowUp =
+                    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null)
+                    ?? followUps.find((f) => f.linkedTaskId === task.id)
+                    ?? null;
                   const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
 
                   // Owner avatar appearance
@@ -822,6 +823,8 @@ function FollowUpsSection() {
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [showResolved, setShowResolved] = useState(false);
   const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [editingFollowUpId, setEditingFollowUpId] = useState<string | null>(null);
+  const [editingFollowUpText, setEditingFollowUpText] = useState('');
 
   const visibleProjects = projects.filter((p) => !p.archived);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -893,13 +896,20 @@ function FollowUpsSection() {
     // Linked item resolution
     const taskItem = type === 'task' ? (item as typeof tasks[0]) : null;
     const followUpItem = type === 'followup' ? (item as typeof followUps[0]) : null;
-    const linkedTask = followUpItem?.linkedTaskId ? tasks.find((t) => t.id === followUpItem.linkedTaskId) : null;
-    const linkedFollowUp = taskItem?.linkedFollowUpId ? followUps.find((f) => f.id === taskItem.linkedFollowUpId) : null;
+    const linkedTask = followUpItem
+      ? ((followUpItem.linkedTaskId ? tasks.find((t) => t.id === followUpItem.linkedTaskId) : null)
+         ?? tasks.find((t) => t.linkedFollowUpId === followUpItem.id)
+         ?? null)
+      : null;
+    const linkedFollowUp = taskItem
+      ? ((taskItem.linkedFollowUpId ? followUps.find((f) => f.id === taskItem.linkedFollowUpId) : null)
+         ?? followUps.find((f) => f.linkedTaskId === taskItem.id)
+         ?? null)
+      : null;
 
     // Candidate tasks to link to a follow-up (same project, not already linked to another follow-up)
     const linkableTasks = tasks.filter(
       (t) => t.projectId === projectId &&
-        (supplierId === null ? t.supplierId === null : (supplierId ? t.supplierId === supplierId : true)) &&
         (!t.linkedFollowUpId || t.linkedFollowUpId === item.id)
     );
 
@@ -928,9 +938,33 @@ function FollowUpsSection() {
         </button>
 
         <div className="flex-1 min-w-0">
-          <span className={`text-sm ${isResolved ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
-            {text}
-          </span>
+          {type === 'followup' && editingFollowUpId === item.id ? (
+            <input
+              autoFocus
+              className="w-full text-sm px-1.5 py-0.5 rounded border border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white dark:bg-gray-700 dark:text-gray-100"
+              value={editingFollowUpText}
+              onChange={(e) => setEditingFollowUpText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const t = editingFollowUpText.trim();
+                  if (t) updateFollowUp(item.id, { text: t });
+                  setEditingFollowUpId(null);
+                } else if (e.key === 'Escape') {
+                  setEditingFollowUpId(null);
+                }
+              }}
+              onBlur={() => {
+                const t = editingFollowUpText.trim();
+                if (t) updateFollowUp(item.id, { text: t });
+                setEditingFollowUpId(null);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className={`text-sm ${isResolved ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
+              {text}
+            </span>
+          )}
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             {project && (
               <span
@@ -1079,13 +1113,26 @@ function FollowUpsSection() {
             </button>
           )}
           {type === 'followup' && (
-            <button
-              className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-              onClick={() => deleteFollowUp(item.id)}
-              title="Delete"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
-            </button>
+            <>
+              <button
+                className="p-1 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingFollowUpId(item.id);
+                  setEditingFollowUpText((item as typeof followUps[0]).text);
+                }}
+                title="Edit"
+              >
+                <Pencil className="w-3.5 h-3.5 text-gray-400 hover:text-violet-500" />
+              </button>
+              <button
+                className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                onClick={() => deleteFollowUp(item.id)}
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+              </button>
+            </>
           )}
         </div>
       </div>

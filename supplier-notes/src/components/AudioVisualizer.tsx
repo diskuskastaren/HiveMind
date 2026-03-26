@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 
 interface AudioVisualizerProps {
-  stream: MediaStream | null;
+  stream?: MediaStream | null;
+  levels?: number[] | null;
 }
 
 const BAR_COUNT = 40;
@@ -9,20 +10,20 @@ const BAR_GAP = 2;
 // Minimum bar height as a fraction of canvas height so bars are always visible
 const MIN_BAR_RATIO = 0.08;
 
-export function AudioVisualizer({ stream }: AudioVisualizerProps) {
+export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
+  // Stream-based path: sets up a Web Audio graph and runs its own rAF loop.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Tear down any previous context before setting up a new one
     const cleanup = () => {
       cancelAnimationFrame(rafRef.current);
       sourceRef.current?.disconnect();
@@ -34,8 +35,10 @@ export function AudioVisualizer({ stream }: AudioVisualizerProps) {
     };
 
     if (!stream) {
-      // Draw flat idle bars when not recording
-      drawBars(ctx, canvas.width, canvas.height, new Uint8Array(BAR_COUNT).fill(0));
+      // Only draw idle bars if levels aren't supplying live data either.
+      if (!levels?.length) {
+        drawBars(ctx, canvas.width, canvas.height, new Uint8Array(BAR_COUNT).fill(0));
+      }
       return cleanup;
     }
 
@@ -44,7 +47,7 @@ export function AudioVisualizer({ stream }: AudioVisualizerProps) {
     try {
       const audioCtx = new AudioContext();
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 128; // 64 frequency bins — plenty for BAR_COUNT bars
+      analyser.fftSize = 128;
       analyser.smoothingTimeConstant = 0.75;
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -59,7 +62,6 @@ export function AudioVisualizer({ stream }: AudioVisualizerProps) {
       const draw = () => {
         rafRef.current = requestAnimationFrame(draw);
         analyser.getByteFrequencyData(dataArray);
-        // Resize canvas to match its CSS size for sharp rendering
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
         if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
@@ -76,7 +78,26 @@ export function AudioVisualizer({ stream }: AudioVisualizerProps) {
     }
 
     return cleanup;
-  }, [stream]);
+  }, [stream]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // IPC levels path: draw directly from pre-computed frequency data (system audio mode).
+  useEffect(() => {
+    if (stream) return; // stream path owns the canvas when active
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (!levels?.length) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+    }
+    drawBars(ctx, rect.width, rect.height, new Uint8Array(levels));
+  }, [levels, stream]);
 
   return (
     <canvas

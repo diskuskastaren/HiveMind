@@ -33,6 +33,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   // Reactive stream exposed to the visualizer — set on start, cleared on stop
   const [visualizerStream, setVisualizerStream] = useState<MediaStream | null>(null);
+  // Frequency level data forwarded from the hidden capture window (system mode only)
+  const [visualizerLevels, setVisualizerLevels] = useState<number[] | null>(null);
   // Human-readable status shown in the UI for debugging
   const [debugStatus, setDebugStatus] = useState('');
 
@@ -56,6 +58,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const captureMimeTypeRef        = useRef('audio/webm');
   const captureChunkHandlerRef    = useRef<((buf: ArrayBuffer) => void) | null>(null);
   const captureErrorHandlerRef    = useRef<((msg: string) => void) | null>(null);
+  const captureLevelsHandlerRef   = useRef<((data: number[]) => void) | null>(null);
 
   // Auto-stop safety net — fires after 4 hours in case the user forgets to stop
   const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -297,15 +300,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       electronCapture.onError(errorHandler);
       captureErrorHandlerRef.current = errorHandler;
 
-      // Acquire a mic stream in the main renderer for the audio visualizer only.
-      // (Actual mic audio is mixed inside the hidden capture window.)
-      try {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        micStreamRef.current = micStream;
-        setVisualizerStream(micStream);
-      } catch {
-        // Visualizer won't work but transcription continues.
-      }
+      // Subscribe to frequency levels forwarded from the hidden capture window.
+      // This reflects the real mixed audio (system + mic) instead of a plain mic stream.
+      const levelsHandler = (data: number[]) => setVisualizerLevels(data);
+      electronCapture.onLevels(levelsHandler);
+      captureLevelsHandlerRef.current = levelsHandler;
 
       // Periodic Whisper transcription — same logic as before.
       const processChunks = async () => {
@@ -430,6 +429,11 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         electronCapture.offError(captureErrorHandlerRef.current);
         captureErrorHandlerRef.current = null;
       }
+      if (captureLevelsHandlerRef.current && electronCapture) {
+        electronCapture.offLevels(captureLevelsHandlerRef.current);
+        captureLevelsHandlerRef.current = null;
+      }
+      setVisualizerLevels(null);
 
       // Transcribe any chunks that arrived after the last interval tick.
       const mimeTypeSys = captureMimeTypeRef.current || 'audio/webm';
@@ -503,5 +507,5 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   // Keep stopRef current so the auto-stop timeout always calls the latest stop function
   stopRef.current = stop;
 
-  return { start, stop, visualizerStream, debugStatus, transcriptIdRef };
+  return { start, stop, visualizerStream, visualizerLevels, debugStatus, transcriptIdRef };
 }

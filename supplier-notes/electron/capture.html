@@ -10,9 +10,11 @@
   let audioCtx      = null;
   let capturedStream = null;
   let micStream     = null;
+  let vizRafId      = null;
 
   // Register stop handler immediately so it is always ready.
   window.captureIpc.onStop(() => {
+    if (vizRafId) { cancelAnimationFrame(vizRafId); vizRafId = null; }
     if (recorder && recorder.state !== 'inactive') {
       recorder.onstop = () => {
         if (capturedStream) capturedStream.getTracks().forEach(t => t.stop());
@@ -54,16 +56,37 @@
 
       // Mix system audio + microphone into a single destination stream.
       audioCtx = new AudioContext();
-      const dest      = audioCtx.createMediaStreamDestination();
+      const dest     = audioCtx.createMediaStreamDestination();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.75;
+
       const sysAudio  = new MediaStream(capturedStream.getAudioTracks());
-      audioCtx.createMediaStreamSource(sysAudio).connect(dest);
+      const sysSource = audioCtx.createMediaStreamSource(sysAudio);
+      sysSource.connect(dest);
+      sysSource.connect(analyser);
 
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        audioCtx.createMediaStreamSource(micStream).connect(dest);
+        const micSource = audioCtx.createMediaStreamSource(micStream);
+        micSource.connect(dest);
+        micSource.connect(analyser);
       } catch {
         // Mic unavailable — record system audio only.
       }
+
+      // Forward frequency data to the main renderer at ~30 fps for the visualizer.
+      const levelsData   = new Uint8Array(analyser.frequencyBinCount);
+      let lastLevelSend  = 0;
+      function sendLevels() {
+        vizRafId = requestAnimationFrame(sendLevels);
+        const now = performance.now();
+        if (now - lastLevelSend < 33) return;
+        lastLevelSend = now;
+        analyser.getByteFrequencyData(levelsData);
+        window.captureIpc.sendLevels(Array.from(levelsData));
+      }
+      sendLevels();
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'

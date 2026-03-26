@@ -16,13 +16,13 @@ export function UpdateDialog() {
     const updater = (window as any).electronUpdater;
     if (!updater) return;
 
-    const onAvailable = (_: unknown, info: { version: string }) => {
+    const onAvailable = (info: { version: string }) => {
       setState({ status: 'available', version: info.version, error: '' });
     };
-    const onDownloaded = (_: unknown, info: { version: string }) => {
+    const onDownloaded = (info: { version: string }) => {
       setState({ status: 'downloaded', version: info.version, error: '' });
     };
-    const onError = (_: unknown, info: { message: string }) => {
+    const onError = (info: { message: string }) => {
       setState((s) => s.status === 'idle' ? s : { status: 'error', version: '', error: info.message });
     };
 
