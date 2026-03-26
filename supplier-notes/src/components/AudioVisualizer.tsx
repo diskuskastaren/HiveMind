@@ -64,6 +64,8 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
         analyser.getByteFrequencyData(dataArray);
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
+        // Canvas is hidden/collapsed (e.g. Tasks view active) — skip this frame
+        if (rect.width <= 0 || rect.height <= 0) return;
         if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
           canvas.width = rect.width * dpr;
           canvas.height = rect.height * dpr;
@@ -92,6 +94,8 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    // Canvas is hidden/collapsed — skip drawing this frame
+    if (rect.width <= 0 || rect.height <= 0) return;
     if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
@@ -117,7 +121,7 @@ function drawBars(
   ctx.clearRect(0, 0, width, height);
 
   const totalGap = BAR_GAP * (BAR_COUNT + 1);
-  const barWidth = (width - totalGap) / BAR_COUNT;
+  const barWidth = Math.max(0, (width - totalGap) / BAR_COUNT);
 
   // Sample the frequency data evenly across the array into BAR_COUNT buckets
   const bucketSize = Math.max(1, Math.floor(data.length / BAR_COUNT));
@@ -141,7 +145,7 @@ function drawBars(
     const alpha = 0.25 + normalised * 0.75;
     ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`; // tailwind red-500
 
-    const radius = Math.min(barWidth / 2, 3);
+    const radius = Math.max(0, Math.min(barWidth / 2, 3));
     roundRect(ctx, x, y, barWidth, barH, radius);
     ctx.fill();
   }
