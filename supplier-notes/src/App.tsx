@@ -10,10 +10,11 @@ import { TaskModal } from './components/TaskModal';
 import { Dashboard } from './components/Dashboard';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
+import { HelpModal } from './components/HelpModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpdateDialog } from './components/UpdateDialog';
-import { FileText, Keyboard, FolderOpen, Pin, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Keyboard, FolderOpen, Pin, Clock, ChevronDown, ChevronUp, BookOpen } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 
 function formatRelativeTime(ts: number): string {
@@ -91,6 +92,7 @@ function DashboardOverview() {
   const followUps = useStore((s) => s.followUps);
   const openTab = useStore((s) => s.openTab);
   const navigateToNote = useStore((s) => s.navigateToNote);
+  const toggleHelp = useStore((s) => s.toggleHelp);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const projectSuppliers = activeProjectId
@@ -281,6 +283,27 @@ function DashboardOverview() {
           </section>
         )}
 
+        {/* Help guide card */}
+        <section>
+          <button
+            onClick={toggleHelp}
+            className="w-full flex items-center gap-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left group"
+          >
+            <BookOpen className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">
+                Open Help Guide
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                Learn how to use projects, notes, tasks, transcription, and more
+              </p>
+            </div>
+            <span className="text-xs text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors flex-shrink-0">
+              View guide →
+            </span>
+          </button>
+        </section>
+
         {/* Keyboard shortcuts — collapsed by default */}
         <section>
           <button
@@ -328,6 +351,7 @@ export default function App() {
   const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const helpOpen = useStore((s) => s.helpOpen);
   const editingTaskId = useStore((s) => s.editingTaskId);
   const activeTabId = useStore((s) => s.activeTabId);
   const activeView = useStore((s) => s.activeView);
@@ -352,6 +376,7 @@ export default function App() {
 
       if (e.key === 'Escape') {
         if (s.editingTaskId) { s.setEditingTask(null); return; }
+        if (s.helpOpen) { s.toggleHelp(); return; }
         if (s.settingsOpen) { s.toggleSettings(); return; }
         if (s.commandPaletteOpen) { s.toggleCommandPalette(); return; }
         if (s.searchOpen) { s.toggleSearch(); return; }
@@ -465,6 +490,7 @@ export default function App() {
       {commandPaletteOpen && <CommandPalette />}
       {searchOpen && <SearchModal />}
       {settingsOpen && <SettingsModal />}
+      {helpOpen && <HelpModal />}
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
       <ConfirmDialog />

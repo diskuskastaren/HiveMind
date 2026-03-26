@@ -160,8 +160,10 @@ interface AppState {
 
   settings: AppSettings;
   settingsOpen: boolean;
+  helpOpen: boolean;
   updateSettings: (updates: Partial<AppSettings>) => void;
   toggleSettings: () => void;
+  toggleHelp: () => void;
 
   teamsPromptOpen: boolean;
   setTeamsPromptOpen: (open: boolean) => void;
@@ -223,6 +225,7 @@ export const useStore = create<AppState>()(
       recordingNoteId: null,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
+      helpOpen: false,
       teamsPromptOpen: false,
       confirmDialog: null,
 
@@ -635,6 +638,7 @@ export const useStore = create<AppState>()(
 
       updateSettings: (updates) => set((s) => ({ settings: { ...s.settings, ...updates } })),
       toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+      toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
       setTeamsPromptOpen: (open) => set({ teamsPromptOpen: open }),
 
       openConfirmDialog: (opts) => set({ confirmDialog: opts }),

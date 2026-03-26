@@ -7,6 +7,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontWeight: {
+        bold: '600',
+      },
       colors: {
         // Replace Tailwind's blue-tinted gray with truly neutral grays
         gray: {

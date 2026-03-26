@@ -1,5 +1,5 @@
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search, CheckCircle2, HelpCircle } from 'lucide-react';
 
 export function TabBar() {
   const activeProjectId = useStore((s) => s.activeProjectId);
@@ -11,6 +11,7 @@ export function TabBar() {
   const setActiveView = useStore((s) => s.setActiveView);
   const goBackToPreviousView = useStore((s) => s.goBackToPreviousView);
   const toggleSearch = useStore((s) => s.toggleSearch);
+  const toggleHelp = useStore((s) => s.toggleHelp);
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const recordingNoteId = useStore((s) => s.recordingNoteId);
   const navigateToNote = useStore((s) => s.navigateToNote);
@@ -100,6 +101,13 @@ export function TabBar() {
           title="Search (Ctrl+Shift+F)"
         >
           <Search className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={toggleHelp}
+          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+          title="Help guide"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
         </button>
 
         <div className="flex items-center gap-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
