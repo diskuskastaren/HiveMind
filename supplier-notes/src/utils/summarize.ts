@@ -26,7 +26,7 @@ export async function transcribeAudioChunk(audioBlob: Blob, apiKey: string): Pro
 export const MAX_SUMMARY_TOKENS = 2000;
 
 const BASE_SUMMARY_PROMPT =
-  'You are a meeting notes assistant. Summarize the transcript concisely using markdown. Use exactly these sections: ## Key Points, ## Decisions Made, ## Action Items. Be brief, factual, and use bullet points.';
+  'You are a meeting notes assistant and here is the raw transcript. Summarize it.';
 
 export interface SummarizeOptions {
   model?: string;
