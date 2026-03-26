@@ -50,7 +50,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-4-turbo':  { input: 10.00, output: 30.00 },
   'o1-mini':      { input: 3.00,  output: 12.00 },
 };
-const WHISPER_COST_PER_MIN = 0.003; // $0.003/min — gpt-4o-mini-transcribe (half the cost of whisper-1)
+const WHISPER_COST_PER_MIN = 0.000667; // $0.04/hr — Groq whisper-large-v3-turbo (~4.5x cheaper than gpt-4o-mini-transcribe)
 
 // Estimate cost for an N-minute system-audio meeting
 function estimateMeetingCost(model: string, minutes: number) {
@@ -110,7 +110,7 @@ function CostEstimatePanel({ activeModel }: { activeModel: string }) {
       </div>
 
       <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed pt-0.5">
-        Transcription cost is the same regardless of model. Mic mode uses browser speech recognition — no transcription charge. Prices from openai.com/api/pricing, ~100 wpm assumed.
+        Transcription cost is the same regardless of model. Mic mode uses browser speech recognition — no transcription charge. Transcription via Groq Whisper Large V3 Turbo ($0.04/hr). Summary prices from openai.com/api/pricing, ~100 wpm assumed.
       </p>
     </div>
   );
@@ -146,6 +146,10 @@ export function SettingsModal() {
   const [apiKeyDraft, setApiKeyDraft] = useState(settings.openaiApiKey);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [testError, setTestError] = useState('');
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [groqKeyDraft, setGroqKeyDraft] = useState(settings.groqApiKey ?? '');
+  const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [groqTestError, setGroqTestError] = useState('');
   const [clearConfirm, setClearConfirm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
@@ -156,10 +160,14 @@ export function SettingsModal() {
   const [githubReleasesLoading, setGithubReleasesLoading] = useState(false);
   const [githubReleasesError, setGithubReleasesError] = useState<string | null>(null);
 
-  // Sync draft when settings change from outside (e.g. migration)
+  // Sync drafts when settings change from outside (e.g. migration)
   useEffect(() => {
     setApiKeyDraft(settings.openaiApiKey);
   }, [settings.openaiApiKey]);
+
+  useEffect(() => {
+    setGroqKeyDraft(settings.groqApiKey ?? '');
+  }, [settings.groqApiKey]);
 
   // Load current data directory path
   useEffect(() => {
@@ -220,6 +228,34 @@ export function SettingsModal() {
     } catch (e: any) {
       setTestError(e?.message ?? 'Network error');
       setTestStatus('error');
+    }
+  };
+
+  const saveGroqKey = () => {
+    updateSettings({ groqApiKey: groqKeyDraft.trim() });
+  };
+
+  const handleTestGroqKey = async () => {
+    const key = groqKeyDraft.trim();
+    if (!key) return;
+    setGroqTestStatus('testing');
+    setGroqTestError('');
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        updateSettings({ groqApiKey: key });
+        setGroqTestStatus('ok');
+        setTimeout(() => setGroqTestStatus('idle'), 3000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setGroqTestError(err?.error?.message ?? `HTTP ${res.status}`);
+        setGroqTestStatus('error');
+      }
+    } catch (e: any) {
+      setGroqTestError(e?.message ?? 'Network error');
+      setGroqTestStatus('error');
     }
   };
 
@@ -409,11 +445,67 @@ export function SettingsModal() {
             {/* ── AI tab ─────────────────────────────────────────── */}
             {activeTab === 'ai' && (
               <>
-                <SectionHeading>OpenAI API</SectionHeading>
+                <SectionHeading>Groq API (Transcription)</SectionHeading>
+
+                <div className="rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">How to get a free Groq key</p>
+                  <ol className="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-decimal list-inside leading-relaxed">
+                    <li>Go to <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-gray-700 dark:hover:text-gray-200">console.groq.com/keys</a></li>
+                    <li>Sign up or log in (free)</li>
+                    <li>Click <strong className="text-gray-600 dark:text-gray-300">Create API Key</strong>, copy it</li>
+                    <li>Paste it below — starts with <code className="font-mono">gsk_</code></li>
+                  </ol>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">Free tier: ~8 hrs of transcription/day.</p>
+                </div>
 
                 <SettingRow
-                  label="API Key"
-                  hint="Used for system audio transcription and meeting summaries. Stored locally — never sent anywhere except OpenAI."
+                  label="Groq API Key"
+                  hint="Used for system audio transcription via Groq Whisper. Stored locally — never sent anywhere except Groq."
+                >
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showGroqKey ? 'text' : 'password'}
+                        value={groqKeyDraft}
+                        onChange={(e) => setGroqKeyDraft(e.target.value)}
+                        onBlur={saveGroqKey}
+                        placeholder="gsk_…"
+                        className="w-full pr-9 pl-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGroqKey((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                      >
+                        {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleTestGroqKey}
+                      disabled={!groqKeyDraft.trim() || groqTestStatus === 'testing'}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      {groqTestStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      {groqTestStatus === 'ok' && <Check className="w-3.5 h-3.5 text-green-500" />}
+                      {groqTestStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
+                      {groqTestStatus === 'idle' && null}
+                      {groqTestStatus === 'testing' ? 'Testing…' : groqTestStatus === 'ok' ? 'Valid!' : groqTestStatus === 'error' ? 'Failed' : 'Test key'}
+                    </button>
+                  </div>
+                  {groqTestStatus === 'error' && groqTestError && (
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">{groqTestError}</p>
+                  )}
+                  {settings.groqApiKey && groqTestStatus !== 'ok' && (
+                    <p className="text-xs text-green-600 dark:text-green-400">✓ Groq key saved</p>
+                  )}
+                </SettingRow>
+
+                <Divider />
+                <SectionHeading>OpenAI API (Summarization)</SectionHeading>
+
+                <SettingRow
+                  label="OpenAI API Key"
+                  hint="Used for generating meeting summaries. Stored locally — never sent anywhere except OpenAI."
                 >
                   <div className="flex gap-2">
                     <div className="relative flex-1">

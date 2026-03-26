@@ -101,7 +101,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       setTranscriptRecording(false);
       alert(
         'Mic transcription needs internet access to Google\'s speech servers, which is unavailable.\n\n' +
-        'To transcribe offline, add an OpenAI API key in Transcript Settings — it will record your mic directly via OpenAI transcription.',
+        'To transcribe offline, add a Groq API key in Transcript Settings — it will record your mic directly via Groq Whisper.',
       );
       return;
     }
@@ -140,8 +140,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         dbg({location:'useTranscription.ts:processChunks-error',message:'Whisper interval call failed',data:{error:msg},hypothesisId:'H-H'});
         // #endregion
         const friendly = msg.includes('429') || msg.includes('quota')
-          ? 'OpenAI quota exceeded — add credits at platform.openai.com/account/billing'
-          : `Whisper error: ${msg.slice(0, 80)}`;
+          ? 'Groq quota exceeded — check your plan at console.groq.com'
+          : `Groq Whisper error: ${msg.slice(0, 80)}`;
         setDebugStatus(friendly);
       }
     };
@@ -263,7 +263,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       return false;
     }
     if (!apiKey) {
-      alert('An OpenAI API key is required for system audio transcription.\nAdd one in Transcript Settings.');
+      alert('A Groq API key is required for system audio transcription.\nAdd one in Transcript Settings.');
       return false;
     }
 

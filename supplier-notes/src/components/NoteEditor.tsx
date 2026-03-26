@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
@@ -9,6 +9,16 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
+import Link from '@tiptap/extension-link';
+import Typography from '@tiptap/extension-typography';
+import Superscript from '@tiptap/extension-superscript';
+import Subscript from '@tiptap/extension-subscript';
+import CharacterCount from '@tiptap/extension-character-count';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
+import Mention from '@tiptap/extension-mention';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
 import { TEMPLATES } from '../utils/templates';
@@ -21,10 +31,21 @@ import {
   List,
   ListOrdered,
   CheckSquare,
+  Heading1,
   Heading2,
+  Heading3,
   Quote,
   Code,
+  Code2,
   Minus,
+  Superscript as SuperscriptIcon,
+  Subscript as SubscriptIcon,
+  Link2,
+  Unlink2,
+  Table as TableIcon,
+  Rows3,
+  Columns3,
+  Trash2,
   ClipboardList,
   Download,
   FileDown,
@@ -34,9 +55,14 @@ import {
   X,
   Mic,
   Paperclip,
+  Search,
 } from 'lucide-react';
 import type { Attachment } from '../types';
 import { exportNoteMarkdown, exportEmailSummary, downloadFile } from '../utils/export';
+import { CollapsibleExtension } from './editor/CollapsibleExtension';
+import { SlashCommandExtension } from './editor/SlashCommandExtension';
+import { FindReplaceExtension, FindReplacePanel } from './editor/FindReplace';
+import { createMentionSuggestion, type MentionItem } from './editor/MentionSuggestion';
 
 const TAB_CHAR = '\u00A0\u00A0\u00A0\u00A0';
 
@@ -130,7 +156,6 @@ const ImagePaste = Extension.create({
                   const filename = await electronImages.save(buf, ext);
                   src = filename ? `app-image://${filename}` : '';
                 } else {
-                  // Fallback for browser dev mode: use base64
                   const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
                   src = `data:${item.type};base64,${b64}`;
                 }
@@ -154,21 +179,13 @@ const IndentHandler = Extension.create({
   addKeyboardShortcuts() {
     return {
       Tab: ({ editor }) => {
-        if (editor.can().sinkListItem('listItem')) {
-          return editor.commands.sinkListItem('listItem');
-        }
-        if (editor.can().sinkListItem('taskItem')) {
-          return editor.commands.sinkListItem('taskItem');
-        }
+        if (editor.can().sinkListItem('listItem')) return editor.commands.sinkListItem('listItem');
+        if (editor.can().sinkListItem('taskItem')) return editor.commands.sinkListItem('taskItem');
         return editor.commands.insertContent(TAB_CHAR);
       },
       'Shift-Tab': ({ editor }) => {
-        if (editor.can().liftListItem('listItem')) {
-          return editor.commands.liftListItem('listItem');
-        }
-        if (editor.can().liftListItem('taskItem')) {
-          return editor.commands.liftListItem('taskItem');
-        }
+        if (editor.can().liftListItem('listItem')) return editor.commands.liftListItem('listItem');
+        if (editor.can().liftListItem('taskItem')) return editor.commands.liftListItem('taskItem');
         return true;
       },
     };
@@ -196,15 +213,28 @@ export function NoteEditor() {
   const toggleRightPanel = useStore((s) => s.toggleRightPanel);
   const isRecording = useStore((s) => s.transcriptRecording);
 
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
-  const [showSupplierPicker, setShowSupplierPicker] = useState(false);
+  // Keep refs in sync for use inside the mention suggestion closure
+  const suppliersRef = useRef(allSuppliers);
+  suppliersRef.current = allSuppliers;
+  const projectsRef = useRef(allProjects);
+  projectsRef.current = allProjects;
 
   const switchingRef = useRef(false);
   const noteIdRef = useRef(activeNoteId);
   const titleRef = useRef<HTMLInputElement>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
+  const selectionTextRef = useRef('');
+
   const [selectionText, setSelectionText] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showSupplierPicker, setShowSupplierPicker] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [findTerm, setFindTerm] = useState('');
+  const [replaceTerm, setReplaceTerm] = useState('');
 
   useEffect(() => {
     noteIdRef.current = activeNoteId;
@@ -212,17 +242,76 @@ export function NoteEditor() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-      }),
-      Placeholder.configure({ placeholder: 'Start typing your meeting notes…' }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      Placeholder.configure({ placeholder: 'Start typing… (type / for commands, @ to mention)' }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Highlight,
       Underline,
-      IndentHandler,
+      Link.configure({
+        autolink: true,
+        openOnClick: false,
+        HTMLAttributes: { class: 'tiptap-link', rel: 'noopener noreferrer' },
+      }),
+      Typography,
+      Superscript,
+      Subscript,
+      CharacterCount,
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Image.configure({ inline: false, allowBase64: true }),
+      Mention.configure({
+        HTMLAttributes: { class: 'mention' },
+        suggestion: {
+          ...createMentionSuggestion((query) => {
+            const items: MentionItem[] = [
+              ...suppliersRef.current.map((s) => ({
+                id: s.id,
+                label: s.name,
+                type: 'supplier' as const,
+                color: s.color,
+              })),
+              ...projectsRef.current
+                .filter((p) => !p.archived)
+                .map((p) => ({
+                  id: p.id,
+                  label: p.name,
+                  type: 'project' as const,
+                  color: p.color,
+                })),
+            ];
+            return items
+              .filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+              .slice(0, 8);
+          }),
+          command: ({ editor, range, props: item }: any) => {
+            const nodeAfter = editor.view.state.selection.$to.nodeAfter;
+            const overrideSpace = nodeAfter?.text?.startsWith(' ');
+            const to = overrideSpace ? range.to + 1 : range.to;
+            editor
+              .chain()
+              .focus()
+              .insertContentAt({ from: range.from, to }, [
+                {
+                  type: 'mention',
+                  attrs: {
+                    id: (item as MentionItem).id,
+                    label: (item as MentionItem).label,
+                  },
+                },
+                { type: 'text', text: ' ' },
+              ])
+              .run();
+          },
+        },
+      }),
+      IndentHandler,
       ImagePaste,
+      SlashCommandExtension,
+      CollapsibleExtension,
+      FindReplaceExtension,
     ],
     content: note?.content || '',
     onUpdate: ({ editor }) => {
@@ -232,11 +321,9 @@ export function NoteEditor() {
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
-      if (from !== to) {
-        setSelectionText(editor.state.doc.textBetween(from, to, ' '));
-      } else {
-        setSelectionText('');
-      }
+      const text = from !== to ? editor.state.doc.textBetween(from, to, ' ') : '';
+      setSelectionText(text);
+      selectionTextRef.current = text;
     },
   });
 
@@ -259,6 +346,26 @@ export function NoteEditor() {
     }
   }, [activeNoteId]);
 
+  // Ctrl+F to open/close find & replace
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault();
+        setShowFindReplace((prev) => {
+          if (!prev) {
+            // Pre-fill with current selection if any
+            const sel = selectionTextRef.current;
+            if (sel) setFindTerm(sel);
+          }
+          return !prev;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Alt+T/D/F selection shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
@@ -282,7 +389,12 @@ export function NoteEditor() {
       }
       if (e.key === 'd') {
         e.preventDefault();
-        addDecision({ projectId: activeProjectId, supplierId, noteId: activeNoteId, text: selectionText.trim() });
+        addDecision({
+          projectId: activeProjectId,
+          supplierId,
+          noteId: activeNoteId,
+          text: selectionText.trim(),
+        });
         setRightPanelTab('decisions');
       }
       if (e.key === 'f') {
@@ -313,6 +425,34 @@ export function NoteEditor() {
     [activeNoteId, updateNote],
   );
 
+  const handleLinkClick = useCallback(() => {
+    if (!editor) return;
+    if (editor.isActive('link')) {
+      editor.chain().focus().unsetLink().run();
+      setShowLinkInput(false);
+      return;
+    }
+    const currentHref = editor.getAttributes('link').href || '';
+    setLinkUrl(currentHref);
+    setShowLinkInput(true);
+    setTimeout(() => linkInputRef.current?.focus(), 30);
+  }, [editor]);
+
+  const applyLink = useCallback(() => {
+    if (!editor) return;
+    const url = linkUrl.trim();
+    if (url) {
+      const href = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')
+        ? url
+        : `https://${url}`;
+      editor.chain().focus().setLink({ href }).run();
+    } else {
+      editor.chain().focus().unsetLink().run();
+    }
+    setShowLinkInput(false);
+    setLinkUrl('');
+  }, [editor, linkUrl]);
+
   const createTaskFromSelection = () => {
     if (!selectionText || !activeNoteId || !activeTabId || !activeProjectId) return;
     const supplierId = activeTabId === INTERNAL_TAB_ID ? null : activeTabId;
@@ -333,7 +473,12 @@ export function NoteEditor() {
   const createDecisionFromSelection = () => {
     if (!selectionText || !activeNoteId || !activeTabId || !activeProjectId) return;
     const supplierId = activeTabId === INTERNAL_TAB_ID ? null : activeTabId;
-    addDecision({ projectId: activeProjectId, supplierId, noteId: activeNoteId, text: selectionText.trim() });
+    addDecision({
+      projectId: activeProjectId,
+      supplierId,
+      noteId: activeNoteId,
+      text: selectionText.trim(),
+    });
     setRightPanelTab('decisions');
   };
 
@@ -381,6 +526,9 @@ export function NoteEditor() {
     removeAttachment(activeNoteId, att.id);
   };
 
+  const wordCount = editor?.storage.characterCount?.words() ?? 0;
+  const isInTable = editor?.isActive('table') ?? false;
+
   if (!note) return null;
 
   return (
@@ -420,7 +568,11 @@ export function NoteEditor() {
                     <button
                       className="opacity-0 group-hover:opacity-100 hover:opacity-100 ml-0.5"
                       title={`Unlink from ${p.name}`}
-                      onClick={() => updateNote(note.id, { projectIds: note.projectIds.filter((id) => id !== pid) })}
+                      onClick={() =>
+                        updateNote(note.id, {
+                          projectIds: note.projectIds.filter((id) => id !== pid),
+                        })
+                      }
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
@@ -430,7 +582,10 @@ export function NoteEditor() {
             })}
             <div className="relative">
               <button
-                onClick={() => { setShowProjectPicker(!showProjectPicker); setShowSupplierPicker(false); }}
+                onClick={() => {
+                  setShowProjectPicker(!showProjectPicker);
+                  setShowSupplierPicker(false);
+                }}
                 className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
                 title="Link note to another project"
               >
@@ -440,35 +595,42 @@ export function NoteEditor() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProjectPicker(false)} />
                   <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                    <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">Link to project</p>
-                    {allProjects.filter((p) => !p.archived).map((p) => {
-                      const linked = note.projectIds.includes(p.id);
-                      return (
-                        <button
-                          key={p.id}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
-                          onClick={() => {
-                            updateNote(note.id, {
-                              projectIds: linked
-                                ? note.projectIds.filter((id) => id !== p.id)
-                                : [...note.projectIds, p.id],
-                            });
-                            setShowProjectPicker(false);
-                          }}
-                        >
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                          <span className="flex-1">{p.name}</span>
-                          {linked && <span className="text-xs text-blue-500">✓</span>}
-                        </button>
-                      );
-                    })}
+                    <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
+                      Link to project
+                    </p>
+                    {allProjects
+                      .filter((p) => !p.archived)
+                      .map((p) => {
+                        const linked = note.projectIds.includes(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
+                            onClick={() => {
+                              updateNote(note.id, {
+                                projectIds: linked
+                                  ? note.projectIds.filter((id) => id !== p.id)
+                                  : [...note.projectIds, p.id],
+                              });
+                              setShowProjectPicker(false);
+                            }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: p.color }}
+                            />
+                            <span className="flex-1">{p.name}</span>
+                            {linked && <span className="text-xs text-blue-500">✓</span>}
+                          </button>
+                        );
+                      })}
                   </div>
                 </>
               )}
             </div>
           </div>
 
-          {/* Supplier badges (shown when note is linked to multiple suppliers) */}
+          {/* Supplier badges */}
           {note.supplierIds.length > 1 && (
             <div className="flex items-center gap-1 flex-wrap">
               {note.supplierIds.map((sid) => {
@@ -484,7 +646,11 @@ export function NoteEditor() {
                     <button
                       className="opacity-0 group-hover:opacity-100 ml-0.5"
                       title={`Unlink from ${s.name}`}
-                      onClick={() => updateNote(note.id, { supplierIds: note.supplierIds.filter((id) => id !== sid) })}
+                      onClick={() =>
+                        updateNote(note.id, {
+                          supplierIds: note.supplierIds.filter((id) => id !== sid),
+                        })
+                      }
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
@@ -494,10 +660,13 @@ export function NoteEditor() {
             </div>
           )}
 
-          {/* Link to more suppliers button */}
+          {/* Link to more suppliers */}
           <div className="relative">
             <button
-              onClick={() => { setShowSupplierPicker(!showSupplierPicker); setShowProjectPicker(false); }}
+              onClick={() => {
+                setShowSupplierPicker(!showSupplierPicker);
+                setShowProjectPicker(false);
+              }}
               className="text-xs text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
               title="Link note to another supplier"
             >
@@ -507,7 +676,9 @@ export function NoteEditor() {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowSupplierPicker(false)} />
                 <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px] max-h-[220px] overflow-y-auto">
-                  <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">Link to supplier</p>
+                  <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
+                    Link to supplier
+                  </p>
                   {allSuppliers.map((s) => {
                     const linked = note.supplierIds.includes(s.id);
                     return (
@@ -523,7 +694,10 @@ export function NoteEditor() {
                           setShowSupplierPicker(false);
                         }}
                       >
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: s.color }}
+                        />
                         <span className="flex-1">{s.name}</span>
                         {linked && <span className="text-xs text-blue-500">✓</span>}
                       </button>
@@ -553,54 +727,237 @@ export function NoteEditor() {
       {/* Toolbar */}
       {editor && (
         <div className="px-8 py-1 flex items-center gap-0.5 border-b border-gray-100 dark:border-gray-800 flex-shrink-0 flex-wrap">
-          <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
+          {/* Text formatting */}
+          <ToolbarBtn
+            active={editor.isActive('bold')}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            title="Bold (Ctrl+B)"
+          >
             <Bold className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)">
+          <ToolbarBtn
+            active={editor.isActive('italic')}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            title="Italic (Ctrl+I)"
+          >
             <Italic className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)">
+          <ToolbarBtn
+            active={editor.isActive('underline')}
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            title="Underline (Ctrl+U)"
+          >
             <UnderlineIcon className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+          <ToolbarBtn
+            active={editor.isActive('strike')}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            title="Strikethrough"
+          >
             <Strikethrough className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('highlight')} onClick={() => editor.chain().focus().toggleHighlight().run()} title="Highlight">
+          <ToolbarBtn
+            active={editor.isActive('highlight')}
+            onClick={() => editor.chain().focus().toggleHighlight().run()}
+            title="Highlight"
+          >
             <Highlighter className="w-4 h-4" />
           </ToolbarBtn>
+          <ToolbarBtn
+            active={editor.isActive('superscript')}
+            onClick={() => editor.chain().focus().toggleSuperscript().run()}
+            title="Superscript"
+          >
+            <SuperscriptIcon className="w-4 h-4" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            active={editor.isActive('subscript')}
+            onClick={() => editor.chain().focus().toggleSubscript().run()}
+            title="Subscript"
+          >
+            <SubscriptIcon className="w-4 h-4" />
+          </ToolbarBtn>
+
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-          <ToolbarBtn active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading">
+
+          {/* Headings */}
+          <ToolbarBtn
+            active={editor.isActive('heading', { level: 1 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            title="Heading 1"
+          >
+            <Heading1 className="w-4 h-4" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            active={editor.isActive('heading', { level: 2 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            title="Heading 2"
+          >
             <Heading2 className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet list">
+          <ToolbarBtn
+            active={editor.isActive('heading', { level: 3 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            title="Heading 3"
+          >
+            <Heading3 className="w-4 h-4" />
+          </ToolbarBtn>
+
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+          {/* Lists & blocks */}
+          <ToolbarBtn
+            active={editor.isActive('bulletList')}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            title="Bullet list"
+          >
             <List className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list">
+          <ToolbarBtn
+            active={editor.isActive('orderedList')}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            title="Numbered list"
+          >
             <ListOrdered className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()} title="Task list">
+          <ToolbarBtn
+            active={editor.isActive('taskList')}
+            onClick={() => editor.chain().focus().toggleTaskList().run()}
+            title="Task list"
+          >
             <CheckSquare className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote">
+          <ToolbarBtn
+            active={editor.isActive('blockquote')}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            title="Quote"
+          >
             <Quote className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Code">
+          <ToolbarBtn
+            active={editor.isActive('code')}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+            title="Inline code"
+          >
             <Code className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={false} onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider">
+          <ToolbarBtn
+            active={editor.isActive('codeBlock')}
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            title="Code block"
+          >
+            <Code2 className="w-4 h-4" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            active={false}
+            onClick={() => editor.chain().focus().setHorizontalRule().run()}
+            title="Divider"
+          >
             <Minus className="w-4 h-4" />
           </ToolbarBtn>
+
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-          <ToolbarBtn active={false} onClick={() => editor.chain().focus().undo().run()} title="Undo (Ctrl+Z)">
+
+          {/* Link */}
+          <ToolbarBtn
+            active={editor.isActive('link')}
+            onClick={handleLinkClick}
+            title={editor.isActive('link') ? 'Remove link' : 'Add link'}
+          >
+            {editor.isActive('link') ? (
+              <Unlink2 className="w-4 h-4" />
+            ) : (
+              <Link2 className="w-4 h-4" />
+            )}
+          </ToolbarBtn>
+
+          {/* Table */}
+          <ToolbarBtn
+            active={isInTable}
+            onClick={() =>
+              editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+            }
+            title="Insert table"
+          >
+            <TableIcon className="w-4 h-4" />
+          </ToolbarBtn>
+
+          {/* Table operations — visible only when cursor is inside a table */}
+          {isInTable && (
+            <>
+              <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+              <ToolbarBtn
+                active={false}
+                onClick={() => (editor.chain().focus() as any).addRowAfter().run()}
+                title="Add row below"
+              >
+                <Rows3 className="w-4 h-4" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                active={false}
+                onClick={() => (editor.chain().focus() as any).deleteRow().run()}
+                title="Delete row"
+              >
+                <Rows3 className="w-4 h-4 opacity-50" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                active={false}
+                onClick={() => (editor.chain().focus() as any).addColumnAfter().run()}
+                title="Add column right"
+              >
+                <Columns3 className="w-4 h-4" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                active={false}
+                onClick={() => (editor.chain().focus() as any).deleteColumn().run()}
+                title="Delete column"
+              >
+                <Columns3 className="w-4 h-4 opacity-50" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                active={false}
+                onClick={() => (editor.chain().focus() as any).deleteTable().run()}
+                title="Delete table"
+              >
+                <Trash2 className="w-4 h-4" />
+              </ToolbarBtn>
+            </>
+          )}
+
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+          {/* History */}
+          <ToolbarBtn
+            active={false}
+            onClick={() => editor.chain().focus().undo().run()}
+            title="Undo (Ctrl+Z)"
+          >
             <Undo2 className="w-4 h-4" />
           </ToolbarBtn>
-          <ToolbarBtn active={false} onClick={() => editor.chain().focus().redo().run()} title="Redo (Ctrl+Shift+Z)">
+          <ToolbarBtn
+            active={false}
+            onClick={() => editor.chain().focus().redo().run()}
+            title="Redo (Ctrl+Shift+Z)"
+          >
             <Redo2 className="w-4 h-4" />
           </ToolbarBtn>
 
           <div className="flex-1" />
 
-          {/* Attach email file */}
+          {/* Find */}
+          <button
+            onClick={() => setShowFindReplace((v) => !v)}
+            title="Find & Replace (Ctrl+F)"
+            className={`p-1.5 rounded transition-colors ${
+              showFindReplace
+                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+          </button>
+
+          {/* Attach file */}
           <button
             onClick={handlePickFiles}
             title="Attach file"
@@ -615,7 +972,11 @@ export function NoteEditor() {
               if (!rightPanelOpen) toggleRightPanel();
               setRightPanelTab('transcript');
             }}
-            title={isRecording ? 'Recording in progress — click to open transcript' : 'Record meeting transcript'}
+            title={
+              isRecording
+                ? 'Recording in progress — click to open transcript'
+                : 'Record meeting transcript'
+            }
             className={`p-1.5 rounded transition-colors relative ${
               isRecording
                 ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
@@ -628,32 +989,34 @@ export function NoteEditor() {
             )}
           </button>
 
-          {/* Template — only show when the note is empty */}
-          {editor?.isEmpty && <div className="relative">
-            <button
-              onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-              className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-              title="Apply template"
-            >
-              <ClipboardList className="w-4 h-4" />
-            </button>
-            {showTemplateMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowTemplateMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                  {Object.entries(TEMPLATES).map(([key, t]) => (
-                    <button
-                      key={key}
-                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"
-                      onClick={() => applyTemplate(key)}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>}
+          {/* Template — only when editor is empty */}
+          {editor.isEmpty && (
+            <div className="relative">
+              <button
+                onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                title="Apply template"
+              >
+                <ClipboardList className="w-4 h-4" />
+              </button>
+              {showTemplateMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowTemplateMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
+                    {Object.entries(TEMPLATES).map(([key, t]) => (
+                      <button
+                        key={key}
+                        className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"
+                        onClick={() => applyTemplate(key)}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Export */}
           <div className="relative">
@@ -671,8 +1034,12 @@ export function NoteEditor() {
                   <button
                     className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
                     onClick={() => {
-                      const projectNames = note.projectIds.map((id) => allProjects.find((p) => p.id === id)?.name || '').filter(Boolean).join(', ');
-                      const supplierName = activeTabId === INTERNAL_TAB_ID ? 'Internal' : (supplier?.name || '');
+                      const projectNames = note.projectIds
+                        .map((id) => allProjects.find((p) => p.id === id)?.name || '')
+                        .filter(Boolean)
+                        .join(', ');
+                      const supplierName =
+                        activeTabId === INTERNAL_TAB_ID ? 'Internal' : supplier?.name || '';
                       const md = exportNoteMarkdown(note, supplierName, projectNames);
                       downloadFile(md, `${note.title || 'note'}.md`);
                       setShowExportMenu(false);
@@ -683,9 +1050,19 @@ export function NoteEditor() {
                   <button
                     className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
                     onClick={() => {
-                      const projectNames = note.projectIds.map((id) => allProjects.find((p) => p.id === id)?.name || '').filter(Boolean).join(', ');
-                      const supplierName = activeTabId === INTERNAL_TAB_ID ? 'Internal' : (supplier?.name || '');
-                      const email = exportEmailSummary(note, supplierName, projectNames, tasks, decisions);
+                      const projectNames = note.projectIds
+                        .map((id) => allProjects.find((p) => p.id === id)?.name || '')
+                        .filter(Boolean)
+                        .join(', ');
+                      const supplierName =
+                        activeTabId === INTERNAL_TAB_ID ? 'Internal' : supplier?.name || '';
+                      const email = exportEmailSummary(
+                        note,
+                        supplierName,
+                        projectNames,
+                        tasks,
+                        decisions,
+                      );
                       downloadFile(email, `${note.title || 'note'}-summary.txt`);
                       setShowExportMenu(false);
                     }}
@@ -699,10 +1076,69 @@ export function NoteEditor() {
         </div>
       )}
 
-      {/* Selection actions row — always rendered to prevent layout shift */}
+      {/* Link input row */}
+      {editor && showLinkInput && (
+        <div className="px-8 py-1.5 flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 bg-blue-50 dark:bg-blue-900/20 flex-shrink-0">
+          <Link2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+          <input
+            ref={linkInputRef}
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyLink();
+              }
+              if (e.key === 'Escape') {
+                setShowLinkInput(false);
+                setLinkUrl('');
+                editor.commands.focus();
+              }
+            }}
+            placeholder="https://..."
+            className="flex-1 text-sm bg-transparent border-none outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
+          />
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              applyLink();
+            }}
+            className="text-xs px-2.5 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+          >
+            Set link
+          </button>
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setShowLinkInput(false);
+              setLinkUrl('');
+              editor.commands.focus();
+            }}
+            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-400 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Find & Replace panel */}
+      {editor && showFindReplace && (
+        <FindReplacePanel
+          editor={editor}
+          onClose={() => setShowFindReplace(false)}
+          findTerm={findTerm}
+          setFindTerm={setFindTerm}
+          replaceTerm={replaceTerm}
+          setReplaceTerm={setReplaceTerm}
+        />
+      )}
+
+      {/* Selection actions row */}
       {editor && (
         <div className="px-8 h-8 flex items-center gap-1 flex-shrink-0 border-b border-gray-100 dark:border-gray-800">
-          <div className={selectionText ? 'flex items-center gap-1' : 'invisible flex items-center gap-1'}>
+          <div
+            className={selectionText ? 'flex items-center gap-1' : 'invisible flex items-center gap-1'}
+          >
             <button
               onClick={createTaskFromSelection}
               className="text-xs px-2 py-1 bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
@@ -756,14 +1192,103 @@ export function NoteEditor() {
         </div>
       )}
 
-      {/* Editor */}
-      <div className="flex-1 overflow-y-auto px-8 pb-16">
+      {/* Editor area */}
+      <div className="flex-1 overflow-y-auto px-8 pb-16 relative">
+        {/* Bubble menu — floating toolbar on text selection */}
+        {editor && (
+          <BubbleMenu
+            editor={editor}
+            tippyOptions={{ duration: 100, placement: 'top-start' }}
+            shouldShow={({ state }) => {
+              const { selection } = state;
+              if (selection.empty) return false;
+              if ((selection as any).node) return false;
+              return true;
+            }}
+          >
+            <div className="flex items-center gap-0.5 px-1.5 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleBold().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs font-bold ${editor.isActive('bold') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Bold"
+              >
+                B
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleItalic().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs italic ${editor.isActive('italic') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Italic"
+              >
+                I
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleUnderline().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs underline ${editor.isActive('underline') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Underline"
+              >
+                U
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleStrike().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs line-through ${editor.isActive('strike') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Strikethrough"
+              >
+                S
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleHighlight().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs font-mono ${editor.isActive('highlight') ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Highlight"
+              >
+                H
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().toggleCode().run();
+                }}
+                className={`p-1.5 rounded transition-colors text-xs font-mono ${editor.isActive('code') ? 'bg-gray-200 dark:bg-gray-600 text-pink-600 dark:text-pink-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title="Code"
+              >
+                {'<>'}
+              </button>
+              <div className="w-px h-4 bg-gray-200 dark:bg-gray-600 mx-0.5" />
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleLinkClick();
+                }}
+                className={`p-1.5 rounded transition-colors ${editor.isActive('link') ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                title={editor.isActive('link') ? 'Remove link' : 'Add link'}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </BubbleMenu>
+        )}
+
         <EditorContent editor={editor} />
       </div>
 
-      {/* Autosave indicator */}
-      <div className="absolute bottom-2 right-2 text-xs text-gray-300 dark:text-gray-600 select-none pointer-events-none">
-        Auto-saved · {format(new Date(note.updatedAt), 'HH:mm:ss')}
+      {/* Footer: autosave + word count */}
+      <div className="absolute bottom-2 right-2 text-xs text-gray-300 dark:text-gray-600 select-none pointer-events-none flex items-center gap-2">
+        {wordCount > 0 && <span>{wordCount} words</span>}
+        <span>Auto-saved · {format(new Date(note.updatedAt), 'HH:mm:ss')}</span>
       </div>
     </div>
   );

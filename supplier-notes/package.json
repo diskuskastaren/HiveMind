@@ -24,7 +24,14 @@
       "electron/**/*"
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "electron/icon.png"
     },
     "nsis": {
@@ -41,15 +48,26 @@
     }
   },
   "dependencies": {
+    "@tiptap/extension-character-count": "^2.27.2",
     "@tiptap/extension-highlight": "^2.11.0",
     "@tiptap/extension-image": "^2.27.2",
+    "@tiptap/extension-link": "^2.27.2",
+    "@tiptap/extension-mention": "^2.27.2",
     "@tiptap/extension-placeholder": "^2.11.0",
+    "@tiptap/extension-subscript": "^2.27.2",
+    "@tiptap/extension-superscript": "^2.27.2",
+    "@tiptap/extension-table": "^2.27.2",
+    "@tiptap/extension-table-cell": "^2.27.2",
+    "@tiptap/extension-table-header": "^2.27.2",
+    "@tiptap/extension-table-row": "^2.27.2",
     "@tiptap/extension-task-item": "^2.11.0",
     "@tiptap/extension-task-list": "^2.11.0",
+    "@tiptap/extension-typography": "^2.27.2",
     "@tiptap/extension-underline": "^2.11.0",
     "@tiptap/pm": "^2.11.0",
     "@tiptap/react": "^2.11.0",
     "@tiptap/starter-kit": "^2.11.0",
+    "@tiptap/suggestion": "^2.27.2",
     "date-fns": "^4.1.0",
     "electron-updater": "^6.8.3",
     "lucide-react": "^0.474.0",

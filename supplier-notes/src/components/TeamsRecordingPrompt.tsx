@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Mic, PlusCircle, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, Mic, PlusCircle, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 
@@ -166,6 +166,14 @@ export function TeamsRecordingPrompt() {
       <div className="absolute inset-0 bg-black/50" onClick={dismiss} />
 
       <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-[420px] overflow-hidden border border-gray-200 dark:border-gray-700">
+        {/* Brand banner */}
+        <div className="flex items-center gap-2.5 px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+          <div className="w-6 h-6 bg-indigo-600 rounded-md flex items-center justify-center flex-shrink-0">
+            <FileText className="w-3.5 h-3.5 text-white" />
+          </div>
+          <span className="text-xs font-semibold tracking-wide text-indigo-600 dark:text-indigo-400 uppercase">Combobulator</span>
+        </div>
+
         {/* Header */}
         <div className="px-5 py-5 border-b border-gray-100 dark:border-gray-800 flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0 mt-0.5">

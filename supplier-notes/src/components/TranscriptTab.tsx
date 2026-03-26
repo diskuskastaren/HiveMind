@@ -413,7 +413,8 @@ export function TranscriptTab() {
   const allNotes = useStore((s) => s.notes);
   const isRecording = useStore((s) => s.transcriptRecording);
   const updateTranscript = useStore((s) => s.updateTranscript);
-  const apiKey = useStore((s) => s.settings.openaiApiKey);
+  const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
+  const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const summarySettings = useStore(useShallow((s) => ({
     model: s.settings.gptModel,
@@ -440,7 +441,7 @@ export function TranscriptTab() {
 
   const { start, stop, visualizerStream, visualizerLevels, debugStatus, transcriptIdRef } = useTranscription({
     noteId: note?.id ?? '',
-    apiKey,
+    apiKey: groqApiKey,
     mode,
   });
 
@@ -511,9 +512,9 @@ export function TranscriptTab() {
     const rawText = await stop();
     setLiveText('');
     const tid = transcriptIdRef.current;
-    if (rawText && apiKey && noteIdForSummary && tid) {
+    if (rawText && openaiApiKey && noteIdForSummary && tid) {
       try {
-        const summary = await summarizeMeetingTranscript(rawText, apiKey, {
+        const summary = await summarizeMeetingTranscript(rawText, openaiApiKey, {
           ...summarySettings,
           maxTokens: MAX_SUMMARY_TOKENS,
         });
@@ -522,7 +523,7 @@ export function TranscriptTab() {
         // Summary generation is best-effort; the raw text is already saved
       }
     }
-  }, [stop, apiKey, summarySettings, updateTranscript, transcriptIdRef]);
+  }, [stop, openaiApiKey, summarySettings, updateTranscript, transcriptIdRef]);
 
   // Show recording UI even when the active note has changed (user navigated away mid-recording)
   if (!note && !isRecording) return null;
@@ -560,7 +561,7 @@ export function TranscriptTab() {
             <p className="text-[10px] text-amber-500 mt-3 font-mono">{debugStatus}</p>
           ) : mode === 'system' && (
             <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-3">
-              Transcribing in 30-second batches via OpenAI…
+              Transcribing in batches via Groq Whisper…
             </p>
           )}
         </div>
@@ -641,16 +642,16 @@ export function TranscriptTab() {
 
         {mode === 'system' && (
           <div className="text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg p-3 space-y-1">
-            <p className="font-medium text-gray-700 dark:text-gray-200">API key needed to transcribe</p>
-            {!apiKey && (
+            <p className="font-medium text-gray-700 dark:text-gray-200">Groq API key needed to transcribe</p>
+            {!groqApiKey && (
               <button
                 onClick={toggleSettings}
                 className="text-gray-600 dark:text-gray-300 underline underline-offset-2 mt-1"
               >
-                Add API key in Settings →
+                Add Groq API key in Settings →
               </button>
             )}
-            {apiKey && <p className="text-green-600 dark:text-green-400 font-medium">✓ API key configured</p>}
+            {groqApiKey && <p className="text-green-600 dark:text-green-400 font-medium">✓ Groq API key configured</p>}
           </div>
         )}
 
@@ -662,7 +663,7 @@ export function TranscriptTab() {
 
         <button
           onClick={handleStart}
-          disabled={mode === 'system' && !apiKey}
+          disabled={mode === 'system' && !groqApiKey}
           className="w-full py-2 text-sm font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Mic className="w-4 h-4" /> Start Recording
@@ -681,7 +682,7 @@ export function TranscriptTab() {
       <TranscriptDetail
         transcript={selectedTranscript}
         noteId={note.id}
-        apiKey={apiKey}
+        apiKey={openaiApiKey}
         onBack={() => setSelectedId(null)}
         onStartNew={() => { setSelectedId(null); setShowStartScreen(true); }}
         isRecording={isRecording}

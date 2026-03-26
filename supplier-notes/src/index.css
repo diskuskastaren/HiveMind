@@ -159,6 +159,78 @@
   @apply outline outline-2 outline-blue-400;
 }
 
+/* Links */
+.tiptap a.tiptap-link {
+  @apply text-blue-600 dark:text-blue-400 underline underline-offset-2 cursor-pointer;
+}
+.tiptap a.tiptap-link:hover {
+  @apply text-blue-800 dark:text-blue-300;
+}
+
+/* Superscript / Subscript */
+.tiptap sup {
+  @apply text-xs;
+  vertical-align: super;
+  line-height: 0;
+}
+.tiptap sub {
+  @apply text-xs;
+  vertical-align: sub;
+  line-height: 0;
+}
+
+/* Mention chip */
+.tiptap .mention {
+  @apply inline-flex items-center bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded px-1 py-0.5 text-sm font-medium select-none;
+}
+
+/* Tables */
+.tiptap table {
+  @apply w-full border-collapse my-4 text-sm;
+}
+.tiptap table th,
+.tiptap table td {
+  @apply border border-gray-300 dark:border-gray-600 px-3 py-2 text-left align-top;
+}
+.tiptap table th {
+  @apply bg-gray-100 dark:bg-gray-800 font-semibold text-gray-700 dark:text-gray-200;
+}
+.tiptap table tr:nth-child(even) td {
+  @apply bg-gray-50 dark:bg-gray-800/40;
+}
+.tiptap .selectedCell {
+  @apply bg-blue-50 dark:bg-blue-900/20;
+}
+.tiptap .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: theme('colors.blue.400');
+  pointer-events: none;
+  z-index: 20;
+}
+.tiptap.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Find & Replace highlight decorations */
+.find-match {
+  background-color: theme('colors.yellow.200');
+  border-radius: 2px;
+}
+.dark .find-match {
+  background-color: rgba(161, 128, 0, 0.5);
+}
+.find-current {
+  background-color: theme('colors.orange.300');
+  border-radius: 2px;
+}
+.dark .find-current {
+  background-color: rgba(194, 100, 0, 0.6);
+}
+
 /* ─── Ladysucker theme ──────────────────────────────────────────────────────
    Palette:
      #1D1210  Dark Coffee  — main background
@@ -313,6 +385,38 @@
 .ladysucker select:focus {
   outline-color: #D6DD33 !important;
   border-color: #9EA323 !important;
+}
+
+/* ── New editor features ─────────────────────────────────────────────────── */
+.ladysucker .tiptap a.tiptap-link {
+  color: #9EA323 !important;
+}
+.ladysucker .tiptap a.tiptap-link:hover {
+  color: #D6DD33 !important;
+}
+.ladysucker .tiptap .mention {
+  background-color: #4D2C27 !important;
+  color: #D6DD33 !important;
+}
+.ladysucker .tiptap table th,
+.ladysucker .tiptap table td {
+  border-color: #7E544A !important;
+}
+.ladysucker .tiptap table th {
+  background-color: #4D2C27 !important;
+  color: #D6DD33 !important;
+}
+.ladysucker .tiptap table tr:nth-child(even) td {
+  background-color: rgba(77, 44, 39, 0.3) !important;
+}
+.ladysucker .tiptap .selectedCell {
+  background-color: rgba(158, 163, 35, 0.15) !important;
+}
+.ladysucker .find-match {
+  background-color: rgba(158, 163, 35, 0.35) !important;
+}
+.ladysucker .find-current {
+  background-color: rgba(214, 221, 51, 0.5) !important;
 }
 
 /* ── Accent / brand colours kept intact ─────────────────────────────────── */

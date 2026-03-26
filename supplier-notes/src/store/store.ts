@@ -4,6 +4,7 @@ import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Att
 
 export interface AppSettings {
   openaiApiKey: string;
+  groqApiKey: string;
   gptModel: string;
   temperature: number;
   customSummaryInstructions: string;
@@ -24,6 +25,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
+  groqApiKey: '',
   gptModel: 'gpt-4o-mini',
   temperature: 0.3,
   customSummaryInstructions: '',

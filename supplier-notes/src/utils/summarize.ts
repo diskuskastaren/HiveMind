@@ -1,13 +1,13 @@
 /**
- * Sends an audio blob to OpenAI Whisper for transcription.
- * Used in 30-second batches during system audio recording.
+ * Sends an audio blob to Groq Whisper for transcription.
+ * Used in batches during system audio recording.
  */
 export async function transcribeAudioChunk(audioBlob: Blob, apiKey: string): Promise<string> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.webm');
-  formData.append('model', 'gpt-4o-mini-transcribe');
+  formData.append('model', 'whisper-large-v3-turbo');
 
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
@@ -15,7 +15,7 @@ export async function transcribeAudioChunk(audioBlob: Blob, apiKey: string): Pro
 
   if (!response.ok) {
     const err = await response.text().catch(() => String(response.status));
-    throw new Error(`Whisper API error ${response.status}: ${err}`);
+    throw new Error(`Groq Whisper API error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
