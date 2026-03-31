@@ -6,27 +6,79 @@
 (function () {
   'use strict';
 
-  let recorder      = null;
-  let audioCtx      = null;
+  let recorder = null;
+  let audioCtx = null;
   let capturedStream = null;
-  let micStream     = null;
-  let vizRafId      = null;
+  let micStream = null;
+  let vizRafId = null;
+  let outputStream = null;
+  let recorderMimeType = 'audio/webm';
+  let currentChunks = [];
+  let pendingMode = 'idle';
+
+  function stopTracksAndContext() {
+    if (capturedStream) capturedStream.getTracks().forEach(t => t.stop());
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (audioCtx) audioCtx.close().catch(() => {});
+    capturedStream = null;
+    micStream = null;
+    audioCtx = null;
+    outputStream = null;
+  }
+
+  function startRecorder() {
+    if (!outputStream) throw new Error('No capture stream available');
+    currentChunks = [];
+    recorder = new MediaRecorder(outputStream, { mimeType: recorderMimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) currentChunks.push(e.data);
+    };
+    recorder.onstop = async () => {
+      const blob = new Blob(currentChunks, { type: recorderMimeType });
+      currentChunks = [];
+      if (blob.size > 0) {
+        const buf = await blob.arrayBuffer();
+        window.captureIpc.sendChunk(buf);
+      }
+
+      if (pendingMode === 'flush') {
+        pendingMode = 'idle';
+        startRecorder();
+        window.captureIpc.sendFlushed();
+        return;
+      }
+
+      if (pendingMode === 'stop') {
+        pendingMode = 'idle';
+        stopTracksAndContext();
+        window.captureIpc.sendStopped();
+      }
+    };
+    recorder.start();
+  }
+
+  function finishRecorder(mode) {
+    if (!recorder || recorder.state === 'inactive') {
+      if (mode === 'flush') window.captureIpc.sendFlushed();
+      if (mode === 'stop') {
+        stopTracksAndContext();
+        window.captureIpc.sendStopped();
+      }
+      return;
+    }
+
+    pendingMode = mode;
+    recorder.stop();
+  }
+
+  window.captureIpc.onFlush(() => {
+    finishRecorder('flush');
+  });
 
   // Register stop handler immediately so it is always ready.
   window.captureIpc.onStop(() => {
     if (vizRafId) { cancelAnimationFrame(vizRafId); vizRafId = null; }
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.onstop = () => {
-        if (capturedStream) capturedStream.getTracks().forEach(t => t.stop());
-        if (micStream)      micStream.getTracks().forEach(t => t.stop());
-        if (audioCtx)       audioCtx.close().catch(() => {});
-        window.captureIpc.sendStopped();
-      };
-      recorder.stop();
-    } else {
-      // Recorder never started (e.g. getUserMedia failed); still ack the stop.
-      window.captureIpc.sendStopped();
-    }
+    finishRecorder('stop');
   });
 
   // Start capture when the main process sends the desktop source ID.
@@ -88,21 +140,12 @@
       }
       sendLevels();
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      recorderMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
-
-      recorder = new MediaRecorder(dest.stream, { mimeType });
-
-      recorder.ondataavailable = async (e) => {
-        if (e.data.size > 0) {
-          const buf = await e.data.arrayBuffer();
-          window.captureIpc.sendChunk(buf);
-        }
-      };
-
-      recorder.start(1000);
-      window.captureIpc.sendReady(mimeType);
+      outputStream = dest.stream;
+      startRecorder();
+      window.captureIpc.sendReady(recorderMimeType);
     } catch (err) {
       window.captureIpc.sendError(err?.message ?? String(err));
     }

@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronCapture', {
   // Signal the hidden window to stop; resolves only after all final chunks arrive.
   stopCapture: () => ipcRenderer.invoke('desktop:stopCapture'),
 
+  // Ask the hidden window to finish the current batch and immediately restart recording.
+  flushCapture: () => ipcRenderer.invoke('desktop:flushCapture'),
+
   // Register/unregister a handler for incoming audio chunk ArrayBuffers.
   onChunk: (cb) => {
     const wrapper = (_e, buf) => cb(buf);

@@ -449,6 +449,24 @@ ipcMain.handle('desktop:stopCapture', async () => {
   });
 });
 
+ipcMain.handle('desktop:flushCapture', async () => {
+  if (!captureWindow || captureWindow.isDestroyed()) return;
+
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      ipcMain.removeListener('capture:flushed', onFlushed);
+      resolve();
+    }, 5000);
+
+    const onFlushed = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ipcMain.once('capture:flushed', onFlushed);
+    captureWindow.webContents.send('capture:do-flush');
+  });
+});
+
 // Forward audio chunks from the capture window to the main renderer.
 ipcMain.on('capture:chunk', (_event, buffer) => {
   if (captureMainWindow && !captureMainWindow.isDestroyed()) {
