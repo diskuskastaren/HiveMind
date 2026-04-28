@@ -26,6 +26,7 @@ import { exportAllData } from '../utils/export';
 import { CustomSelect } from './ui/CustomSelect';
 
 type SettingsTab = 'appearance' | 'ai' | 'recording' | 'teams' | 'releases' | 'data';
+type StorageHealth = 'ok' | 'missing' | 'unreachable' | 'error' | 'unknown';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'appearance', label: 'Appearance', icon: <Palette className="w-4 h-4" /> },
@@ -155,6 +156,8 @@ export function SettingsModal() {
   const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
+  const [storageHealth, setStorageHealth] = useState<StorageHealth>('unknown');
+  const [storageMessage, setStorageMessage] = useState('');
   const [dataDirChanging, setDataDirChanging] = useState(false);
   const [githubReleases, setGithubReleases] = useState<Array<{ tag_name: string; body: string | null; published_at: string | null }>>([]);
   const [githubReleasesLoading, setGithubReleasesLoading] = useState(false);
@@ -169,15 +172,24 @@ export function SettingsModal() {
     setGroqKeyDraft(settings.groqApiKey ?? '');
   }, [settings.groqApiKey]);
 
-  // Load current data directory path
-  useEffect(() => {
+  const refreshStorageInfo = () => {
     const electronStore = (window as any).electronStore;
     if (electronStore?.getDataDir) {
-      electronStore.getDataDir().then((result: { dir: string; isCustom: boolean }) => {
+      electronStore.getDataDir().then((result: { dir: string; isCustom: boolean; status?: StorageHealth; message?: string }) => {
         setCurrentDataDir(result?.dir || '');
         setIsCustomDataDir(result?.isCustom ?? false);
+        setStorageHealth(result?.status ?? 'unknown');
+        setStorageMessage(result?.message ?? '');
+      }).catch(() => {
+        setStorageHealth('error');
+        setStorageMessage('Could not check the current data folder.');
       });
     }
+  };
+
+  // Load current data directory path
+  useEffect(() => {
+    refreshStorageInfo();
   }, []);
 
   // Fetch GitHub releases when Version history tab is open
@@ -349,6 +361,18 @@ export function SettingsModal() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') toggleSettings();
   };
+
+  const storageIsProtected = storageHealth === 'unreachable' || storageHealth === 'error';
+  const storageStatusLabel =
+    storageHealth === 'ok'
+      ? 'Connected'
+      : storageHealth === 'missing'
+        ? 'Empty folder'
+        : storageHealth === 'unreachable'
+          ? 'Unavailable'
+          : storageHealth === 'error'
+            ? 'Blocked'
+            : 'Checking';
 
   return (
     <div
@@ -830,8 +854,35 @@ export function SettingsModal() {
                 {/* Current data folder path */}
                 {currentDataDir && (
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
-                    <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Current data folder</p>
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Current data folder</p>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                        storageIsProtected
+                          ? 'text-red-500 dark:text-red-400'
+                          : storageHealth === 'ok'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {storageStatusLabel}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-600 dark:text-gray-300 font-mono break-all leading-relaxed">{currentDataDir}</p>
+                  </div>
+                )}
+
+                {(storageMessage || storageIsProtected) && (
+                  <div className={`rounded-lg border px-3 py-2.5 text-xs leading-relaxed flex gap-2 ${
+                    storageIsProtected
+                      ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
+                      : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
+                  }`}>
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p>{storageMessage || 'Storage protection is active.'}</p>
+                      {storageIsProtected && isCustomDataDir && (
+                        <p>Combobulator is refusing to overwrite data until the shared drive is reachable again.</p>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -854,6 +905,14 @@ export function SettingsModal() {
                       {dataDirChanging ? 'Changing…' : 'Change folder…'}
                     </button>
                   )}
+
+                  <button
+                    onClick={refreshStorageInfo}
+                    disabled={dataDirChanging}
+                    className="px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Retry check
+                  </button>
                 </div>
 
                 <p className="text-xs text-gray-400 dark:text-gray-500 -mt-2 leading-relaxed">
@@ -864,7 +923,7 @@ export function SettingsModal() {
                 {isCustomDataDir && (window as any).electronStore?.resetDataDir && (
                   <button
                     onClick={handleResetDataDir}
-                    disabled={dataDirChanging}
+                    disabled={dataDirChanging || storageIsProtected}
                     className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Reset to default folder
@@ -924,7 +983,7 @@ export function SettingsModal() {
                     />
                     <button
                       onClick={handleClearData}
-                      disabled={clearConfirm !== 'DELETE'}
+                      disabled={clearConfirm !== 'DELETE' || storageIsProtected}
                       className="px-4 py-1.5 text-sm font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       Clear all data

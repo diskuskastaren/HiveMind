@@ -436,8 +436,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handler = () => {
-      alert('Storage limit reached. Please export a backup (Ctrl+K → Backup) to avoid data loss.');
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ message?: string }>;
+      alert(customEvent.detail?.message || 'Storage limit reached. Please export a backup (Ctrl+K → Backup) to avoid data loss.');
     };
     window.addEventListener('storage-error', handler);
     return () => window.removeEventListener('storage-error', handler);

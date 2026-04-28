@@ -45,19 +45,67 @@ const uid = () => crypto.randomUUID();
 
 const electronAPI = typeof window !== 'undefined' && (window as any).electronStore;
 
+type ElectronStoreReadResult =
+  | string
+  | null
+  | {
+      status?: 'ok' | 'missing' | 'unreachable' | 'error';
+      data?: string;
+      message?: string;
+      path?: string;
+      dir?: string;
+      isCustom?: boolean;
+    };
+
+type ElectronStoreWriteResult = void | { ok?: boolean; error?: string };
+
+function dispatchStorageError(message: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('storage-error', { detail: { message } }));
+}
+
+function normaliseReadResult(result: ElectronStoreReadResult) {
+  if (typeof result === 'string' || result === null) {
+    return { status: result === null ? 'missing' : 'ok', data: result ?? undefined, message: '' };
+  }
+  return {
+    status: result?.status ?? 'error',
+    data: result?.data,
+    message: result?.message ?? 'Storage is unavailable.',
+  };
+}
+
 const appStorage = {
-  getItem: (name: string): string | null | Promise<string | null> => {
-    if (electronAPI) return electronAPI.read();
+  getItem: async (name: string): Promise<string | null> => {
+    if (electronAPI) {
+      const result = normaliseReadResult(await electronAPI.read());
+      if (result.status === 'ok') return result.data ?? null;
+      if (result.status === 'missing') return null;
+      dispatchStorageError(result.message);
+      return null;
+    }
     try { return localStorage.getItem(name); }
     catch { return null; }
   },
-  setItem: (name: string, value: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write(value);
+  setItem: async (name: string, value: string): Promise<void> => {
+    if (electronAPI) {
+      const result: ElectronStoreWriteResult = await electronAPI.write(value);
+      if (result && typeof result === 'object' && result.ok === false) {
+        const message = result.error || 'Storage is unavailable.';
+        dispatchStorageError(message);
+        throw new Error(message);
+      }
+      return;
+    }
     try { localStorage.setItem(name, value); }
     catch { window.dispatchEvent(new CustomEvent('storage-error')); }
   },
-  removeItem: (name: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write('');
+  removeItem: async (name: string): Promise<void> => {
+    if (electronAPI) {
+      const message = 'Deleting the entire data store is blocked through the persistence layer. Use the explicit Clear all data action instead.';
+      dispatchStorageError(message);
+      throw new Error(message);
+    }
     try { localStorage.removeItem(name); }
     catch { /* ignore */ }
   },

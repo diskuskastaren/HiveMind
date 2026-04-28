@@ -50,10 +50,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   const audioChunksRef = useRef<Blob[]>([]);
   // WebM init segment (first ondataavailable chunk) — must be prepended to every batch blob
   // so that Whisper receives a valid WebM file regardless of which batch it is
-  const isBatchCycleInFlightRef = useRef(false);
-  const isChunkUploadInFlightRef = useRef(false);
-  const flushQueuedRef = useRef(false);
   const sysInitChunkRef = useRef<Blob | null>(null);
+  const whisperInFlightRef = useRef<Promise<void> | null>(null);
+  const whisperFlushQueuedRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // System-audio capture via hidden BrowserWindow (avoids GPU crash in main renderer)
@@ -94,84 +93,52 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     saveProgress();
   }, [saveProgress]);
 
-  const flushAudioChunks = useCallback(async (_mimeType: string, apiKeyValue: string) => {
-    if (!apiKeyValue || audioChunksRef.current.length === 0) return '';
-    if (isChunkUploadInFlightRef.current) {
-      flushQueuedRef.current = true;
-      return '';
+  const flushWhisperChunks = useCallback(async (
+    mimeType: string,
+    key: string,
+    opts?: { onText?: (text: string) => void; onError?: (message: string) => void },
+  ) => {
+    if (!key) return;
+    if (whisperInFlightRef.current) {
+      whisperFlushQueuedRef.current = true;
+      return;
     }
 
-    isChunkUploadInFlightRef.current = true;
-    let combinedText = '';
-
-    try {
+    const promise = (async () => {
       do {
-        flushQueuedRef.current = false;
+        whisperFlushQueuedRef.current = false;
+        if (audioChunksRef.current.length === 0) return;
+
         const chunks = audioChunksRef.current;
         audioChunksRef.current = [];
-        if (chunks.length === 0) continue;
+        const parts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...chunks] : chunks;
+        const blob = new Blob(parts, { type: mimeType });
 
-        for (const chunk of chunks) {
-          if (chunk.size === 0) continue;
-          const text = await transcribeAudioChunk(chunk, apiKeyValue);
-          if (text) combinedText += `${text} `;
+        try {
+          const text = await transcribeAudioChunk(blob, key);
+          if (text) {
+            appendText(text + ' ');
+            opts?.onText?.(text);
+          }
+        } catch (err: any) {
+          opts?.onError?.(String(err));
         }
-      } while (flushQueuedRef.current || audioChunksRef.current.length > 0);
-    } finally {
-      isChunkUploadInFlightRef.current = false;
-    }
+      } while (whisperFlushQueuedRef.current);
+    })().finally(() => {
+      if (whisperInFlightRef.current === promise) {
+        whisperInFlightRef.current = null;
+      }
+    });
 
-    return combinedText;
+    whisperInFlightRef.current = promise;
+    await promise;
+  }, [appendText]);
+
+  const waitForWhisperFlush = useCallback(async () => {
+    while (whisperInFlightRef.current) {
+      await whisperInFlightRef.current;
+    }
   }, []);
-
-  const runBatchCycle = useCallback(async (prepareBatch: () => Promise<void>, mimeType: string, apiKeyValue: string) => {
-    if (isBatchCycleInFlightRef.current) {
-      flushQueuedRef.current = true;
-      return '';
-    }
-
-    isBatchCycleInFlightRef.current = true;
-    let combinedText = '';
-
-    try {
-      do {
-        flushQueuedRef.current = false;
-        await prepareBatch();
-        const text = await flushAudioChunks(mimeType, apiKeyValue);
-        if (text) combinedText += text;
-      } while (flushQueuedRef.current);
-    } finally {
-      isBatchCycleInFlightRef.current = false;
-    }
-
-    return combinedText;
-  }, [flushAudioChunks]);
-
-  const startSegmentRecorder = useCallback((stream: MediaStream, mimeType: string) => {
-    const recorder = new MediaRecorder(stream, { mimeType });
-    recorder.ondataavailable = (e) => {
-      dbg({location:'useTranscription.ts:ondataavailable',message:'audio segment ready',data:{size:e.data.size,segmentCount:audioChunksRef.current.length+1},hypothesisId:'H-F'});
-      if (e.data.size > 0) audioChunksRef.current.push(e.data);
-    };
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-  }, []);
-
-  const rotateSegmentRecorder = useCallback(async (stream: MediaStream, mimeType: string, restart: boolean) => {
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      await new Promise<void>((resolve) => {
-        recorder.addEventListener('stop', () => resolve(), { once: true });
-        recorder.stop();
-      });
-    }
-
-    if (restart && isRecordingRef.current) {
-      startSegmentRecorder(stream, mimeType);
-    } else {
-      mediaRecorderRef.current = null;
-    }
-  }, [startSegmentRecorder]);
 
   // Fallback: record mic via MediaRecorder → Whisper when Speech API has no network access
   const startMicWhisperFallback = useCallback(() => {
@@ -190,36 +157,42 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
       : 'audio/webm';
-    startSegmentRecorder(stream, mimeType);
-    const processChunks = async () => {
-      try {
-        const text = await runBatchCycle(
-          () => rotateSegmentRecorder(stream, mimeType, true),
-          mimeType,
-          key,
-        );
-        if (text) {
-          appendText(text);
-          setDebugStatus('Whisper: transcribed chunk');
+    const recorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorderRef.current = recorder;
+    recorder.ondataavailable = (e) => {
+      // #region agent log
+      dbg({location:'useTranscription.ts:ondataavailable',message:'audio chunk received',data:{size:e.data.size,chunkCount:audioChunksRef.current.length+1},hypothesisId:'H-F'});
+      // #endregion
+      if (e.data.size > 0) {
+        if (!sysInitChunkRef.current) {
+          sysInitChunkRef.current = e.data;
+        } else {
+          audioChunksRef.current.push(e.data);
         }
-      } catch (err: any) {
-        const msg = String(err);
-        // #region agent log
-        dbg({location:'useTranscription.ts:processChunks-error',message:'Whisper interval call failed',data:{error:msg},hypothesisId:'H-H'});
-        // #endregion
-        const friendly = msg.includes('429') || msg.includes('quota')
-          ? 'Groq quota exceeded — check your plan at console.groq.com'
-          : `Groq Whisper error: ${msg.slice(0, 80)}`;
-        setDebugStatus(friendly);
       }
     };
+    const processChunks = async () => {
+      await flushWhisperChunks(mimeType, key, {
+        onText: () => setDebugStatus('Whisper: transcribed chunk'),
+        onError: (msg) => {
+          // #region agent log
+          dbg({location:'useTranscription.ts:processChunks-error',message:'Whisper interval call failed',data:{error:msg},hypothesisId:'H-H'});
+          // #endregion
+          const friendly = msg.includes('429') || msg.includes('quota')
+            ? 'Groq quota exceeded - check your plan at console.groq.com'
+            : `Groq Whisper error: ${msg.slice(0, 80)}`;
+          setDebugStatus(friendly);
+        },
+      });
+    };
+    recorder.start(1000);
     const chunkMs = useStore.getState().settings.chunkIntervalSeconds * 1000;
     chunkIntervalRef.current = setInterval(processChunks, chunkMs);
     // #region agent log
     dbg({location:'useTranscription.ts:startMicWhisperFallback',message:'Switched to Whisper mic fallback',data:{hasStream:true,hasKey:!!key,chunkMs},hypothesisId:'H-D'});
     setDebugStatus(`Whisper mic fallback active — processing every ${chunkMs / 1000}s`);
     // #endregion
-  }, [appendText, rotateSegmentRecorder, runBatchCycle, setTranscriptRecording, setDebugStatus, setVisualizerStream, startSegmentRecorder]);
+  }, [flushWhisperChunks, setTranscriptRecording, setDebugStatus, setVisualizerStream]);
 
   const startMicRecording = useCallback(async () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -347,40 +320,6 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       captureMimeTypeRef.current = mimeType;
       isSystemModeRef.current = true;
 
-      const chunkHandlerV2 = (buf: ArrayBuffer) => {
-        const blob = new Blob([buf], { type: mimeType });
-        if (blob.size > 0) audioChunksRef.current.push(blob);
-      };
-      electronCapture.onChunk(chunkHandlerV2);
-      captureChunkHandlerRef.current = chunkHandlerV2;
-
-      const errorHandlerV2 = (msg: string) => {
-        setDebugStatus(`Capture error: ${msg}`);
-      };
-      electronCapture.onError(errorHandlerV2);
-      captureErrorHandlerRef.current = errorHandlerV2;
-
-      const levelsHandlerV2 = (data: number[]) => setVisualizerLevels(data);
-      electronCapture.onLevels(levelsHandlerV2);
-      captureLevelsHandlerRef.current = levelsHandlerV2;
-
-      const processChunksV2 = async () => {
-        try {
-          const text = await runBatchCycle(
-            () => electronCapture.flushCapture(),
-            mimeType,
-            apiKey,
-          );
-          if (text) appendText(text);
-        } catch (e) {
-          console.error('Whisper error:', e);
-        }
-      };
-
-      const chunkMsV2 = useStore.getState().settings.chunkIntervalSeconds * 1000;
-      chunkIntervalRef.current = setInterval(processChunksV2, chunkMsV2);
-      return true;
-
       // Accumulate audio chunk ArrayBuffers forwarded from the hidden window via IPC.
       const chunkHandler = (buf: ArrayBuffer) => {
         const blob = new Blob([buf], { type: mimeType });
@@ -409,17 +348,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       // Periodic Whisper transcription — same logic as before.
       const processChunks = async () => {
-        if (audioChunksRef.current.length === 0) return;
-        const chunks = audioChunksRef.current;
-        audioChunksRef.current = [];
-        const parts = sysInitChunkRef.current ? [sysInitChunkRef.current, ...chunks] : chunks;
-        const blob = new Blob(parts, { type: mimeType });
-        try {
-          const text = await transcribeAudioChunk(blob, apiKey);
-          if (text) appendText(text + ' ');
-        } catch (e) {
-          console.error('Whisper error:', e);
-        }
+        await flushWhisperChunks(mimeType, apiKey, {
+          onError: (msg) => {
+            console.error('Whisper error:', msg);
+            setDebugStatus(`Groq Whisper error: ${msg.slice(0, 80)}`);
+          },
+        });
       };
 
       const chunkMs = useStore.getState().settings.chunkIntervalSeconds * 1000;
@@ -431,7 +365,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       alert(`Failed to capture system audio: ${e?.message ?? 'Unknown error'}`);
       return false;
     }
-  }, [apiKey, appendText, flushAudioChunks, setDebugStatus]);
+  }, [apiKey, flushWhisperChunks, setDebugStatus]);
 
   const start = useCallback(
     async (onLiveText: (text: string) => void) => {
@@ -443,10 +377,6 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       startTimeRef.current = Date.now();
       isRecordingRef.current = true;
       speechNetworkFailedRef.current = false;
-      audioChunksRef.current = [];
-      flushQueuedRef.current = false;
-      isBatchCycleInFlightRef.current = false;
-      isChunkUploadInFlightRef.current = false;
       liveTextCallbackRef.current = onLiveText;
 
       // Create a new transcript entry for this recording session — previous ones are preserved
@@ -513,8 +443,6 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       chunkIntervalRef.current = null;
     }
 
-    const results: string[] = [];
-
     // ── System audio via hidden capture window ───────────────────────────────
     if (isSystemModeRef.current) {
       const electronCapture = (window as any).electronCapture;
@@ -524,6 +452,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       if (electronCapture) {
         try { await electronCapture.stopCapture(); } catch { /* window may have crashed */ }
       }
+      await waitForWhisperFlush();
 
       // Now safe to remove handlers — no more chunks will arrive.
       if (captureChunkHandlerRef.current && electronCapture) {
@@ -543,38 +472,27 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       // Transcribe any chunks that arrived after the last interval tick.
       const mimeTypeSys = captureMimeTypeRef.current || 'audio/webm';
       if (audioChunksRef.current.length > 0 && apiKey) {
-        try {
-          const text = await flushAudioChunks(mimeTypeSys, apiKey);
-          if (text) results.push(text.trim());
-        } catch (e: any) {
-          console.error('Whisper final system-audio error:', e);
-        }
+        await flushWhisperChunks(mimeTypeSys, apiKey, {
+          onError: (msg) => console.error('Whisper final system-audio error:', msg),
+        });
       }
+      sysInitChunkRef.current = null;
       isSystemModeRef.current = false;
     }
 
     // ── Mic Whisper fallback (MediaRecorder running in main renderer) ────────
     const micMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      const micStream = micStreamRef.current;
-      if (micStream) {
-        await rotateSegmentRecorder(micStream, micMimeType, false);
-      } else {
-        await drainRecorder(mediaRecorderRef.current);
-        mediaRecorderRef.current = null;
-      }
+      await drainRecorder(mediaRecorderRef.current);
+      await waitForWhisperFlush();
       if (audioChunksRef.current.length > 0 && apiKey) {
-        try {
-          const text = await flushAudioChunks(micMimeType, apiKey);
-          if (text) results.push(text.trim());
-        } catch (e: any) {
-          console.error('Whisper final mic-audio error:', e);
-        }
+        await flushWhisperChunks(micMimeType, apiKey, {
+          onError: (msg) => console.error('Whisper final mic-audio error:', msg),
+        });
       }
+      sysInitChunkRef.current = null;
       mediaRecorderRef.current = null;
     }
-
-    if (results.length > 0) appendText(results.join(' ') + ' ');
 
     if (audioContextRef.current) {
       audioContextRef.current.close();
@@ -592,10 +510,6 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     }
 
     setVisualizerStream(null);
-    audioChunksRef.current = [];
-    flushQueuedRef.current = false;
-    isBatchCycleInFlightRef.current = false;
-    isChunkUploadInFlightRef.current = false;
     liveTextCallbackRef.current = () => {};
     setTranscriptRecording(false);
     setRecordingNote(null);
@@ -605,7 +519,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     saveProgress({ duration });
 
     return accumulatedRef.current;
-  }, [apiKey, appendText, saveProgress, setTranscriptRecording, setRecordingNote]);
+  }, [apiKey, flushWhisperChunks, saveProgress, setTranscriptRecording, setRecordingNote, waitForWhisperFlush]);
 
   // Keep stopRef current so the auto-stop timeout always calls the latest stop function
   stopRef.current = stop;

@@ -9,6 +9,10 @@ const { autoUpdater } = require('electron-updater');
 crashReporter.start({ uploadToServer: false });
 // #endregion
 
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('in-process-gpu');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
 
 // #region agent log
 // Writable log paths — userData is always writable in both dev and packaged app.
@@ -67,10 +71,140 @@ function getDataDir() {
   return cfg.customDataDir || app.getPath('userData');
 }
 
-let DATA_FILE = path.join(getDataDir(), 'Combobulator-data.json');
-let IMAGES_DIR = path.join(getDataDir(), 'images');
-// Ensure images directory exists
-if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+function getStoragePaths() {
+  const cfg = loadAppConfig();
+  const dataDir = cfg.customDataDir || app.getPath('userData');
+  return {
+    cfg,
+    dataDir,
+    dataFile: path.join(dataDir, 'Combobulator-data.json'),
+    imagesDir: path.join(dataDir, 'images'),
+    isCustom: !!cfg.customDataDir,
+  };
+}
+
+let DATA_FILE = getStoragePaths().dataFile;
+let IMAGES_DIR = getStoragePaths().imagesDir;
+
+const storageSession = {
+  status: 'unknown',
+  writeAllowed: false,
+  reason: '',
+  backupCreatedFor: null,
+};
+
+function updateStoragePaths() {
+  const paths = getStoragePaths();
+  DATA_FILE = paths.dataFile;
+  IMAGES_DIR = paths.imagesDir;
+  return paths;
+}
+
+function setStorageSession(status, writeAllowed, reason = '') {
+  storageSession.status = status;
+  storageSession.writeAllowed = writeAllowed;
+  storageSession.reason = reason;
+}
+
+function inspectStorage() {
+  const paths = updateStoragePaths();
+  try {
+    const dirExists = fs.existsSync(paths.dataDir);
+    if (!dirExists) {
+      return {
+        status: paths.isCustom ? 'unreachable' : 'missing',
+        message: paths.isCustom
+          ? 'Your custom data folder is unavailable. Connect the VPN or mapped drive before opening Combobulator.'
+          : 'Data directory does not exist yet.',
+        ...paths,
+      };
+    }
+
+    let dirStat;
+    try {
+      dirStat = fs.statSync(paths.dataDir);
+    } catch (e) {
+      return {
+        status: paths.isCustom ? 'unreachable' : 'error',
+        message: paths.isCustom
+          ? 'Your custom data folder is unavailable. Connect the VPN or mapped drive before opening Combobulator.'
+          : `Could not read data directory: ${e.message}`,
+        ...paths,
+      };
+    }
+
+    if (!dirStat.isDirectory()) {
+      return {
+        status: 'error',
+        message: 'Configured data path is not a folder.',
+        ...paths,
+      };
+    }
+
+    if (!fs.existsSync(paths.dataFile)) {
+      return {
+        status: 'missing',
+        message: 'No data file found in the configured data folder.',
+        ...paths,
+      };
+    }
+
+    let raw;
+    try {
+      raw = fs.readFileSync(paths.dataFile, 'utf-8');
+    } catch (e) {
+      return {
+        status: 'error',
+        message: `Could not read data file: ${e.message}`,
+        ...paths,
+      };
+    }
+
+    try {
+      JSON.parse(raw);
+    } catch (e) {
+      return {
+        status: 'error',
+        message: `Data file is not valid JSON: ${e.message}`,
+        ...paths,
+      };
+    }
+
+    return {
+      status: 'ok',
+      data: raw,
+      message: '',
+      ...paths,
+    };
+  } catch (e) {
+    return {
+      status: 'error',
+      message: `Storage check failed: ${e.message}`,
+      ...paths,
+    };
+  }
+}
+
+function makeBackupIfNeeded(dataFile) {
+  if (!fs.existsSync(dataFile)) return;
+  if (storageSession.backupCreatedFor === dataFile) return;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFile = path.join(path.dirname(dataFile), `Combobulator-data.backup-${timestamp}.json`);
+  fs.copyFileSync(dataFile, backupFile);
+  storageSession.backupCreatedFor = dataFile;
+}
+
+function ensureImagesDirAvailable() {
+  const { imagesDir } = updateStoragePaths();
+  const parentDir = path.dirname(imagesDir);
+  if (!fs.existsSync(parentDir)) {
+    throw new Error('Data directory is unavailable.');
+  }
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true });
+  }
+  return imagesDir;
+}
 
 // Register custom protocol for serving local images
 protocol.registerSchemesAsPrivileged([
@@ -78,33 +212,63 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 ipcMain.handle('store:read', () => {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      return fs.readFileSync(DATA_FILE, 'utf-8');
-    }
-  } catch (e) {
-    console.error('Failed to read data file:', e);
+  const result = inspectStorage();
+  if (result.status === 'ok') {
+    setStorageSession('ok', true);
+  } else if (result.status === 'missing') {
+    setStorageSession('missing', true, result.message);
+  } else {
+    setStorageSession(result.status, false, result.message);
+    console.error('Blocked storage read:', result.message);
   }
-  return null;
+  return result;
 });
 
 ipcMain.handle('store:write', (_event, data) => {
   try {
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(DATA_FILE, data, 'utf-8');
+    const storage = inspectStorage();
+    if (storage.status === 'unreachable') {
+      throw new Error(storage.message);
+    }
+    if (storage.status === 'error') {
+      throw new Error(storage.message);
+    }
+    if (!storageSession.writeAllowed) {
+      throw new Error(storageSession.reason || 'Storage is locked because the current data file has not been safely opened.');
+    }
+
+    const dir = path.dirname(storage.dataFile);
+    if (!fs.existsSync(dir)) {
+      throw new Error('Data directory is unavailable.');
+    }
+
+    if (storage.status === 'ok') {
+      makeBackupIfNeeded(storage.dataFile);
+    }
+
+    fs.writeFileSync(storage.dataFile, data, 'utf-8');
+    setStorageSession('ok', true);
+    return { ok: true };
   } catch (e) {
     console.error('Failed to write data file:', e);
+    setStorageSession('error', false, e.message);
+    return { ok: false, error: e.message };
   }
 });
 
-ipcMain.handle('store:path', () => DATA_FILE);
+ipcMain.handle('store:path', () => updateStoragePaths().dataFile);
 
-ipcMain.handle('store:openFolder', () => shell.openPath(path.dirname(DATA_FILE)));
+ipcMain.handle('store:openFolder', () => shell.openPath(updateStoragePaths().dataDir));
 
 ipcMain.handle('store:getDataDir', () => {
-  const cfg = loadAppConfig();
-  return { dir: path.dirname(DATA_FILE), isCustom: !!cfg.customDataDir };
+  const result = inspectStorage();
+  return {
+    dir: result.dataDir,
+    isCustom: result.isCustom,
+    status: result.status,
+    message: result.message,
+    path: result.dataFile,
+  };
 });
 
 ipcMain.handle('store:changeDataDir', async () => {
@@ -206,8 +370,13 @@ ipcMain.handle('desktop:getSources', async () => {
 // Save an image buffer to the images folder, return the filename
 ipcMain.handle('image:save', (_event, buffer, ext) => {
   try {
+    const storage = inspectStorage();
+    if (storage.status === 'unreachable' || storage.status === 'error') {
+      throw new Error(storage.message || 'Image storage is unavailable.');
+    }
+    const imagesDir = ensureImagesDirAvailable();
     const filename = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'png'}`;
-    const filepath = path.join(IMAGES_DIR, filename);
+    const filepath = path.join(imagesDir, filename);
     fs.writeFileSync(filepath, Buffer.from(buffer));
     return filename;
   } catch (e) {
@@ -219,7 +388,7 @@ ipcMain.handle('image:save', (_event, buffer, ext) => {
 // Delete an image file from the images folder
 ipcMain.handle('image:delete', (_event, filename) => {
   try {
-    const filepath = path.join(IMAGES_DIR, filename);
+    const filepath = path.join(updateStoragePaths().imagesDir, filename);
     if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
   } catch (e) {
     console.error('Failed to delete image:', e);
