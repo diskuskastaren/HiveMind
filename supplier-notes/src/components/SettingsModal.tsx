@@ -184,6 +184,7 @@ export function SettingsModal() {
   const [localModelError, setLocalModelError] = useState('');
   const [localSummaryStatus, setLocalSummaryStatus] = useState<any>(null);
   const [localSummaryLoading, setLocalSummaryLoading] = useState(false);
+  const [localSummaryDeleting, setLocalSummaryDeleting] = useState(false);
   const [localSummaryError, setLocalSummaryError] = useState('');
 
   // Sync drafts when settings change from outside (e.g. migration)
@@ -301,6 +302,27 @@ export function SettingsModal() {
       setLocalSummaryError(e?.message ?? 'Local summary model install failed.');
     } finally {
       setLocalSummaryLoading(false);
+    }
+  };
+
+  const handleDeleteLocalSummaryModel = async () => {
+    const localApi = (window as any).electronSummary;
+    if (!localApi?.deleteModel) return;
+    const modelLabel = LOCAL_SUMMARY_MODELS[settings.localSummaryModel].label;
+    const ok = confirm(`Uninstall ${modelLabel}? This deletes the local model file. You can install it again later.`);
+    if (!ok) return;
+    setLocalSummaryDeleting(true);
+    setLocalSummaryError('');
+    try {
+      const result = await localApi.deleteModel(settings.localSummaryModel);
+      if (!result?.ok) {
+        setLocalSummaryError(result?.error || 'Local summary model uninstall failed.');
+      }
+      refreshLocalSummaryStatus();
+    } catch (e: any) {
+      setLocalSummaryError(e?.message ?? 'Local summary model uninstall failed.');
+    } finally {
+      setLocalSummaryDeleting(false);
     }
   };
 
@@ -796,6 +818,16 @@ export function SettingsModal() {
                           {localSummaryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                           {localSummaryLoading ? 'Installing...' : localSummaryStatus?.modelAvailable ? 'Re-install model' : 'Install local summary model'}
                         </button>
+                        {localSummaryStatus?.modelAvailable && (
+                          <button
+                            onClick={handleDeleteLocalSummaryModel}
+                            disabled={localSummaryDeleting || localSummaryLoading}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+                          >
+                            {localSummaryDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            {localSummaryDeleting ? 'Uninstalling...' : 'Uninstall model'}
+                          </button>
+                        )}
                       </div>
                     </div>
 

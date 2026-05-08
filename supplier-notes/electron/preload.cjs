@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronTranscription', {
 contextBridge.exposeInMainWorld('electronSummary', {
   getStatus: (modelId) => ipcRenderer.invoke('summary:localStatus', modelId),
   downloadModel: (modelId) => ipcRenderer.invoke('summary:downloadModel', modelId),
+  deleteModel: (modelId) => ipcRenderer.invoke('summary:deleteModel', modelId),
   summarize: (rawText, modelId, options) =>
     ipcRenderer.invoke('summary:localSummarize', rawText, modelId, options),
   ask: (question, modelId, options) =>

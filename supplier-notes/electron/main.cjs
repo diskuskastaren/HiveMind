@@ -1148,6 +1148,32 @@ ipcMain.handle('summary:downloadModel', async (_event, modelId = 'gemma-4-e2b-it
   }
 });
 
+ipcMain.handle('summary:deleteModel', async (_event, modelId = 'gemma-4-e2b-it-q4') => {
+  try {
+    const info = getLocalSummaryModelInfo(modelId);
+    if (localAiServerModelId === info.id) {
+      stopLocalAiServer();
+    }
+    if (!fs.existsSync(info.modelPath)) {
+      return {
+        ok: true,
+        deleted: false,
+        modelId: info.id,
+        modelPath: info.modelPath,
+      };
+    }
+    fs.unlinkSync(info.modelPath);
+    return {
+      ok: true,
+      deleted: true,
+      modelId: info.id,
+      modelPath: info.modelPath,
+    };
+  } catch (e) {
+    return { ok: false, deleted: false, error: e?.message || String(e) };
+  }
+});
+
 ipcMain.handle('summary:localSummarize', async (_event, rawText, modelId = 'gemma-4-e2b-it-q4', options = {}) => {
   const binaryPath = getLlamaBinaryPath();
   const info = getLocalSummaryModelInfo(modelId);
