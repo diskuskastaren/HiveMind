@@ -2,10 +2,11 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { CustomSelect } from './ui/CustomSelect';
 import { format } from 'date-fns';
-import { Search, X, FileText, CheckSquare, Lightbulb, Archive } from 'lucide-react';
+import { Search, X, FileText, CheckSquare, Lightbulb, Archive, Mic } from 'lucide-react';
+import { htmlToText } from '../utils/localSearch';
 
 interface SearchResult {
-  type: 'note' | 'task' | 'decision';
+  type: 'note' | 'transcript' | 'task' | 'decision';
   id: string;
   /** For notes: all linked project IDs. For tasks/decisions: single-element array. */
   projectIds: string[];
@@ -20,7 +21,7 @@ interface SearchResult {
 
 export function SearchModal() {
   const [query, setQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'note' | 'task' | 'decision'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'note' | 'transcript' | 'task' | 'decision'>('all');
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -41,12 +42,6 @@ export function SearchModal() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-
-  function htmlToText(html: string): string {
-    const el = document.createElement('div');
-    el.innerHTML = html;
-    return el.textContent || '';
-  }
 
   const results = useMemo<SearchResult[]>(() => {
     if (!query.trim()) return [];
@@ -73,6 +68,28 @@ export function SearchModal() {
             archived: n.archived,
           });
         }
+      });
+    }
+
+    if (filterType === 'all' || filterType === 'transcript') {
+      notes.forEach((n) => {
+        (n.transcripts || []).forEach((t) => {
+          const raw = t.rawText || '';
+          const summary = t.summary || '';
+          if (raw.toLowerCase().includes(q) || summary.toLowerCase().includes(q)) {
+            all.push({
+              type: 'transcript',
+              id: t.id,
+              noteId: n.id,
+              projectIds: n.projectIds,
+              supplierIds: n.supplierIds,
+              title: `${n.title || 'Untitled'} transcript`,
+              detail: (summary || raw).slice(0, 120),
+              date: t.recordedAt || n.updatedAt,
+              archived: n.archived,
+            });
+          }
+        });
       });
     }
 
@@ -127,6 +144,7 @@ export function SearchModal() {
 
   const ICONS = {
     note: <FileText className="w-4 h-4 text-blue-500" />,
+    transcript: <Mic className="w-4 h-4 text-purple-500" />,
     task: <CheckSquare className="w-4 h-4 text-yellow-500" />,
     decision: <Lightbulb className="w-4 h-4 text-green-500" />,
   };
@@ -148,6 +166,9 @@ export function SearchModal() {
     setActiveView('notes');
     if (result.type === 'note') {
       setActiveNote(result.id);
+    } else if (result.type === 'transcript') {
+      if (result.noteId) setActiveNote(result.noteId);
+      setRightPanelTab('transcript');
     } else if (result.type === 'task') {
       if (result.noteId) setActiveNote(result.noteId);
       setRightPanelTab('tasks');
@@ -181,7 +202,7 @@ export function SearchModal() {
 
         {/* Filters */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex-wrap">
-          {(['all', 'note', 'task', 'decision'] as const).map((type) => (
+          {(['all', 'note', 'transcript', 'task', 'decision'] as const).map((type) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}

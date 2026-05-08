@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from 'react';
 import { useStore } from '../store/store';
-import { transcribeAudioChunk } from '../utils/summarize';
+import { getTranscriptionProvider } from '../services/transcription';
 import type { Transcript } from '../types';
 
 // Dual-channel debug logger: IPC file + console (works regardless of preload version)
@@ -93,12 +93,51 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     saveProgress();
   }, [saveProgress]);
 
+  const getProviderConfig = useCallback(() => {
+    const settings = useStore.getState().settings;
+    return {
+      provider: getTranscriptionProvider(settings.transcriptionProvider),
+      modelSize: settings.localTranscriptionModel,
+    };
+  }, []);
+
+  const ensureTranscriptionProviderReady = useCallback(async () => {
+    const { provider, modelSize } = getProviderConfig();
+    if (provider.id === 'groq') {
+      if (apiKeyRef.current) return true;
+      alert('A Groq API key is required for cloud transcription.\nAdd one in Transcript Settings or switch to Local transcription.');
+      return false;
+    }
+
+    const localApi = (window as any).electronTranscription;
+    if (!localApi?.getStatus) {
+      alert('Local transcription is only available in the Electron app.');
+      return false;
+    }
+
+    const status = await localApi.getStatus(modelSize);
+    if (!status?.binaryAvailable) {
+      alert(
+        'Local transcription runtime is missing from this install.\n\n' +
+        'Rebuild the app with bundled local transcription resources, then install that build.',
+      );
+      return false;
+    }
+    if (!status?.modelAvailable) {
+      alert(
+        `The ${modelSize} local Whisper model is not downloaded yet.\n\n` +
+        'Open Settings -> Recording and download the model before starting local transcription.',
+      );
+      return false;
+    }
+    return true;
+  }, [getProviderConfig]);
+
   const flushWhisperChunks = useCallback(async (
     mimeType: string,
     key: string,
     opts?: { onText?: (text: string) => void; onError?: (message: string) => void },
   ) => {
-    if (!key) return;
     if (whisperInFlightRef.current) {
       whisperFlushQueuedRef.current = true;
       return;
@@ -115,7 +154,13 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         const blob = new Blob(parts, { type: mimeType });
 
         try {
-          const text = await transcribeAudioChunk(blob, key);
+          const { provider, modelSize } = getProviderConfig();
+          const text = await provider.transcribeChunk({
+            audioBlob: blob,
+            mimeType,
+            apiKey: key,
+            modelSize,
+          });
           if (text) {
             appendText(text + ' ');
             opts?.onText?.(text);
@@ -132,7 +177,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
     whisperInFlightRef.current = promise;
     await promise;
-  }, [appendText]);
+  }, [appendText, getProviderConfig]);
 
   const waitForWhisperFlush = useCallback(async () => {
     while (whisperInFlightRef.current) {
@@ -141,19 +186,12 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
   }, []);
 
   // Fallback: record mic via MediaRecorder → Whisper when Speech API has no network access
-  const startMicWhisperFallback = useCallback(() => {
+  const startMicWhisperFallback = useCallback(async () => {
     const stream = micStreamRef.current;
-    if (!stream) return;
+    if (!stream) return false;
+    if (!(await ensureTranscriptionProviderReady())) return false;
     const key = apiKeyRef.current;
-    if (!key) {
-      isRecordingRef.current = false;
-      setTranscriptRecording(false);
-      alert(
-        'Mic transcription needs internet access to Google\'s speech servers, which is unavailable.\n\n' +
-        'To transcribe offline, add a Groq API key in Transcript Settings — it will record your mic directly via Groq Whisper.',
-      );
-      return;
-    }
+    const { provider } = getProviderConfig();
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
       : 'audio/webm';
@@ -173,14 +211,14 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     };
     const processChunks = async () => {
       await flushWhisperChunks(mimeType, key, {
-        onText: () => setDebugStatus('Whisper: transcribed chunk'),
+        onText: () => setDebugStatus(`${provider.isLocal ? 'Local Whisper' : 'Groq Whisper'}: transcribed chunk`),
         onError: (msg) => {
           // #region agent log
           dbg({location:'useTranscription.ts:processChunks-error',message:'Whisper interval call failed',data:{error:msg},hypothesisId:'H-H'});
           // #endregion
           const friendly = msg.includes('429') || msg.includes('quota')
             ? 'Groq quota exceeded - check your plan at console.groq.com'
-            : `Groq Whisper error: ${msg.slice(0, 80)}`;
+            : `${provider.isLocal ? 'Local Whisper' : 'Groq Whisper'} error: ${msg.slice(0, 80)}`;
           setDebugStatus(friendly);
         },
       });
@@ -190,11 +228,24 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     chunkIntervalRef.current = setInterval(processChunks, chunkMs);
     // #region agent log
     dbg({location:'useTranscription.ts:startMicWhisperFallback',message:'Switched to Whisper mic fallback',data:{hasStream:true,hasKey:!!key,chunkMs},hypothesisId:'H-D'});
-    setDebugStatus(`Whisper mic fallback active — processing every ${chunkMs / 1000}s`);
+    setDebugStatus(`${provider.isLocal ? 'Local transcription' : 'Whisper mic fallback'} active - processing every ${chunkMs / 1000}s`);
     // #endregion
-  }, [flushWhisperChunks, setTranscriptRecording, setDebugStatus, setVisualizerStream]);
+    return true;
+  }, [ensureTranscriptionProviderReady, flushWhisperChunks, getProviderConfig, setDebugStatus]);
 
   const startMicRecording = useCallback(async () => {
+    if (getProviderConfig().provider.id === 'local') {
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStreamRef.current = micStream;
+        setVisualizerStream(micStream);
+        return await startMicWhisperFallback();
+      } catch (e: any) {
+        alert(`Failed to capture microphone audio: ${e?.message ?? 'Unknown error'}`);
+        return false;
+      }
+    }
+
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     // #region agent log
     dbg({location:'useTranscription.ts:startMicRecording-entry',message:'SR availability check',data:{SpeechRecognition:typeof (window as any).SpeechRecognition,webkitSpeechRecognition:typeof (window as any).webkitSpeechRecognition,SRFound:!!SR,noteId:recordingNoteIdRef.current},hypothesisId:'H-A,H-E'});
@@ -294,7 +345,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     }
 
     return true;
-  }, [appendText, startMicWhisperFallback, setDebugStatus]);
+  }, [appendText, getProviderConfig, startMicWhisperFallback, setDebugStatus]);
 
   const startSystemRecording = useCallback(async () => {
     const electronCapture = (window as any).electronCapture;
@@ -302,10 +353,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       alert('System audio capture is only available in the Electron app. Use "Mic only" mode in the browser.');
       return false;
     }
-    if (!apiKey) {
-      alert('A Groq API key is required for system audio transcription.\nAdd one in Transcript Settings.');
-      return false;
-    }
+    if (!(await ensureTranscriptionProviderReady())) return false;
+    const { provider } = getProviderConfig();
 
     try {
       const sources: Array<{ id: string; name: string }> = await electronCapture.getSources();
@@ -350,8 +399,8 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       const processChunks = async () => {
         await flushWhisperChunks(mimeType, apiKey, {
           onError: (msg) => {
-            console.error('Whisper error:', msg);
-            setDebugStatus(`Groq Whisper error: ${msg.slice(0, 80)}`);
+            console.error('Transcription error:', msg);
+            setDebugStatus(`${provider.isLocal ? 'Local Whisper' : 'Groq Whisper'} error: ${msg.slice(0, 80)}`);
           },
         });
       };
@@ -365,7 +414,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       alert(`Failed to capture system audio: ${e?.message ?? 'Unknown error'}`);
       return false;
     }
-  }, [apiKey, flushWhisperChunks, setDebugStatus]);
+  }, [apiKey, ensureTranscriptionProviderReady, flushWhisperChunks, getProviderConfig, setDebugStatus]);
 
   const start = useCallback(
     async (onLiveText: (text: string) => void) => {
@@ -382,7 +431,15 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
       // Create a new transcript entry for this recording session — previous ones are preserved
       const newId = crypto.randomUUID();
       transcriptIdRef.current = newId;
-      const newTranscript: Transcript = { id: newId, rawText: '', duration: 0, recordedAt: Date.now() };
+      const { provider, modelSize } = getProviderConfig();
+      const newTranscript: Transcript = {
+        id: newId,
+        rawText: '',
+        transcriptionProvider: provider.id,
+        transcriptionModel: provider.id === 'local' ? modelSize : 'whisper-large-v3-turbo',
+        duration: 0,
+        recordedAt: Date.now(),
+      };
       addTranscript(noteId, newTranscript);
 
       let success = false;
@@ -406,7 +463,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       return true;
     },
-    [noteId, mode, addTranscript, startMicRecording, startSystemRecording, setTranscriptRecording, setRecordingNote],
+    [noteId, mode, addTranscript, getProviderConfig, startMicRecording, startSystemRecording, setTranscriptRecording, setRecordingNote],
   );
 
   // Helper: stop a MediaRecorder and wait for its final ondataavailable + onstop
@@ -471,9 +528,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
       // Transcribe any chunks that arrived after the last interval tick.
       const mimeTypeSys = captureMimeTypeRef.current || 'audio/webm';
-      if (audioChunksRef.current.length > 0 && apiKey) {
+      if (audioChunksRef.current.length > 0) {
         await flushWhisperChunks(mimeTypeSys, apiKey, {
-          onError: (msg) => console.error('Whisper final system-audio error:', msg),
+          onError: (msg) => console.error('Final system-audio transcription error:', msg),
         });
       }
       sysInitChunkRef.current = null;
@@ -485,9 +542,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       await drainRecorder(mediaRecorderRef.current);
       await waitForWhisperFlush();
-      if (audioChunksRef.current.length > 0 && apiKey) {
+      if (audioChunksRef.current.length > 0) {
         await flushWhisperChunks(micMimeType, apiKey, {
-          onError: (msg) => console.error('Whisper final mic-audio error:', msg),
+          onError: (msg) => console.error('Final mic-audio transcription error:', msg),
         });
       }
       sysInitChunkRef.current = null;

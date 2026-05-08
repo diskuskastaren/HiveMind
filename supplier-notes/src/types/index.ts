@@ -20,6 +20,10 @@ export interface Transcript {
   id: string;
   rawText: string;
   summary?: string;
+  transcriptionProvider?: 'groq' | 'local';
+  transcriptionModel?: string;
+  summaryProvider?: 'openai' | 'local';
+  summaryModel?: string;
   duration: number;
   recordedAt: number;
 }

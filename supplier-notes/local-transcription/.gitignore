@@ -1,0 +1,5 @@
+bin/*
+models/*
+.cache/*
+manifest.json
+!.gitignore

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X,
   Bot,
@@ -24,6 +24,9 @@ import { useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
 import { CustomSelect } from './ui/CustomSelect';
+import type { LocalWhisperModelSize, TranscriptionProviderId } from '../services/transcription';
+import { LOCAL_SUMMARY_MODELS } from '../services/summary';
+import type { LocalSummaryModelId, SummaryProviderId } from '../services/summary';
 
 type SettingsTab = 'appearance' | 'ai' | 'recording' | 'teams' | 'releases' | 'data';
 type StorageHealth = 'ok' | 'missing' | 'unreachable' | 'error' | 'unknown';
@@ -52,6 +55,20 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'o1-mini':      { input: 3.00,  output: 12.00 },
 };
 const WHISPER_COST_PER_MIN = 0.000667; // $0.04/hr — Groq whisper-large-v3-turbo (~4.5x cheaper than gpt-4o-mini-transcribe)
+
+const LOCAL_WHISPER_MODELS: Array<{ value: LocalWhisperModelSize; label: string; hint: string }> = [
+  { value: 'tiny', label: 'Tiny', hint: 'Fastest, lowest accuracy' },
+  { value: 'base', label: 'Base', hint: 'Recommended first local model' },
+  { value: 'small', label: 'Small', hint: 'Better accuracy, slower' },
+  { value: 'medium', label: 'Medium', hint: 'Best local accuracy, needs more RAM' },
+];
+
+const LOCAL_SUMMARY_MODEL_OPTIONS: Array<{ value: LocalSummaryModelId; label: string }> = [
+  ...Object.values(LOCAL_SUMMARY_MODELS).map((model) => ({
+    value: model.id,
+    label: `${model.label} (${model.sizeLabel})`,
+  })),
+];
 
 // Estimate cost for an N-minute system-audio meeting
 function estimateMeetingCost(model: string, minutes: number) {
@@ -162,6 +179,12 @@ export function SettingsModal() {
   const [githubReleases, setGithubReleases] = useState<Array<{ tag_name: string; body: string | null; published_at: string | null }>>([]);
   const [githubReleasesLoading, setGithubReleasesLoading] = useState(false);
   const [githubReleasesError, setGithubReleasesError] = useState<string | null>(null);
+  const [localModelStatus, setLocalModelStatus] = useState<any>(null);
+  const [localModelLoading, setLocalModelLoading] = useState(false);
+  const [localModelError, setLocalModelError] = useState('');
+  const [localSummaryStatus, setLocalSummaryStatus] = useState<any>(null);
+  const [localSummaryLoading, setLocalSummaryLoading] = useState(false);
+  const [localSummaryError, setLocalSummaryError] = useState('');
 
   // Sync drafts when settings change from outside (e.g. migration)
   useEffect(() => {
@@ -214,6 +237,72 @@ export function SettingsModal() {
   useEffect(() => {
     if (activeTab === 'releases') fetchGithubReleases();
   }, [activeTab]);
+
+  const refreshLocalModelStatus = useCallback(() => {
+    const localApi = (window as any).electronTranscription;
+    if (!localApi?.getStatus) {
+      setLocalModelStatus({ electronAvailable: false });
+      return;
+    }
+    localApi.getStatus(settings.localTranscriptionModel)
+      .then((status: any) => setLocalModelStatus({ electronAvailable: true, ...status }))
+      .catch((e: any) => setLocalModelError(e?.message ?? 'Could not check local transcription status.'));
+  }, [settings.localTranscriptionModel]);
+
+  useEffect(() => {
+    if (activeTab === 'recording') refreshLocalModelStatus();
+  }, [activeTab, refreshLocalModelStatus]);
+
+  const handleDownloadLocalModel = async () => {
+    const localApi = (window as any).electronTranscription;
+    if (!localApi?.downloadModel) return;
+    setLocalModelLoading(true);
+    setLocalModelError('');
+    try {
+      const result = await localApi.downloadModel(settings.localTranscriptionModel);
+      if (!result?.ok) {
+        setLocalModelError(result?.error || 'Model download failed.');
+      }
+      refreshLocalModelStatus();
+    } catch (e: any) {
+      setLocalModelError(e?.message ?? 'Model download failed.');
+    } finally {
+      setLocalModelLoading(false);
+    }
+  };
+
+  const refreshLocalSummaryStatus = useCallback(() => {
+    const localApi = (window as any).electronSummary;
+    if (!localApi?.getStatus) {
+      setLocalSummaryStatus({ electronAvailable: false });
+      return;
+    }
+    localApi.getStatus(settings.localSummaryModel)
+      .then((status: any) => setLocalSummaryStatus({ electronAvailable: true, ...status }))
+      .catch((e: any) => setLocalSummaryError(e?.message ?? 'Could not check local summary status.'));
+  }, [settings.localSummaryModel]);
+
+  useEffect(() => {
+    if (activeTab === 'ai') refreshLocalSummaryStatus();
+  }, [activeTab, refreshLocalSummaryStatus]);
+
+  const handleDownloadLocalSummaryModel = async () => {
+    const localApi = (window as any).electronSummary;
+    if (!localApi?.downloadModel) return;
+    setLocalSummaryLoading(true);
+    setLocalSummaryError('');
+    try {
+      const result = await localApi.downloadModel(settings.localSummaryModel);
+      if (!result?.ok) {
+        setLocalSummaryError(result?.error || 'Local summary model install failed.');
+      }
+      refreshLocalSummaryStatus();
+    } catch (e: any) {
+      setLocalSummaryError(e?.message ?? 'Local summary model install failed.');
+    } finally {
+      setLocalSummaryLoading(false);
+    }
+  };
 
   const saveApiKey = () => {
     updateSettings({ openaiApiKey: apiKeyDraft.trim() });
@@ -572,6 +661,153 @@ export function SettingsModal() {
                 <Divider />
                 <SectionHeading>Summarization</SectionHeading>
 
+                <SettingRow
+                  label="Summary mode"
+                  hint="Cloud sends transcripts to OpenAI. Local keeps transcript text on this device and uses the installed local model."
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { id: 'openai', title: 'Cloud', description: 'OpenAI summary - fast, sends transcript externally' },
+                      { id: 'local', title: 'Local/Offline', description: 'Private, slower, requires local model install' },
+                    ] as Array<{ id: SummaryProviderId; title: string; description: string }>).map((option) => {
+                      const active = settings.summaryProvider === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => updateSettings({ summaryProvider: option.id })}
+                          className={`text-left rounded-lg border p-3 transition-colors ${
+                            active
+                              ? 'border-gray-700 dark:border-gray-300 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white'
+                              : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                              active ? 'border-gray-700 dark:border-gray-200 bg-gray-800 dark:bg-gray-200' : 'border-gray-300 dark:border-gray-600'
+                            }`}>
+                              {active && <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />}
+                            </span>
+                            {option.title}
+                          </span>
+                          <span className="block text-xs mt-1.5 leading-relaxed text-gray-400 dark:text-gray-500">
+                            {option.description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </SettingRow>
+
+                {settings.summaryProvider === 'local' && (
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 space-y-3">
+                    <SettingRow label="Local summary model" hint="Models stay in your local app data folder after install. The main app installer stays smaller.">
+                      <CustomSelect
+                        value={settings.localSummaryModel}
+                        onChange={(value) => updateSettings({ localSummaryModel: value as LocalSummaryModelId })}
+                        options={LOCAL_SUMMARY_MODEL_OPTIONS}
+                        className="w-full px-3 py-1.5 text-sm dark:text-gray-100"
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Load Local AI on app start"
+                      hint="Starts a background llama.cpp server and keeps the selected local model in memory for faster questions. Uses RAM while the app is open."
+                    >
+                      <button
+                        onClick={() => updateSettings({ localAiLoadOnStartup: !settings.localAiLoadOnStartup })}
+                        role="switch"
+                        aria-checked={settings.localAiLoadOnStartup}
+                        className={`self-start flex items-center gap-2 px-2 py-1.5 text-sm rounded-full border transition-colors ${
+                          settings.localAiLoadOnStartup
+                            ? 'bg-green-100 dark:bg-green-900/30 border-green-200 dark:border-green-900/50 text-green-700 dark:text-green-300'
+                            : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'
+                        }`}
+                      >
+                        <span className={`relative w-8 h-4 rounded-full transition-colors ${
+                          settings.localAiLoadOnStartup ? 'bg-green-600 dark:bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}>
+                          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${
+                            settings.localAiLoadOnStartup ? 'translate-x-4' : 'translate-x-0.5'
+                          }`} />
+                        </span>
+                        <span className="font-medium">
+                          {settings.localAiLoadOnStartup ? 'On' : 'Off'}
+                        </span>
+                      </button>
+                    </SettingRow>
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Local summary engine
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                          {localSummaryStatus?.electronAvailable === false
+                            ? 'Only available in the Electron app.'
+                            : localSummaryStatus?.binaryAvailable
+                              ? 'Bundled llama.cpp runtime is ready.'
+                              : localSummaryStatus?.bundledRuntimeAvailable
+                                ? 'Runtime is bundled and will be unpacked on first use.'
+                                : 'Local summary runtime is missing from this install.'}
+                        </p>
+                        {(localSummaryStatus?.binaryPath || localSummaryStatus?.binDir) && (
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono break-all mt-1">
+                            {localSummaryStatus?.binaryPath || localSummaryStatus?.binDir}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${
+                        localSummaryStatus?.binaryAvailable || localSummaryStatus?.bundledRuntimeAvailable
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      }`}>
+                        {localSummaryStatus?.binaryAvailable || localSummaryStatus?.bundledRuntimeAvailable ? 'Ready' : 'Runtime missing'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {localSummaryStatus?.modelLabel || LOCAL_SUMMARY_MODELS[settings.localSummaryModel].label}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {localSummaryStatus?.modelAvailable
+                            ? `Installed${localSummaryStatus.modelSizeBytes ? ` - ${(localSummaryStatus.modelSizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB` : ''}`
+                            : `Missing locally - ${LOCAL_SUMMARY_MODELS[settings.localSummaryModel].sizeLabel} download`}
+                        </p>
+                        {localSummaryStatus?.lowMemory && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            This machine has limited RAM for this model. Close other apps before summarizing.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={refreshLocalSummaryStatus}
+                          className="px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-white dark:hover:bg-gray-700 dark:text-gray-300 transition-colors"
+                        >
+                          Refresh
+                        </button>
+                        <button
+                          onClick={handleDownloadLocalSummaryModel}
+                          disabled={localSummaryLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                        >
+                          {localSummaryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                          {localSummaryLoading ? 'Installing...' : localSummaryStatus?.modelAvailable ? 'Re-install model' : 'Install local summary model'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {localSummaryError && (
+                      <p className="text-xs text-red-500 dark:text-red-400">{localSummaryError}</p>
+                    )}
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
+                      Installing downloads the model file only. Meeting transcripts are never sent with that request, and once installed, local summaries work offline.
+                    </p>
+                  </div>
+                )}
+
                 <SettingRow label="GPT Model" hint="gpt-4o-mini is recommended — fast and cheap. Use gpt-4o for higher-quality summaries.">
                   <CustomSelect
                     value={settings.gptModel}
@@ -667,6 +903,129 @@ export function SettingsModal() {
 
                 <Divider />
                 <SectionHeading>Transcription</SectionHeading>
+
+                <SettingRow
+                  label="Transcription mode"
+                  hint="Cloud is fastest and sends audio to Groq. Local keeps audio on this device and runs through whisper.cpp."
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      {
+                        id: 'groq',
+                        title: 'Cloud',
+                        description: 'Groq Whisper - fastest, sends audio externally',
+                      },
+                      {
+                        id: 'local',
+                        title: 'Local/Offline',
+                        description: 'Private, slower, requires local model',
+                      },
+                    ] as Array<{ id: TranscriptionProviderId; title: string; description: string }>).map((option) => {
+                      const active = settings.transcriptionProvider === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => updateSettings({ transcriptionProvider: option.id })}
+                          className={`text-left rounded-lg border p-3 transition-colors ${
+                            active
+                              ? 'border-gray-700 dark:border-gray-300 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white'
+                              : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                              active ? 'border-gray-700 dark:border-gray-200 bg-gray-800 dark:bg-gray-200' : 'border-gray-300 dark:border-gray-600'
+                            }`}>
+                              {active && <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />}
+                            </span>
+                            {option.title}
+                          </span>
+                          <span className="block text-xs mt-1.5 leading-relaxed text-gray-400 dark:text-gray-500">
+                            {option.description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </SettingRow>
+
+                {settings.transcriptionProvider === 'local' && (
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 space-y-3">
+                    <SettingRow label="Local model" hint="Base is a good starting point. Larger models need more memory and take longer.">
+                      <CustomSelect
+                        value={settings.localTranscriptionModel}
+                        onChange={(value) => updateSettings({ localTranscriptionModel: value as LocalWhisperModelSize })}
+                        options={LOCAL_WHISPER_MODELS.map((m) => ({ value: m.value, label: `${m.label} - ${m.hint}` }))}
+                        className="w-full px-3 py-1.5 text-sm dark:text-gray-100"
+                      />
+                    </SettingRow>
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Local engine
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                          {localModelStatus?.electronAvailable === false
+                            ? 'Only available in the Electron app.'
+                            : localModelStatus?.binaryAvailable
+                              ? localModelStatus?.binaryBundled
+                                ? 'Bundled whisper.cpp runtime is ready.'
+                                : 'whisper.cpp runtime found in your local data folder.'
+                              : 'Local runtime is missing from this install.'}
+                        </p>
+                        {(localModelStatus?.binaryAvailable ? localModelStatus?.binaryPath : localModelStatus?.bundledBinDir || localModelStatus?.binDir) && (
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono break-all mt-1">
+                            {localModelStatus?.binaryAvailable ? localModelStatus.binaryPath : localModelStatus?.bundledBinDir || localModelStatus.binDir}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${
+                        localModelStatus?.binaryAvailable
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      }`}>
+                        {localModelStatus?.binaryAvailable ? 'Ready' : 'Runtime missing'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {settings.localTranscriptionModel} model
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {localModelStatus?.modelAvailable
+                            ? `${localModelStatus.modelBundled ? 'Bundled' : 'Downloaded'}${localModelStatus.modelSizeBytes ? ` - ${(localModelStatus.modelSizeBytes / 1024 / 1024).toFixed(0)} MB` : ''}`
+                            : 'Missing locally'}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={refreshLocalModelStatus}
+                          className="px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-white dark:hover:bg-gray-700 dark:text-gray-300 transition-colors"
+                        >
+                          Refresh
+                        </button>
+                        <button
+                          onClick={handleDownloadLocalModel}
+                          disabled={localModelLoading || !!localModelStatus?.modelBundled}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                        >
+                          {localModelLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                          {localModelLoading ? 'Downloading...' : localModelStatus?.modelBundled ? 'Bundled' : localModelStatus?.modelAvailable ? 'Re-download' : 'Download'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {localModelError && (
+                      <p className="text-xs text-red-500 dark:text-red-400">{localModelError}</p>
+                    )}
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
+                      The base model is bundled for plug-and-play offline transcription. Other model sizes are optional downloads. Recording chunks are sent only to Electron and saved as short-lived temp files that are deleted after each transcription attempt.
+                    </p>
+                  </div>
+                )}
 
                 <SettingRow
                   label="Chunk interval (seconds)"

@@ -11,6 +11,7 @@ import { Dashboard } from './components/Dashboard';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
+import { LocalAssistantModal } from './components/LocalAssistantModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpdateDialog } from './components/UpdateDialog';
@@ -351,12 +352,15 @@ export default function App() {
   const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const localAssistantOpen = useStore((s) => s.localAssistantOpen);
   const helpOpen = useStore((s) => s.helpOpen);
   const editingTaskId = useStore((s) => s.editingTaskId);
   const activeTabId = useStore((s) => s.activeTabId);
   const activeView = useStore((s) => s.activeView);
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
+  const localAiLoadOnStartup = useStore((s) => s.settings.localAiLoadOnStartup);
+  const localSummaryModel = useStore((s) => s.settings.localSummaryModel);
   const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
   const theme = useStore((s) => s.settings.theme);
 
@@ -368,6 +372,13 @@ export default function App() {
     document.documentElement.offsetHeight;
     document.documentElement.classList.remove('no-transition');
   }, [theme]);
+
+  useEffect(() => {
+    if (!localAiLoadOnStartup) return;
+    const api = (window as any).electronSummary;
+    if (!api?.startServer) return;
+    api.startServer(localSummaryModel).catch(() => {});
+  }, [localAiLoadOnStartup, localSummaryModel]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -491,6 +502,7 @@ export default function App() {
       {commandPaletteOpen && <CommandPalette />}
       {searchOpen && <SearchModal />}
       {settingsOpen && <SettingsModal />}
+      {localAssistantOpen && <LocalAssistantModal />}
       {helpOpen && <HelpModal />}
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
