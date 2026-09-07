@@ -80,31 +80,6 @@ contextBridge.exposeInMainWorld('electronCapture', {
   },
 });
 
-contextBridge.exposeInMainWorld('electronTranscription', {
-  getStatus: (modelSize) => ipcRenderer.invoke('transcription:localStatus', modelSize),
-  downloadModel: (modelSize) => ipcRenderer.invoke('transcription:downloadModel', modelSize),
-  transcribe: (buffer, mimeType, modelSize) =>
-    ipcRenderer.invoke('transcription:localTranscribe', buffer, mimeType, modelSize),
-});
-
-contextBridge.exposeInMainWorld('electronSummary', {
-  getStatus: (modelId) => ipcRenderer.invoke('summary:localStatus', modelId),
-  downloadModel: (modelId) => ipcRenderer.invoke('summary:downloadModel', modelId),
-  deleteModel: (modelId) => ipcRenderer.invoke('summary:deleteModel', modelId),
-  summarize: (rawText, modelId, options) =>
-    ipcRenderer.invoke('summary:localSummarize', rawText, modelId, options),
-  ask: (question, modelId, options) =>
-    ipcRenderer.invoke('summary:localAsk', question, modelId, options),
-  getServerStatus: (modelId) => ipcRenderer.invoke('summary:serverStatus', modelId),
-  startServer: (modelId) => ipcRenderer.invoke('summary:startServer', modelId),
-  stopServer: () => ipcRenderer.invoke('summary:stopServer'),
-  onProgress: (cb) => {
-    const wrapper = (_event, payload) => cb(payload);
-    ipcRenderer.on('summary:progress', wrapper);
-    return () => ipcRenderer.removeListener('summary:progress', wrapper);
-  },
-});
-
 contextBridge.exposeInMainWorld('electronDebug', {
   log: (payload) => ipcRenderer.send('debug:log', payload),
 });

@@ -1,45 +1,39 @@
 const { spawn } = require('child_process');
 const path = require('path');
-const { createServer } = require('vite');
+const http = require('http');
 
 const ROOT = path.join(__dirname, '..');
+const PORT = 5173;
+const VITE_URL = `http://localhost:${PORT}`;
 
-(async () => {
-  const vite = await createServer({
-    root: ROOT,
-    server: {
-      host: '127.0.0.1',
-      port: 0,
-      strictPort: false,
-    },
-  });
+const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
+  stdio: 'inherit',
+  cwd: ROOT,
+  shell: process.platform === 'win32',
+});
 
-  await vite.listen();
-  const address = vite.httpServer.address();
-  const port = typeof address === 'object' && address ? address.port : 5173;
-  const viteUrl = `http://127.0.0.1:${port}`;
+function waitForVite() {
+  http
+    .get(VITE_URL, () => launchElectron())
+    .on('error', () => setTimeout(waitForVite, 500));
+}
 
+function launchElectron() {
   const electronPath = String(require('electron'));
-  const electron = spawn(electronPath, ['--disable-gpu', '--in-process-gpu', '--disable-gpu-sandbox', '.'], {
+  const e = spawn(electronPath, ['.'], {
     stdio: 'inherit',
-    env: { ...process.env, VITE_DEV_SERVER_URL: viteUrl },
+    env: { ...process.env, VITE_DEV_SERVER_URL: VITE_URL },
     cwd: ROOT,
   });
-
-  const shutdown = async (code = 0) => {
-    try { await vite.close(); } catch {}
-    process.exit(code);
-  };
-
-  electron.on('close', (code) => {
-    shutdown(code || 0);
+  e.on('close', () => {
+    try { vite.kill(); } catch {}
+    process.exit();
   });
+}
 
-  process.on('SIGINT', () => {
-    try { electron.kill(); } catch {}
-    shutdown(0);
-  });
-})().catch((err) => {
-  console.error(err);
-  process.exit(1);
+process.on('SIGINT', () => {
+  try { vite.kill(); } catch {}
+  process.exit();
 });
+
+waitForVite();
