@@ -1,7 +1,7 @@
 {
   "name": "supplier-notes",
   "private": true,
-  "version": "1.5.5",
+  "version": "1.5.2",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -9,10 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.cjs",
-    "prepare:local-transcription": "node scripts/prepare-local-transcription.cjs",
-    "prepare:local-summary": "node scripts/prepare-local-summary.cjs",
-    "electron:build": "node scripts/prepare-local-transcription.cjs && node scripts/prepare-local-summary.cjs && vite build && electron-builder --win",
-    "electron:publish": "node scripts/prepare-local-transcription.cjs && node scripts/prepare-local-summary.cjs && vite build && electron-builder --win --publish always",
+    "electron:build": "vite build && electron-builder --win",
+    "electron:publish": "vite build && electron-builder --win --publish always",
     "electron:start": "electron ."
   },
   "build": {
@@ -24,25 +22,6 @@
     "files": [
       "dist/**/*",
       "electron/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "local-transcription",
-        "to": "local-transcription",
-        "filter": [
-          ".cache/whisper-bin-x64-v1.8.4.zip",
-          "models/ggml-base.bin",
-          "manifest.json"
-        ]
-      },
-      {
-        "from": "local-summary",
-        "to": "local-summary",
-        "filter": [
-          ".cache/llama-b8833-bin-win-cpu-x64.zip",
-          "manifest.json"
-        ]
-      }
     ],
     "win": {
       "target": [
