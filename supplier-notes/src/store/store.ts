@@ -1,21 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
-import type { LocalWhisperModelSize, TranscriptionProviderId } from '../services/transcription';
-import type { LocalSummaryModelId, SummaryProviderId } from '../services/summary';
 
 export interface AppSettings {
   openaiApiKey: string;
   groqApiKey: string;
   gptModel: string;
-  summaryProvider: SummaryProviderId;
-  localSummaryModel: LocalSummaryModelId;
-  localAiLoadOnStartup: boolean;
   temperature: number;
   customSummaryInstructions: string;
   defaultAudioMode: 'mic' | 'system';
-  transcriptionProvider: TranscriptionProviderId;
-  localTranscriptionModel: LocalWhisperModelSize;
   chunkIntervalSeconds: number;
   autoStopHours: number;
   teamsEnabled: boolean;
@@ -34,14 +27,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
   groqApiKey: '',
   gptModel: 'gpt-4o-mini',
-  summaryProvider: 'openai',
-  localSummaryModel: 'gemma-4-e2b-it-q4',
-  localAiLoadOnStartup: false,
   temperature: 0.3,
   customSummaryInstructions: '',
   defaultAudioMode: 'system',
-  transcriptionProvider: 'groq',
-  localTranscriptionModel: 'base',
   chunkIntervalSeconds: 60,
   autoStopHours: 4,
   teamsEnabled: true,
@@ -57,67 +45,19 @@ const uid = () => crypto.randomUUID();
 
 const electronAPI = typeof window !== 'undefined' && (window as any).electronStore;
 
-type ElectronStoreReadResult =
-  | string
-  | null
-  | {
-      status?: 'ok' | 'missing' | 'unreachable' | 'error';
-      data?: string;
-      message?: string;
-      path?: string;
-      dir?: string;
-      isCustom?: boolean;
-    };
-
-type ElectronStoreWriteResult = void | { ok?: boolean; error?: string };
-
-function dispatchStorageError(message: string) {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('storage-error', { detail: { message } }));
-}
-
-function normaliseReadResult(result: ElectronStoreReadResult) {
-  if (typeof result === 'string' || result === null) {
-    return { status: result === null ? 'missing' : 'ok', data: result ?? undefined, message: '' };
-  }
-  return {
-    status: result?.status ?? 'error',
-    data: result?.data,
-    message: result?.message ?? 'Storage is unavailable.',
-  };
-}
-
 const appStorage = {
-  getItem: async (name: string): Promise<string | null> => {
-    if (electronAPI) {
-      const result = normaliseReadResult(await electronAPI.read());
-      if (result.status === 'ok') return result.data ?? null;
-      if (result.status === 'missing') return null;
-      dispatchStorageError(result.message);
-      return null;
-    }
+  getItem: (name: string): string | null | Promise<string | null> => {
+    if (electronAPI) return electronAPI.read();
     try { return localStorage.getItem(name); }
     catch { return null; }
   },
-  setItem: async (name: string, value: string): Promise<void> => {
-    if (electronAPI) {
-      const result: ElectronStoreWriteResult = await electronAPI.write(value);
-      if (result && typeof result === 'object' && result.ok === false) {
-        const message = result.error || 'Storage is unavailable.';
-        dispatchStorageError(message);
-        throw new Error(message);
-      }
-      return;
-    }
+  setItem: (name: string, value: string): void | Promise<void> => {
+    if (electronAPI) return electronAPI.write(value);
     try { localStorage.setItem(name, value); }
     catch { window.dispatchEvent(new CustomEvent('storage-error')); }
   },
-  removeItem: async (name: string): Promise<void> => {
-    if (electronAPI) {
-      const message = 'Deleting the entire data store is blocked through the persistence layer. Use the explicit Clear all data action instead.';
-      dispatchStorageError(message);
-      throw new Error(message);
-    }
+  removeItem: (name: string): void | Promise<void> => {
+    if (electronAPI) return electronAPI.write('');
     try { localStorage.removeItem(name); }
     catch { /* ignore */ }
   },
@@ -220,11 +160,9 @@ interface AppState {
 
   settings: AppSettings;
   settingsOpen: boolean;
-  localAssistantOpen: boolean;
   helpOpen: boolean;
   updateSettings: (updates: Partial<AppSettings>) => void;
   toggleSettings: () => void;
-  toggleLocalAssistant: () => void;
   toggleHelp: () => void;
 
   teamsPromptOpen: boolean;
@@ -285,10 +223,9 @@ export const useStore = create<AppState>()(
       dashboardSection: 'tasks' as DashboardSection,
       transcriptRecording: false,
       recordingNoteId: null,
-        settings: DEFAULT_SETTINGS,
-        settingsOpen: false,
-        localAssistantOpen: false,
-        helpOpen: false,
+      settings: DEFAULT_SETTINGS,
+      settingsOpen: false,
+      helpOpen: false,
       teamsPromptOpen: false,
       confirmDialog: null,
 
@@ -699,10 +636,9 @@ export const useStore = create<AppState>()(
       setTranscriptRecording: (recording) => set({ transcriptRecording: recording }),
       setRecordingNote: (noteId) => set({ recordingNoteId: noteId }),
 
-        updateSettings: (updates) => set((s) => ({ settings: { ...s.settings, ...updates } })),
-        toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
-        toggleLocalAssistant: () => set((s) => ({ localAssistantOpen: !s.localAssistantOpen })),
-        toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
+      updateSettings: (updates) => set((s) => ({ settings: { ...s.settings, ...updates } })),
+      toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+      toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
       setTeamsPromptOpen: (open) => set({ teamsPromptOpen: open }),
 
       openConfirmDialog: (opts) => set({ confirmDialog: opts }),
@@ -807,7 +743,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'Combobulator-data',
-        version: 11,
+      version: 9,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -919,30 +855,7 @@ export const useStore = create<AppState>()(
             },
           };
         }
-          if (version < 10) {
-            state = {
-              ...state,
-              settings: {
-                ...DEFAULT_SETTINGS,
-              ...(state.settings || {}),
-              transcriptionProvider: state.settings?.transcriptionProvider || 'groq',
-              localTranscriptionModel: state.settings?.localTranscriptionModel || 'base',
-              },
-            };
-          }
-          if (version < 11) {
-            state = {
-              ...state,
-              settings: {
-                ...DEFAULT_SETTINGS,
-                ...(state.settings || {}),
-                summaryProvider: state.settings?.summaryProvider || 'openai',
-                localSummaryModel: state.settings?.localSummaryModel || 'gemma-4-e2b-it-q4',
-                localAiLoadOnStartup: state.settings?.localAiLoadOnStartup || false,
-              },
-            };
-          }
-          return state;
+        return state;
       },
       partialize: (state) => ({
         projects: state.projects,

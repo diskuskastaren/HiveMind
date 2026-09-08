@@ -18,11 +18,10 @@ import {
 import { format } from 'date-fns';
 import { useStore } from '../store/store';
 import { useTranscription, type TranscriptionMode } from '../hooks/useTranscription';
-import { getSummaryProvider, MAX_SUMMARY_TOKENS, summarizeMeetingTranscript } from '../utils/summarize';
+import { summarizeMeetingTranscript, MAX_SUMMARY_TOKENS } from '../utils/summarize';
 import { getMailtoUrl, summaryToPlainTextForEmail, summaryToHtmlForEmail } from '../utils/export';
 import { AudioVisualizer } from './AudioVisualizer';
 import type { Transcript } from '../types';
-import type { LocalSummaryModelId, SummaryProviderId } from '../services/summary';
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -67,15 +66,12 @@ interface TranscriptDetailProps {
   transcript: Transcript;
   noteId: string;
   apiKey: string;
-  summaryProvider: SummaryProviderId;
-  localSummaryModel: LocalSummaryModelId;
-  onOpenSettings: () => void;
   onBack: () => void;
   onStartNew: () => void;
   isRecording: boolean;
 }
 
-function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSummaryModel, onOpenSettings, onBack, onStartNew, isRecording }: TranscriptDetailProps) {
+function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRecording }: TranscriptDetailProps) {
   const note = useStore((s) => s.notes.find((n) => n.id === noteId));
   const projects = useStore((s) => s.projects);
   const updateTranscript = useStore((s) => s.updateTranscript);
@@ -93,9 +89,6 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
   const [summarizeError, setSummarizeError] = useState('');
   const [isEditingRaw, setIsEditingRaw] = useState(false);
   const [editedRawText, setEditedRawText] = useState('');
-  const isLocalTranscript = transcript.transcriptionProvider === 'local';
-  const summaryIsLocal = transcript.summaryProvider === 'local';
-  const preferredSummaryIsLocal = summaryProvider === 'local';
 
   // Reset edit mode when the user navigates to a different transcript
   useEffect(() => {
@@ -104,42 +97,7 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
   }, [transcript.id]);
 
   const handleRegenerateSummary = useCallback(async () => {
-    if (!transcript.rawText) return;
-    const provider = getSummaryProvider(summaryProvider);
-    if (!provider.isLocal && !apiKey) return;
-    if (!provider.isLocal && isLocalTranscript) {
-      const ok = confirm('Generating a summary sends this transcript to OpenAI. Continue?');
-      if (!ok) return;
-    }
-    setIsSummarizing(true);
-    setSummarizeError('');
-    try {
-      const summary = await provider.summarize({
-        rawText: transcript.rawText,
-        apiKey,
-        options: {
-          ...summarySettings,
-          localModel: localSummaryModel,
-          maxTokens: MAX_SUMMARY_TOKENS,
-        },
-      });
-      updateTranscript(noteId, transcript.id, {
-        summary,
-        summaryProvider: provider.id,
-        summaryModel: provider.isLocal ? localSummaryModel : summarySettings.model,
-      });
-    } catch (e: any) {
-      setSummarizeError(e?.message ?? 'Summarization failed');
-    }
-    setIsSummarizing(false);
-  }, [transcript, apiKey, isLocalTranscript, summarySettings, summaryProvider, localSummaryModel, noteId, updateTranscript]);
-
-  const handleCloudSummary = useCallback(async () => {
     if (!transcript.rawText || !apiKey) return;
-    if (isLocalTranscript) {
-      const ok = confirm('Generating a cloud summary sends this transcript to OpenAI. Continue?');
-      if (!ok) return;
-    }
     setIsSummarizing(true);
     setSummarizeError('');
     try {
@@ -147,16 +105,12 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
         ...summarySettings,
         maxTokens: MAX_SUMMARY_TOKENS,
       });
-      updateTranscript(noteId, transcript.id, {
-        summary,
-        summaryProvider: 'openai',
-        summaryModel: summarySettings.model,
-      });
+      updateTranscript(noteId, transcript.id, { summary });
     } catch (e: any) {
       setSummarizeError(e?.message ?? 'Summarization failed');
     }
     setIsSummarizing(false);
-  }, [transcript, apiKey, isLocalTranscript, summarySettings, noteId, updateTranscript]);
+  }, [transcript, apiKey, summarySettings, noteId, updateTranscript]);
 
   const handleInsertIntoNote = useCallback(() => {
     if (!transcript.rawText || !note) return;
@@ -203,10 +157,7 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
 
   // Auto-trigger summary generation when arriving at a transcript that has text but no summary
   useEffect(() => {
-    if (transcript.rawText && !transcript.summary && !isSummarizing && summaryProvider === 'openai' && apiKey && !isLocalTranscript) {
-      handleRegenerateSummary();
-    }
-    if (transcript.rawText && !transcript.summary && !isSummarizing && summaryProvider === 'local') {
+    if (transcript.rawText && !transcript.summary && !isSummarizing && apiKey) {
       handleRegenerateSummary();
     }
   // Only run when the transcript id changes (i.e. user selects a different one)
@@ -229,22 +180,6 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
             ? ` · ${format(new Date(transcript.recordedAt), 'MMM d, HH:mm')}`
             : ''}
         </span>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-          isLocalTranscript
-            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-        }`}>
-          {isLocalTranscript ? 'Local transcript' : 'Cloud transcript'}
-        </span>
-        {transcript.summary && (
-          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-            summaryIsLocal
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-          }`}>
-            {summaryIsLocal ? 'Local summary' : 'Cloud summary'}
-          </span>
-        )}
         <div className="flex-1" />
         <button
           onClick={handleDelete}
@@ -294,28 +229,16 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
                   <p className="text-xs text-red-400 dark:text-red-400">{summarizeError}</p>
                 )}
                 <p className="text-xs text-gray-400 dark:text-gray-500">
-                  {preferredSummaryIsLocal
-                    ? 'No local summary generated yet.'
-                    : isLocalTranscript
-                      ? 'Local recordings are not summarized automatically with cloud summary.'
-                      : apiKey ? 'No summary generated yet.' : 'Add an OpenAI API key to generate summaries.'}
+                  {apiKey ? 'No summary generated yet.' : 'Add an OpenAI API key to generate summaries.'}
                 </p>
-                {preferredSummaryIsLocal || apiKey ? (
+                {apiKey ? (
                   <button
                     onClick={handleRegenerateSummary}
                     className="text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
                   >
-                    {preferredSummaryIsLocal ? 'Generate local summary' : isLocalTranscript ? 'Generate cloud summary' : 'Generate summary'}
+                    Generate summary
                   </button>
                 ) : null}
-                {preferredSummaryIsLocal && summarizeError.toLowerCase().includes('missing') && (
-                  <button
-                    onClick={onOpenSettings}
-                    className="block mx-auto text-xs text-gray-500 dark:text-gray-400 underline underline-offset-2"
-                  >
-                    Install local summary model
-                  </button>
-                )}
               </div>
             )}
           </>
@@ -361,20 +284,11 @@ function TranscriptDetail({ transcript, noteId, apiKey, summaryProvider, localSu
               {transcript.summary && <CopyButton text={transcript.summary} />}
               <button
                 onClick={handleRegenerateSummary}
-                disabled={isSummarizing || (!preferredSummaryIsLocal && !apiKey)}
+                disabled={isSummarizing || !apiKey}
                 className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" /> Regenerate
               </button>
-              {preferredSummaryIsLocal && apiKey && (
-                <button
-                  onClick={handleCloudSummary}
-                  disabled={isSummarizing}
-                  className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 transition-colors"
-                >
-                  Cloud summary
-                </button>
-              )}
             </>
           )}
           {subTab === 'raw' && !isEditingRaw && transcript.rawText && (
@@ -459,12 +373,8 @@ function TranscriptList({ transcripts, onSelect, onStartNew, isRecording }: Tran
                   {i === 0 ? 'Latest' : `Recording ${sorted.length - i}`}
                 </span>
                 {t.summary && (
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                    t.summaryProvider === 'local'
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                  }`}>
-                    {t.summaryProvider === 'local' ? 'Local summary' : 'Cloud summary'}
+                  <span className="text-[9px] bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
+                    AI summary
                   </span>
                 )}
               </div>
@@ -505,10 +415,6 @@ export function TranscriptTab() {
   const updateTranscript = useStore((s) => s.updateTranscript);
   const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
-  const transcriptionProvider = useStore((s) => s.settings.transcriptionProvider);
-  const localTranscriptionModel = useStore((s) => s.settings.localTranscriptionModel);
-  const summaryProvider = useStore((s) => s.settings.summaryProvider);
-  const localSummaryModel = useStore((s) => s.settings.localSummaryModel);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const summarySettings = useStore(useShallow((s) => ({
     model: s.settings.gptModel,
@@ -541,9 +447,6 @@ export function TranscriptTab() {
 
   const transcripts = note?.transcripts ?? [];
   const hasTranscripts = transcripts.length > 0;
-  const providerLabel = transcriptionProvider === 'local'
-    ? `Local/offline - ${localTranscriptionModel}`
-    : 'Cloud - Groq';
 
   // Look up the in-progress transcript from ALL notes so it survives switching the active note
   const inProgressTranscript = isRecording
@@ -609,41 +512,18 @@ export function TranscriptTab() {
     const rawText = await stop();
     setLiveText('');
     const tid = transcriptIdRef.current;
-    if (rawText && noteIdForSummary && tid && summaryProvider === 'local') {
-      try {
-        const summary = await getSummaryProvider('local').summarize({
-          rawText,
-          options: {
-            ...summarySettings,
-            localModel: localSummaryModel,
-            maxTokens: MAX_SUMMARY_TOKENS,
-          },
-        });
-        updateTranscript(noteIdForSummary, tid, {
-          summary,
-          summaryProvider: 'local',
-          summaryModel: localSummaryModel,
-        });
-      } catch {
-        // Summary generation is best-effort; the raw text is already saved
-      }
-    }
-    if (rawText && openaiApiKey && noteIdForSummary && tid && summaryProvider === 'openai' && transcriptionProvider !== 'local') {
+    if (rawText && openaiApiKey && noteIdForSummary && tid) {
       try {
         const summary = await summarizeMeetingTranscript(rawText, openaiApiKey, {
           ...summarySettings,
           maxTokens: MAX_SUMMARY_TOKENS,
         });
-        updateTranscript(noteIdForSummary, tid, {
-          summary,
-          summaryProvider: 'openai',
-          summaryModel: summarySettings.model,
-        });
+        updateTranscript(noteIdForSummary, tid, { summary });
       } catch {
         // Summary generation is best-effort; the raw text is already saved
       }
     }
-  }, [stop, openaiApiKey, summarySettings, summaryProvider, localSummaryModel, transcriptionProvider, updateTranscript, transcriptIdRef]);
+  }, [stop, openaiApiKey, summarySettings, updateTranscript, transcriptIdRef]);
 
   // Show recording UI even when the active note has changed (user navigated away mid-recording)
   if (!note && !isRecording) return null;
@@ -661,13 +541,6 @@ export function TranscriptTab() {
               System audio
             </span>
           )}
-          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-            transcriptionProvider === 'local'
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-          }`}>
-            {providerLabel}
-          </span>
           <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto tabular-nums">{formatDuration(elapsed)}</span>
         </div>
 
@@ -686,9 +559,9 @@ export function TranscriptTab() {
           )}
           {debugStatus ? (
             <p className="text-[10px] text-amber-500 mt-3 font-mono">{debugStatus}</p>
-          ) : (
+          ) : mode === 'system' && (
             <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-3">
-              Transcribing in batches via {transcriptionProvider === 'local' ? 'local Whisper' : 'Groq Whisper'}...
+              Transcribing in batches via Groq Whisper…
             </p>
           )}
         </div>
@@ -767,7 +640,7 @@ export function TranscriptTab() {
           </button>
         </div>
 
-        {transcriptionProvider === 'groq' && mode === 'system' && (
+        {mode === 'system' && (
           <div className="text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg p-3 space-y-1">
             <p className="font-medium text-gray-700 dark:text-gray-200">Groq API key needed to transcribe</p>
             {!groqApiKey && (
@@ -782,32 +655,15 @@ export function TranscriptTab() {
           </div>
         )}
 
-        <div className={`text-xs border rounded-lg p-3 space-y-1 ${
-          transcriptionProvider === 'local'
-            ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/40'
-            : 'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/40'
-        }`}>
-          <p className="font-medium text-gray-700 dark:text-gray-200">
-            {transcriptionProvider === 'local' ? 'Local/offline transcription' : 'Cloud transcription'}
-          </p>
-          <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
-            {transcriptionProvider === 'local'
-              ? `Audio stays on this device and runs through whisper.cpp (${localTranscriptionModel}).`
-              : 'Audio chunks are sent to Groq Whisper for faster transcription.'}
-          </p>
-        </div>
-
         {mode === 'mic' && (
           <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center">
-            {transcriptionProvider === 'local'
-              ? 'Records your microphone locally and transcribes in batches.'
-              : 'Transcribes your microphone in real-time. Free — no API key needed.'}
+            Transcribes your microphone in real-time. Free — no API key needed.
           </p>
         )}
 
         <button
           onClick={handleStart}
-          disabled={transcriptionProvider === 'groq' && mode === 'system' && !groqApiKey}
+          disabled={mode === 'system' && !groqApiKey}
           className="w-full py-2 text-sm font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Mic className="w-4 h-4" /> Start Recording
@@ -827,9 +683,6 @@ export function TranscriptTab() {
         transcript={selectedTranscript}
         noteId={note.id}
         apiKey={openaiApiKey}
-        summaryProvider={summaryProvider}
-        localSummaryModel={localSummaryModel}
-        onOpenSettings={toggleSettings}
         onBack={() => setSelectedId(null)}
         onStartNew={() => { setSelectedId(null); setShowStartScreen(true); }}
         isRecording={isRecording}
@@ -870,12 +723,8 @@ export function TranscriptTab() {
                     {i === 0 ? 'Latest' : `Recording ${arr.length - i}`}
                   </span>
                   {t.summary && (
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                      t.summaryProvider === 'local'
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                    }`}>
-                      {t.summaryProvider === 'local' ? 'Local summary' : 'Cloud summary'}
+                    <span className="text-[9px] bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
+                      AI summary
                     </span>
                   )}
                 </div>

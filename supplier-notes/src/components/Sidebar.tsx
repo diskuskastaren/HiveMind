@@ -15,7 +15,6 @@ import {
   Settings,
   Archive,
   ArchiveRestore,
-  Bot,
   Moon,
   Sun,
 } from 'lucide-react';
@@ -58,7 +57,6 @@ export function Sidebar() {
   const deleteNote = useStore((s) => s.deleteNote);
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const toggleSettings = useStore((s) => s.toggleSettings);
-  const toggleLocalAssistant = useStore((s) => s.toggleLocalAssistant);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
   const theme = useStore((s) => s.settings.theme);
   const updateSettings = useStore((s) => s.updateSettings);
@@ -572,13 +570,6 @@ export function Sidebar() {
 
       {/* Settings footer */}
       <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 p-2 flex items-center gap-1">
-        <button
-          onClick={toggleLocalAssistant}
-          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0"
-          title="Local AI"
-        >
-          <Bot className="w-4 h-4" />
-        </button>
         <button
           onClick={toggleSettings}
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md flex-1 transition-colors"
