@@ -1,8 +1,13 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { CustomSelect } from './ui/CustomSelect';
 import { format } from 'date-fns';
-import { Search, X, FileText, CheckSquare, Lightbulb, Archive } from 'lucide-react';
+import { Archive, FileText, Gavel, Search, SquareCheck } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Badge } from '@/components/ui/badge';
+import { Kbd } from '@/components/ui/kbd';
+import { EntityChip } from './common';
 
 interface SearchResult {
   type: 'note' | 'task' | 'decision';
@@ -18,12 +23,13 @@ interface SearchResult {
   archived?: boolean;
 }
 
+type FilterType = 'all' | 'note' | 'task' | 'decision';
+
 export function SearchModal() {
   const [query, setQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'note' | 'task' | 'decision'>('all');
+  const [filterType, setFilterType] = useState<FilterType>('all');
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const projects = useStore((s) => s.projects);
   const suppliers = useStore((s) => s.suppliers);
@@ -37,10 +43,6 @@ export function SearchModal() {
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
   const setActiveProject = useStore((s) => s.setActiveProject);
   const setActiveView = useStore((s) => s.setActiveView);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
 
   function htmlToText(html: string): string {
     const el = document.createElement('div');
@@ -57,11 +59,7 @@ export function SearchModal() {
     if (filterType === 'all' || filterType === 'note') {
       notes.forEach((n) => {
         const text = htmlToText(n.content);
-        if (
-          n.title.toLowerCase().includes(q) ||
-          text.toLowerCase().includes(q) ||
-          n.attendees.toLowerCase().includes(q)
-        ) {
+        if (n.title.toLowerCase().includes(q) || text.toLowerCase().includes(q) || n.attendees.toLowerCase().includes(q)) {
           all.push({
             type: 'note',
             id: n.id,
@@ -116,9 +114,7 @@ export function SearchModal() {
     }
     if (filterSupplier !== 'all') {
       filtered = filtered.filter((r) =>
-        filterSupplier === INTERNAL_TAB_ID
-          ? r.supplierIds.length === 0
-          : r.supplierIds.includes(filterSupplier),
+        filterSupplier === INTERNAL_TAB_ID ? r.supplierIds.length === 0 : r.supplierIds.includes(filterSupplier),
       );
     }
 
@@ -126,9 +122,9 @@ export function SearchModal() {
   }, [query, filterType, filterProject, filterSupplier, notes, tasks, decisions]);
 
   const ICONS = {
-    note: <FileText className="w-4 h-4 text-blue-500" />,
-    task: <CheckSquare className="w-4 h-4 text-yellow-500" />,
-    decision: <Lightbulb className="w-4 h-4 text-green-500" />,
+    note: <FileText className="size-4 text-muted-foreground" />,
+    task: <SquareCheck className="size-4 text-muted-foreground" />,
+    decision: <Gavel className="size-4 text-muted-foreground" />,
   };
 
   const handleSelect = (result: SearchResult) => {
@@ -160,126 +156,124 @@ export function SearchModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
-      <div className="fixed inset-0 bg-black/30" onClick={toggleSearch} />
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl overflow-hidden">
-        <div className="flex items-center px-4 border-b border-gray-200 dark:border-gray-700">
-          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+    <Dialog open onOpenChange={(open) => !open && toggleSearch()}>
+      <DialogContent showCloseButton={false} className="top-[10vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogTitle className="sr-only">Search</DialogTitle>
+        <DialogDescription className="sr-only">Search notes, tasks and decisions</DialogDescription>
+        <label className="flex h-12 items-center gap-3 border-b px-4">
+          <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
-            ref={inputRef}
+            autoFocus
             type="text"
+            aria-label="Search"
             placeholder="Search notes, tasks, decisions…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={() => {}}
-            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent dark:text-gray-100 dark:placeholder-gray-500"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          <button onClick={toggleSearch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-            <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-          </button>
+          <Kbd>Esc</Kbd>
+        </label>
+
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            variant="outline"
+            value={filterType}
+            onValueChange={(v) => v && setFilterType(v as FilterType)}
+          >
+            <ToggleGroupItem value="all" className="px-2.5 text-xs">All</ToggleGroupItem>
+            <ToggleGroupItem value="note" className="px-2.5 text-xs">Notes</ToggleGroupItem>
+            <ToggleGroupItem value="task" className="px-2.5 text-xs">Tasks</ToggleGroupItem>
+            <ToggleGroupItem value="decision" className="px-2.5 text-xs">Decisions</ToggleGroupItem>
+          </ToggleGroup>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <Select value={filterProject} onValueChange={setFilterProject}>
+            <SelectTrigger size="sm" className="text-xs" aria-label="Filter by project">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All projects</SelectItem>
+              {projects
+                .filter((p) => !p.archived)
+                .map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterSupplier} onValueChange={setFilterSupplier}>
+            <SelectTrigger size="sm" className="text-xs" aria-label="Filter by supplier">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All suppliers</SelectItem>
+              <SelectItem value={INTERNAL_TAB_ID}>Internal</SelectItem>
+              {suppliers.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex-wrap">
-          {(['all', 'note', 'task', 'decision'] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                filterType === type ? 'bg-gray-200 dark:bg-white/15 text-gray-900 dark:text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
-            >
-              {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1) + 's'}
-            </button>
-          ))}
-          <div className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
-          <CustomSelect
-            value={filterProject}
-            onChange={setFilterProject}
-            className="text-xs px-2.5 py-1 text-gray-700 dark:text-gray-300 rounded-full"
-            options={[
-              { value: 'all', label: 'All projects' },
-              ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name })),
-            ]}
-          />
-          <CustomSelect
-            value={filterSupplier}
-            onChange={setFilterSupplier}
-            className="text-xs px-2.5 py-1 text-gray-700 dark:text-gray-300 rounded-full"
-            options={[
-              { value: 'all', label: 'All suppliers' },
-              { value: INTERNAL_TAB_ID, label: 'Internal' },
-              ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
-        </div>
-
-        {/* Results */}
-        <div className="max-h-[400px] overflow-y-auto">
+        <div className="max-h-[420px] overflow-y-auto">
           {results.length > 0 ? (
-            <div className="py-2">
+            <div className="p-1.5">
               {results.map((r) => {
                 const linkedProjects = r.projectIds.map((id) => projects.find((p) => p.id === id)).filter(Boolean) as typeof projects;
                 const linkedSuppliers = r.supplierIds.map((id) => suppliers.find((s) => s.id === id)).filter(Boolean) as typeof suppliers;
                 return (
                   <button
                     key={`${r.type}-${r.id}`}
-                    className="w-full flex items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    type="button"
+                    className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent"
                     onClick={() => handleSelect(r)}
                   >
                     <span className="mt-0.5">{ICONS[r.type]}</span>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-sm dark:text-gray-200 ${r.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{r.title}</span>
+                        <span className={r.archived ? 'text-muted-foreground' : 'font-medium'}>{r.title}</span>
                         {r.archived && (
-                          <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full border border-amber-200 dark:border-amber-800 flex-shrink-0">
-                            <Archive className="w-2.5 h-2.5" />
-                            archived
-                          </span>
+                          <Badge variant="outline" className="h-4.5 text-2xs text-muted-foreground">
+                            <Archive />
+                            Archived
+                          </Badge>
                         )}
                       </div>
-                      {r.detail && <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{r.detail}</div>}
+                      {r.detail && <div className="truncate text-xs text-muted-foreground">{r.detail}</div>}
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="flex items-center gap-1 justify-end flex-wrap">
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <div className="flex flex-wrap justify-end gap-1">
                         {linkedProjects.map((p) => (
-                          <span
-                            key={p.id}
-                            className="text-[10px] px-1.5 py-0.5 rounded inline-block"
-                            style={{ backgroundColor: p.color + '20', color: p.color }}
-                          >
+                          <EntityChip key={p.id} color={p.color}>
                             {p.name}
-                          </span>
+                          </EntityChip>
                         ))}
-                        {linkedSuppliers.length > 0 ? linkedSuppliers.map((s) => (
-                          <span
-                            key={s.id}
-                            className="text-[10px] px-1.5 py-0.5 rounded inline-block"
-                            style={{ backgroundColor: s.color + '20', color: s.color }}
-                          >
-                            {s.name}
-                          </span>
-                        )) : r.supplierIds.length === 0 && r.type !== 'note' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded inline-block bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400">
-                            Internal
-                          </span>
-                        )}
+                        {linkedSuppliers.length > 0
+                          ? linkedSuppliers.map((s) => (
+                              <EntityChip key={s.id} color={s.color}>
+                                {s.name}
+                              </EntityChip>
+                            ))
+                          : r.supplierIds.length === 0 &&
+                            r.type !== 'note' && (
+                              <EntityChip color="#71717a">Internal</EntityChip>
+                            )}
                       </div>
-                      <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-                        {format(new Date(r.date), 'MMM d')}
-                      </div>
+                      <div className="text-2xs text-muted-foreground tabular-nums">{format(new Date(r.date), 'MMM d')}</div>
                     </div>
                   </button>
                 );
               })}
             </div>
-          ) : query ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">No results found</p>
           ) : (
-            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">Start typing to search…</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">{query ? 'No results found' : 'Start typing to search…'}</p>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

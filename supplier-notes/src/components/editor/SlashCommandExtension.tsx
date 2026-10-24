@@ -28,63 +28,63 @@ function getItems({ query }: { query: string }): CommandItem[] {
     {
       title: 'Heading 1',
       description: 'Large section heading',
-      icon: <Heading1 className="w-4 h-4" />,
+      icon: <Heading1 className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setHeading({ level: 1 }).run(),
     },
     {
       title: 'Heading 2',
       description: 'Medium section heading',
-      icon: <Heading2 className="w-4 h-4" />,
+      icon: <Heading2 className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run(),
     },
     {
       title: 'Heading 3',
       description: 'Small section heading',
-      icon: <Heading3 className="w-4 h-4" />,
+      icon: <Heading3 className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run(),
     },
     {
       title: 'Bullet List',
       description: 'Unordered list',
-      icon: <List className="w-4 h-4" />,
+      icon: <List className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).toggleBulletList().run(),
     },
     {
       title: 'Numbered List',
       description: 'Ordered list',
-      icon: <ListOrdered className="w-4 h-4" />,
+      icon: <ListOrdered className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
     },
     {
       title: 'Task List',
       description: 'Checklist with checkboxes',
-      icon: <CheckSquare className="w-4 h-4" />,
+      icon: <CheckSquare className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).toggleTaskList().run(),
     },
     {
       title: 'Code Block',
       description: 'Code with monospace font',
-      icon: <Code2 className="w-4 h-4" />,
+      icon: <Code2 className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
     },
     {
       title: 'Quote',
       description: 'Block quotation',
-      icon: <Quote className="w-4 h-4" />,
+      icon: <Quote className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
     },
     {
       title: 'Table',
       description: 'Insert a 3×3 table',
-      icon: <Table className="w-4 h-4" />,
+      icon: <Table className="size-4" />,
       command: ({ editor, range }) =>
         editor
           .chain()
@@ -96,14 +96,14 @@ function getItems({ query }: { query: string }): CommandItem[] {
     {
       title: 'Divider',
       description: 'Horizontal separator',
-      icon: <Minus className="w-4 h-4" />,
+      icon: <Minus className="size-4" />,
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
     },
     {
       title: 'Collapsible',
       description: 'Expandable section',
-      icon: <ChevronRight className="w-4 h-4" />,
+      icon: <ChevronRight className="size-4" />,
       command: ({ editor, range }) =>
         (editor.chain().focus().deleteRange(range) as any).setCollapsible().run(),
     },
@@ -150,7 +150,7 @@ export const SlashCommandList = forwardRef<SlashCommandListRef, SlashCommandList
     if (items.length === 0) return null;
 
     return (
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 w-64 overflow-y-auto max-h-80">
+      <div className="flex max-h-80 w-64 flex-col overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
         {items.map((item, index) => (
           <button
             key={item.title}
@@ -158,20 +158,18 @@ export const SlashCommandList = forwardRef<SlashCommandListRef, SlashCommandList
               e.preventDefault();
               command(item);
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-              index === selectedIndex
-                ? 'bg-gray-100 dark:bg-gray-700'
-                : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+            className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors ${
+              index === selectedIndex ? 'bg-accent' : 'hover:bg-accent/60'
             }`}
           >
-            <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-subtle-foreground">
               {item.icon}
             </span>
             <div>
-              <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+              <div className="text-ui font-medium">
                 {item.title}
               </div>
-              <div className="text-xs text-gray-400 dark:text-gray-500">{item.description}</div>
+              <div className="text-xs text-muted-foreground">{item.description}</div>
             </div>
           </button>
         ))}

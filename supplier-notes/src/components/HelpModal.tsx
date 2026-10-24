@@ -10,8 +10,14 @@ import {
   Video,
   Keyboard,
   Database,
+  BookOpen,
+  Lightbulb,
 } from 'lucide-react';
 import { useStore } from '../store/store';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Kbd as UiKbd } from '@/components/ui/kbd';
+import { cn } from '@/lib/utils';
 
 type HelpSection =
   | 'overview'
@@ -25,62 +31,48 @@ type HelpSection =
   | 'settings';
 
 const SECTIONS: { id: HelpSection; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview',      label: 'Overview',                    icon: <LayoutDashboard className="w-4 h-4" /> },
-  { id: 'projects',      label: 'Projects & Suppliers',        icon: <FolderOpen className="w-4 h-4" /> },
-  { id: 'notes',         label: 'Notes',                       icon: <FileText className="w-4 h-4" /> },
-  { id: 'tasks',         label: 'Tasks, Decisions & Follow-ups', icon: <CheckCircle2 className="w-4 h-4" /> },
-  { id: 'transcription', label: 'Transcription & Recording',   icon: <Mic className="w-4 h-4" /> },
-  { id: 'ai',            label: 'AI & Summarization',          icon: <Bot className="w-4 h-4" /> },
-  { id: 'teams',         label: 'Teams Integration',           icon: <Video className="w-4 h-4" /> },
-  { id: 'shortcuts',     label: 'Keyboard Shortcuts',          icon: <Keyboard className="w-4 h-4" /> },
-  { id: 'settings',      label: 'Settings & Data',             icon: <Database className="w-4 h-4" /> },
+  { id: 'overview',      label: 'Overview',                    icon: <LayoutDashboard className="size-4" /> },
+  { id: 'projects',      label: 'Projects & Suppliers',        icon: <FolderOpen className="size-4" /> },
+  { id: 'notes',         label: 'Notes',                       icon: <FileText className="size-4" /> },
+  { id: 'tasks',         label: 'Tasks, Decisions & Follow-ups', icon: <CheckCircle2 className="size-4" /> },
+  { id: 'transcription', label: 'Transcription & Recording',   icon: <Mic className="size-4" /> },
+  { id: 'ai',            label: 'AI & Summarization',          icon: <Bot className="size-4" /> },
+  { id: 'teams',         label: 'Teams Integration',           icon: <Video className="size-4" /> },
+  { id: 'shortcuts',     label: 'Keyboard Shortcuts',          icon: <Keyboard className="size-4" /> },
+  { id: 'settings',      label: 'Settings & Data',             icon: <Database className="size-4" /> },
 ];
 
 function Heading({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
-      {children}
-    </h2>
-  );
+  return <h2 className="mb-1 text-2xl font-semibold tracking-tight">{children}</h2>;
 }
 
 function SubHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-5 mb-1.5">
-      {children}
-    </h3>
-  );
+  return <h3 className="mt-6 mb-1.5 text-[15px] font-semibold">{children}</h3>;
 }
 
 function P({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-      {children}
-    </p>
-  );
+  return <p className="text-sm leading-relaxed text-subtle-foreground">{children}</p>;
 }
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-3 flex gap-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 px-3.5 py-2.5">
-      <span className="mt-0.5 text-blue-500 dark:text-blue-400 flex-shrink-0 text-xs font-bold uppercase tracking-wider">Tip</span>
-      <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">{children}</p>
+    <div role="note" className="mt-4 flex gap-2.5 rounded-lg bg-brand-soft px-3.5 py-3 text-brand-soft-foreground">
+      <Lightbulb className="mt-0.5 size-4 shrink-0" />
+      <p className="text-sm leading-relaxed">{children}</p>
     </div>
   );
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs font-mono text-gray-700 dark:text-gray-200">
-      {children}
-    </kbd>
-  );
+  return <UiKbd className="border font-mono">{children}</UiKbd>;
 }
 
 function Ul({ items }: { items: string[] }) {
   return (
-    <ul className="mt-2 space-y-1.5 text-sm text-gray-600 dark:text-gray-400 leading-relaxed list-disc list-inside">
-      {items.map((item, i) => <li key={i}>{item}</li>)}
+    <ul className="mt-2 list-inside list-disc space-y-1.5 text-sm leading-relaxed text-subtle-foreground">
+      {items.map((item, i) => (
+        <li key={i}>{item}</li>
+      ))}
     </ul>
   );
 }
@@ -99,25 +91,25 @@ function OverviewSection() {
 
       <SubHeading>The three main views</SubHeading>
       <div className="space-y-2.5">
-        <div className="rounded-lg border border-gray-100 dark:border-gray-700 p-3.5">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-0.5">Notes</p>
-          <P>Your day-to-day writing surface. Open a supplier tab, create a note, and write freely using the rich-text editor. The right panel gives you per-note tasks, decisions, and a live transcript.</P>
+        <div className="rounded-lg border p-3.5">
+          <p className="mb-0.5 text-sm font-medium">Notes</p>
+          <P>Your day-to-day writing surface. Pick a supplier in the sidebar, create a note, and write freely using the rich-text editor. The side panel gives you per-note tasks, decisions, follow-ups, and a live transcript.</P>
         </div>
-        <div className="rounded-lg border border-gray-100 dark:border-gray-700 p-3.5">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-0.5">Tasks</p>
+        <div className="rounded-lg border p-3.5">
+          <p className="mb-0.5 text-sm font-medium">Follow-up</p>
           <P>A consolidated workspace for tasks, decisions, and follow-ups across all suppliers in the active project. Filter, sort, and manage everything without leaving your notes.</P>
         </div>
-        <div className="rounded-lg border border-gray-100 dark:border-gray-700 p-3.5">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-0.5">Dashboard</p>
+        <div className="rounded-lg border p-3.5">
+          <p className="mb-0.5 text-sm font-medium">Overview</p>
           <P>A quick-glance home screen. See project stats, pinned suppliers, recent notes, and jump back into where you left off.</P>
         </div>
       </div>
 
       <SubHeading>Getting started in 3 steps</SubHeading>
-      <ol className="space-y-2 text-sm text-gray-600 dark:text-gray-400 list-decimal list-inside leading-relaxed">
-        <li>Create a <strong className="text-gray-800 dark:text-gray-200">Project</strong> in the left sidebar (click the + next to "Projects").</li>
-        <li>Add one or more <strong className="text-gray-800 dark:text-gray-200">Suppliers</strong> to that project. Each supplier gets its own tab.</li>
-        <li>Open a supplier tab and create a <strong className="text-gray-800 dark:text-gray-200">Note</strong> to start writing.</li>
+      <ol className="list-inside list-decimal space-y-2 text-sm leading-relaxed text-subtle-foreground">
+        <li>Create a <strong className="text-foreground">Project</strong> from the project switcher at the top of the sidebar.</li>
+        <li>Add one or more <strong className="text-foreground">Suppliers</strong> to that project. Each supplier gets its own note stream in the sidebar.</li>
+        <li>Pick a supplier and create a <strong className="text-foreground">Note</strong> to start writing.</li>
       </ol>
     </div>
   );
@@ -133,7 +125,7 @@ function ProjectsSection() {
       </P>
 
       <SubHeading>Creating a project</SubHeading>
-      <P>Click the <strong className="text-gray-800 dark:text-gray-200">+</strong> icon next to "Projects" in the sidebar. Give it a name and pick a colour. The colour appears throughout the UI to help you visually separate projects.</P>
+      <P>Click the <strong className="text-foreground">+</strong> icon next to "Projects" in the sidebar. Give it a name and pick a colour. The colour appears throughout the UI to help you visually separate projects.</P>
 
       <SubHeading>Suppliers</SubHeading>
       <P>
@@ -143,14 +135,14 @@ function ProjectsSection() {
       <Ul items={[
         'Add a supplier by clicking + in the sidebar under your project.',
         'Pin frequently-used suppliers to the top of the list.',
-        'Assign a colour to make supplier tabs easy to identify at a glance.',
+        'Assign a colour to make suppliers easy to identify at a glance.',
         'Use templates to pre-populate new notes with your preferred structure.',
         'Suppliers can be archived when a relationship ends — their data is preserved.',
       ]} />
 
       <SubHeading>Internal notes tab</SubHeading>
       <P>
-        Every project also has an <strong className="text-gray-800 dark:text-gray-200">Internal</strong> tab for notes that don't belong to any specific supplier — team-internal meeting notes, reference material, or working documents.
+        Every project also has an <strong className="text-foreground">Internal</strong> tab for notes that don't belong to any specific supplier — team-internal meeting notes, reference material, or working documents.
       </P>
 
       <Tip>Pinned suppliers always appear at the top of your sidebar list so the ones you use most are one click away.</Tip>
@@ -213,7 +205,7 @@ function TasksSection() {
 
       <SubHeading>Tasks</SubHeading>
       <P>
-        Tasks track work items with a Kanban-style status (To Do → In Progress → Done), an
+        Tasks track work items with a Kanban-style status (Open → In progress → Done), an
         optional priority, owner, and due date. Create a task by:
       </P>
       <Ul items={[
@@ -231,13 +223,13 @@ function TasksSection() {
       <SubHeading>Follow-ups</SubHeading>
       <P>
         Follow-ups are lightweight reminders tied to a supplier — things to check or ask next
-        time. Select text and press <Kbd>Alt+F</Kbd>, or use the follow-ups tray at the bottom
-        of the notes view.
+        time. Select text and press <Kbd>Alt+F</Kbd>, or use the Follow-ups tab in the
+        side panel.
       </P>
 
       <SubHeading>Tasks view</SubHeading>
       <P>
-        Switch to the <strong className="text-gray-800 dark:text-gray-200">Tasks</strong> tab in the top bar to see all tasks, decisions, and follow-ups across every supplier in the current project. Use the section tabs (Tasks / Decisions / Follow-ups) to switch between them, and the filter controls to narrow by status or supplier.
+        Open <strong className="text-foreground">Follow-up</strong> in the sidebar to see all tasks, decisions, and follow-ups across every supplier in the current project. Use the section tabs (Tasks / Decisions / Follow-ups) to switch between them, and the filter controls to narrow by status or supplier.
       </P>
 
       <Tip>Select any text in the editor and use the floating action buttons to instantly create a task, decision, or follow-up from that text.</Tip>
@@ -256,7 +248,7 @@ function TranscriptionSection() {
       </P>
 
       <SubHeading>Starting a recording</SubHeading>
-      <ol className="space-y-1.5 text-sm text-gray-600 dark:text-gray-400 list-decimal list-inside leading-relaxed">
+      <ol className="list-inside list-decimal space-y-1.5 text-sm leading-relaxed text-subtle-foreground">
         <li>Open the note you want to transcribe.</li>
         <li>Open the right panel (<Kbd>Ctrl+]</Kbd>) and click the Transcript tab.</li>
         <li>Choose an audio mode (Microphone or System audio) and click Start.</li>
@@ -264,12 +256,12 @@ function TranscriptionSection() {
 
       <SubHeading>Audio modes</SubHeading>
       <div className="space-y-2 mt-1">
-        <div className="rounded-lg border border-gray-100 dark:border-gray-700 p-3">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-0.5">Microphone</p>
+        <div className="rounded-lg border p-3">
+          <p className="mb-0.5 text-sm font-medium">Microphone</p>
           <P>Uses your browser's built-in speech recognition. No API cost. Works offline. Best for capturing your own voice only.</P>
         </div>
-        <div className="rounded-lg border border-gray-100 dark:border-gray-700 p-3">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-0.5">System audio</p>
+        <div className="rounded-lg border p-3">
+          <p className="mb-0.5 text-sm font-medium">System audio</p>
           <P>Captures all audio playing on your computer (including remote participants). Transcribed via Groq Whisper. Requires a Groq API key in Settings.</P>
         </div>
       </div>
@@ -304,7 +296,7 @@ function AiSection() {
       </P>
 
       <SubHeading>Setting up API keys</SubHeading>
-      <P>Go to <strong className="text-gray-800 dark:text-gray-200">Settings → AI & Summarization</strong> and paste in your keys:</P>
+      <P>Go to <strong className="text-foreground">Settings → AI & Summarization</strong> and paste in your keys:</P>
       <Ul items={[
         'OpenAI API key — used for GPT-based note summaries.',
         'Groq API key — used for Whisper transcription (system audio mode only).',
@@ -352,7 +344,7 @@ function TeamsSection() {
       </P>
 
       <SubHeading>Enabling Teams integration</SubHeading>
-      <P>Go to <strong className="text-gray-800 dark:text-gray-200">Settings → Teams</strong> and toggle Teams integration on. Combobulator will monitor for Teams activity in the background.</P>
+      <P>Go to <strong className="text-foreground">Settings → Teams</strong> and toggle Teams integration on. Combobulator will monitor for Teams activity in the background.</P>
 
       <SubHeading>How it works</SubHeading>
       <Ul items={[
@@ -379,9 +371,9 @@ function ShortcutsSection() {
     ['Ctrl+N',         'Create new note'],
     ['Ctrl+Shift+F',   'Global search'],
     ['Ctrl+,',         'Open settings'],
-    ['Ctrl+]',         'Toggle right panel'],
-    ['Ctrl+1 – 9',     'Switch to supplier tab by position'],
-    ['Ctrl+W',         'Close current tab'],
+    ['Ctrl+]',         'Toggle side panel'],
+    ['Ctrl+1 – 9',     'Switch to open supplier by position'],
+    ['Ctrl+W',         'Close current supplier'],
     ['Alt+T',          'Create task from selected text'],
     ['Alt+D',          'Create decision from selected text'],
     ['Alt+F',          'Create follow-up from selected text'],
@@ -395,17 +387,13 @@ function ShortcutsSection() {
       <Heading>Keyboard Shortcuts</Heading>
       <P>These shortcuts work from anywhere in the app unless a modal is open.</P>
 
-      <div className="mt-3 rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
-        {shortcuts.map(([key, desc], i) => (
+      <div className="mt-3 divide-y overflow-hidden rounded-xl border">
+        {shortcuts.map(([key, desc]) => (
           <div
             key={key}
-            className={`flex items-center justify-between px-4 py-2.5 text-sm ${
-              i % 2 === 0
-                ? 'bg-white dark:bg-gray-900'
-                : 'bg-gray-50/60 dark:bg-gray-800/60'
-            }`}
+            className="flex items-center justify-between px-4 py-2.5 text-sm"
           >
-            <span className="text-gray-600 dark:text-gray-400">{desc}</span>
+            <span className="text-subtle-foreground">{desc}</span>
             <Kbd>{key}</Kbd>
           </div>
         ))}
@@ -413,7 +401,7 @@ function ShortcutsSection() {
 
       <SubHeading>Editor shortcuts</SubHeading>
       <P>Standard rich-text shortcuts work inside the note editor:</P>
-      <div className="mt-2 rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <div className="mt-2 divide-y overflow-hidden rounded-xl border">
         {([
           ['Ctrl+B', 'Bold'],
           ['Ctrl+I', 'Italic'],
@@ -421,16 +409,12 @@ function ShortcutsSection() {
           ['Ctrl+Z', 'Undo'],
           ['Ctrl+Shift+Z', 'Redo'],
           ['/', 'Slash-command menu (at start of line)'],
-        ] as [string, string][]).map(([key, desc], i) => (
+        ] as [string, string][]).map(([key, desc]) => (
           <div
             key={key}
-            className={`flex items-center justify-between px-4 py-2.5 text-sm ${
-              i % 2 === 0
-                ? 'bg-white dark:bg-gray-900'
-                : 'bg-gray-50/60 dark:bg-gray-800/60'
-            }`}
+            className="flex items-center justify-between px-4 py-2.5 text-sm"
           >
-            <span className="text-gray-600 dark:text-gray-400">{desc}</span>
+            <span className="text-subtle-foreground">{desc}</span>
             <Kbd>{key}</Kbd>
           </div>
         ))}
@@ -444,17 +428,17 @@ function SettingsSection() {
     <div className="space-y-3">
       <Heading>Settings & Data</Heading>
       <P>
-        Access settings at any time with <Kbd>Ctrl+,</Kbd> or through the gear icon in the
+        Access settings at any time with <Kbd>Ctrl+,</Kbd> or through Settings in the
         sidebar footer.
       </P>
 
       <SubHeading>Appearance</SubHeading>
-      <P>Choose between Light, Dark, and a bonus theme. You can also cycle themes using the palette icon in the sidebar footer.</P>
+      <P>Choose between Light and Dark. You can also switch with the sun/moon icon in the sidebar footer.</P>
 
       <SubHeading>Data storage</SubHeading>
       <P>
         All data is stored locally on your machine in a single JSON file
-        (<code className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">Combobulator-data.json</code>).
+        (<code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">Combobulator-data.json</code>).
         No data is sent to external servers except when you use the AI features (which go
         directly to OpenAI / Groq using your own API keys).
       </P>
@@ -462,7 +446,7 @@ function SettingsSection() {
       <SubHeading>Custom data directory</SubHeading>
       <P>
         By default data is saved in your system's app-data folder. You can point Combobulator
-        at a custom directory under <strong className="text-gray-800 dark:text-gray-200">Settings → Data & Storage</strong>
+        at a custom directory under <strong className="text-foreground">Settings → Data & Storage</strong>
         — useful if you want to store data on a synced drive (e.g. OneDrive or Dropbox).
       </P>
 
@@ -497,80 +481,56 @@ export function HelpModal() {
   const toggleHelp = useStore((s) => s.toggleHelp);
   const [activeSection, setActiveSection] = useState<HelpSection>('overview');
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      toggleHelp();
-    }
-  };
-
   const content: Record<HelpSection, React.ReactNode> = {
-    overview:      <OverviewSection />,
-    projects:      <ProjectsSection />,
-    notes:         <NotesSection />,
-    tasks:         <TasksSection />,
+    overview: <OverviewSection />,
+    projects: <ProjectsSection />,
+    notes: <NotesSection />,
+    tasks: <TasksSection />,
     transcription: <TranscriptionSection />,
-    ai:            <AiSection />,
-    teams:         <TeamsSection />,
-    shortcuts:     <ShortcutsSection />,
-    settings:      <SettingsSection />,
+    ai: <AiSection />,
+    teams: <TeamsSection />,
+    shortcuts: <ShortcutsSection />,
+    settings: <SettingsSection />,
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      onKeyDown={handleKeyDown}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={toggleHelp} />
-
-      {/* Modal panel */}
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex w-[740px] h-[85vh] overflow-hidden">
-
-        {/* Left nav */}
-        <div className="w-52 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col py-5 flex-shrink-0">
-          <div className="px-5 pb-4">
-            <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Help Guide</span>
-          </div>
-          <nav className="flex flex-col gap-0.5 px-2 flex-1 overflow-y-auto">
-            {SECTIONS.map((section) => (
-              <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
-                className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors text-left w-full ${
-                  activeSection === section.id
-                    ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100 font-medium'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="flex-shrink-0 mt-0.5">{section.icon}</span>
-                <span className="leading-snug">{section.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Content area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
-            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              {SECTIONS.find((s) => s.id === activeSection)?.label}
-            </h2>
+    <Dialog open onOpenChange={(open) => !open && toggleHelp()}>
+      <DialogContent showCloseButton={false} className="flex h-[85vh] max-h-[760px] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogDescription className="sr-only">How to use Combobulator</DialogDescription>
+        <nav aria-label="Help sections" className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r bg-sidebar px-2.5 py-4">
+          <DialogTitle className="flex items-center gap-2 px-2 pb-3 text-base font-semibold">
+            <BookOpen className="size-4.5 text-primary" />
+            Help guide
+          </DialogTitle>
+          {SECTIONS.map((section) => (
             <button
-              onClick={toggleHelp}
-              className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              key={section.id}
+              type="button"
+              onClick={() => setActiveSection(section.id)}
+              aria-current={activeSection === section.id ? 'page' : undefined}
+              className={cn(
+                'flex items-start gap-2.5 rounded-md px-2 py-1.5 text-left text-ui text-subtle-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground [&_svg]:text-muted-foreground',
+                activeSection === section.id && 'bg-sidebar-accent font-medium text-foreground [&_svg]:text-primary',
+              )}
             >
-              <X className="w-4 h-4" />
+              <span className="mt-0.5 shrink-0">{section.icon}</span>
+              <span className="leading-snug">{section.label}</span>
             </button>
-          </div>
+          ))}
+        </nav>
 
-          {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {content[activeSection]}
-          </div>
-        </div>
-      </div>
-    </div>
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b pr-4 pl-8">
+            <span className="text-ui text-muted-foreground">Help guide · {SECTIONS.find((s) => s.id === activeSection)?.label}</span>
+            <Button variant="ghost" size="icon-sm" onClick={toggleHelp} aria-label="Close help" className="text-muted-foreground">
+              <X />
+            </Button>
+          </header>
+          <article className="min-h-0 flex-1 overflow-y-auto px-8 py-7">
+            <div className="max-w-2xl">{content[activeSection]}</div>
+          </article>
+        </section>
+      </DialogContent>
+    </Dialog>
   );
 }

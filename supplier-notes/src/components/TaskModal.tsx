@@ -1,103 +1,88 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/store';
-import type { TaskStatus, Priority, Attachment, TaskUpdate } from '../types';
-import { CustomSelect } from './ui/CustomSelect';
+import type { TaskStatus, Priority, TaskUpdate } from '../types';
+import { format } from 'date-fns';
+import { ArrowUpRight, Bookmark, Link2, Link2Off, Paperclip, Plus, SquareCheck, Trash2, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Kbd } from '@/components/ui/kbd';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ColorDot, EntityChip, PRIORITY_LABEL, STATUS_LABEL } from './common';
+import { DatePicker } from './DatePicker';
 
 function ownerInitials(owner: string): string {
-  return owner.trim().split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
+  return owner
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .slice(0, 2)
+    .join('');
 }
 
-function ownerHue(owner: string): number {
-  let hash = 0;
-  for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
-  return Math.abs(hash) % 360;
-}
-import { X, Trash2, FileText, Link2, Link2Off, Bookmark, Plus, Paperclip, ClipboardList } from 'lucide-react';
-import { format } from 'date-fns';
-
-type OwnerOption = { value: string; label: string; color?: string };
+const UNASSIGNED = '__unassigned__';
 
 function OwnerAvatar({ value, color }: { value: string; color?: string }) {
-  const hue = ownerHue(value);
-  const bg = color ?? `hsl(${hue} 55% 52%)`;
   return (
     <span
-      className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
-      style={{ backgroundColor: bg }}
+      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-semibold text-subtle-foreground"
+      style={color ? { backgroundColor: color, color: '#fff' } : undefined}
     >
       {ownerInitials(value)}
     </span>
   );
 }
 
+/** Owner picker: Unassigned, Internal or one of the project's suppliers. */
 export function OwnerDropdown({
   owner,
   onChange,
   suppliers,
+  id,
 }: {
   owner: string;
   onChange: (v: string) => void;
   suppliers: { id: string; name: string; color: string }[];
+  id?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const options: OwnerOption[] = [
-    { value: '', label: 'Unassigned' },
-    { value: 'Internal', label: 'Internal' },
-    ...suppliers.map((s) => ({ value: s.name, label: s.name, color: s.color })),
+  const options = [
+    { value: 'Internal', label: 'Internal', color: undefined as string | undefined },
+    ...suppliers.map((s) => ({ value: s.name, label: s.name, color: s.color as string | undefined })),
   ];
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const selected = options.find((o) => o.value === owner) ?? options[0];
+  // Keep a free-text owner from older data selectable
+  if (owner && !options.some((o) => o.value === owner)) options.push({ value: owner, label: owner, color: undefined });
 
   return (
-    <div ref={ref} className="relative">
-      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Owner</label>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
-      >
-        {selected.value ? (
-          <OwnerAvatar value={selected.value} color={selected.color} />
-        ) : (
-          <span className="w-5 h-5 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 flex-shrink-0" />
-        )}
-        <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{selected.label}</span>
-        <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                o.value === owner ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'
-              }`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              {o.value ? (
-                <OwnerAvatar value={o.value} color={o.color} />
-              ) : (
-                <span className="w-5 h-5 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 flex-shrink-0" />
-              )}
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <Select value={owner || UNASSIGNED} onValueChange={(v) => onChange(v === UNASSIGNED ? '' : v)}>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNASSIGNED}>
+          <span className="size-5 shrink-0 rounded-full border-2 border-dashed border-border-strong" />
+          Unassigned
+        </SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            <OwnerAvatar value={o.value} color={o.color} />
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function PropertyRow({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={htmlFor} className="text-xs font-normal text-muted-foreground">
+        {label}
+      </Label>
+      {children}
     </div>
   );
 }
@@ -108,6 +93,7 @@ export function TaskModal() {
   const notes = useStore((s) => s.notes);
   const suppliers = useStore((s) => s.suppliers);
   const followUps = useStore((s) => s.followUps);
+  const projects = useStore((s) => s.projects);
   const updateTask = useStore((s) => s.updateTask);
   const updateFollowUp = useStore((s) => s.updateFollowUp);
   const addFollowUp = useStore((s) => s.addFollowUp);
@@ -126,10 +112,8 @@ export function TaskModal() {
   const [description, setDescription] = useState('');
   const [updates, setUpdates] = useState<TaskUpdate[]>([]);
   const [newUpdateText, setNewUpdateText] = useState('');
-  const [showFollowUpPicker, setShowFollowUpPicker] = useState(false);
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
   const [newFollowUpText, setNewFollowUpText] = useState('');
-  const newFollowUpRef = useRef<HTMLInputElement>(null);
   const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
 
   useEffect(() => {
@@ -142,13 +126,10 @@ export function TaskModal() {
       setDescription(task.description ?? '');
       setUpdates(task.updates ?? []);
       setNewUpdateText('');
-      setShowFollowUpPicker(false);
       setCreatingFollowUp(false);
       setNewFollowUpText('');
     }
   }, [task]);
-
-  const projects = useStore((s) => s.projects);
 
   const handlePickFiles = async () => {
     if (!editingTaskId || !electronAttachments?.pick) return;
@@ -170,12 +151,10 @@ export function TaskModal() {
   const supplier = suppliers.find((s) => s.id === task.supplierId);
   const project = projects.find((p) => p.id === task.projectId);
   const linkedFollowUp =
-    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null)
-    ?? followUps.find((f) => f.linkedTaskId === task.id)
-    ?? null;
-  const linkableFollowUps = followUps.filter(
-    (f) => f.projectId === task.projectId && (!f.linkedTaskId || f.linkedTaskId === task.id)
-  );
+    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null) ??
+    followUps.find((f) => f.linkedTaskId === task.id) ??
+    null;
+  const linkableFollowUps = followUps.filter((f) => f.projectId === task.projectId && (!f.linkedTaskId || f.linkedTaskId === task.id));
 
   const handleAddUpdate = () => {
     const text = newUpdateText.trim();
@@ -204,9 +183,9 @@ export function TaskModal() {
 
   const handleDelete = () => {
     openConfirmDialog({
-      title: 'Delete task',
-      message: 'Delete this task?',
-      confirmLabel: 'Delete',
+      title: 'Delete task?',
+      message: `“${task.title}” will be removed.`,
+      confirmLabel: 'Delete task',
       onConfirm: () => {
         deleteTask(editingTaskId);
         setEditingTask(null);
@@ -214,384 +193,313 @@ export function TaskModal() {
     });
   };
 
+  const createLinkedFollowUp = () => {
+    if (!newFollowUpText.trim()) return;
+    const newId = addFollowUp({
+      text: newFollowUpText.trim(),
+      status: 'open',
+      projectId: task.projectId,
+      supplierId: task.supplierId,
+    });
+    updateTask(editingTaskId, { linkedFollowUpId: newId });
+    updateFollowUp(newId, { linkedTaskId: editingTaskId });
+    setCreatingFollowUp(false);
+    setNewFollowUpText('');
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/30" onClick={() => setEditingTask(null)} />
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold dark:text-gray-100">Edit Task</h2>
-          <button onClick={() => setEditingTask(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-            <X className="w-4 h-4 dark:text-gray-400" />
-          </button>
-        </div>
-
-        {/* Source info */}
-        <div className="text-xs text-gray-400 dark:text-gray-500 mb-4 flex items-center gap-2 flex-wrap">
-          {project && (
-            <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: project.color + '20', color: project.color }}>
-              {project.name}
-            </span>
-          )}
-          {supplier && (
+    <Dialog open onOpenChange={(open) => !open && setEditingTask(null)}>
+      <DialogContent showCloseButton={false} className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogDescription className="sr-only">Edit task details</DialogDescription>
+        <header className="flex h-13 shrink-0 items-center gap-2 border-b pr-3 pl-6 text-ui text-muted-foreground">
+          <SquareCheck className="size-4" />
+          <DialogTitle className="text-ui font-normal">Task</DialogTitle>
+          {note && (
             <>
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: supplier.color }} />
-              <span>{supplier.name}</span>
-              <span className="text-gray-300">·</span>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => navigateToNote(task.noteId)}
+                className="flex min-w-0 items-center gap-1.5 transition-colors hover:text-foreground"
+                title="Go to source note"
+              >
+                {supplier && <ColorDot color={supplier.color} className="size-1.5" />}
+                <span className="truncate">{note.title || 'Untitled note'}</span>
+                <ArrowUpRight className="size-3 shrink-0" />
+              </button>
             </>
           )}
-          {note && (
-            <button
-              onClick={() => navigateToNote(task.noteId)}
-              className="flex items-center gap-1 text-blue-500 hover:text-blue-700 hover:underline transition-colors"
-              title="Go to source note"
-            >
-              <FileText className="w-3 h-3" />
-              {note.title || 'Untitled note'}
-            </button>
-          )}
-        </div>
+          <span className="flex-1" />
+          <Button variant="ghost" size="icon-sm" onClick={() => setEditingTask(null)} aria-label="Close" className="text-muted-foreground">
+            <X />
+          </Button>
+        </header>
 
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Title</label>
-            <input
-              type="text"
+        <div className="flex min-h-0 flex-1 flex-wrap overflow-y-auto">
+          {/* Main column */}
+          <div className="flex min-w-0 flex-[999_1_380px] flex-col gap-6 p-6">
+            <Textarea
+              aria-label="Title"
               value={title}
+              rows={2}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
-              onKeyDown={(e) => e.key === 'Enter' && save()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  save();
+                }
+              }}
               autoFocus
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <CustomSelect
-              label="Status"
-              value={status}
-              onChange={(v) => setStatus(v as TaskStatus)}
-              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
-              options={[
-                { value: 'open', label: 'Open' },
-                { value: 'doing', label: 'Doing' },
-                { value: 'done', label: 'Done' },
-              ]}
-            />
-            <CustomSelect
-              label="Priority"
-              value={priority}
-              onChange={(v) => setPriority(v as Priority)}
-              className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
-              options={[
-                { value: 'low', label: 'Low' },
-                { value: 'medium', label: 'Medium' },
-                { value: 'high', label: 'High' },
-              ]}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <OwnerDropdown
-              owner={owner}
-              onChange={setOwner}
-              suppliers={suppliers.filter((s) => project && s.projectIds.includes(project.id))}
+              className="min-h-0 resize-none border-0 p-0 text-xl leading-snug font-semibold tracking-tight shadow-none focus-visible:ring-0 md:text-xl dark:bg-transparent"
             />
 
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due date</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="task-description" className="text-xs font-normal text-muted-foreground">
+                Description
+              </Label>
+              <Textarea
+                id="task-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add more detail about this task…"
+                rows={3}
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add more detail about this task…"
-              rows={4}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-            />
-          </div>
-
-          {/* Progress Updates */}
-          <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <ClipboardList className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Progress Updates</label>
-            </div>
-
-            {/* Existing updates log */}
-            {updates.length > 0 && (
-              <div className="mb-2 max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
-                {updates.map((u) => (
-                  <div
-                    key={u.id}
-                    className="group flex items-start gap-2 px-2.5 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700"
-                  >
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap mt-0.5 flex-shrink-0">
-                      {format(new Date(u.timestamp), 'MMM d, HH:mm')}
-                    </span>
-                    <p className="flex-1 text-xs text-gray-700 dark:text-gray-300 leading-relaxed min-w-0 break-words">{u.text}</p>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteUpdate(u.id)}
-                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
-                      title="Remove update"
-                    >
-                      <X className="w-3 h-3 text-gray-300 hover:text-red-500 dark:hover:text-red-400" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* New update input */}
-            <div className="flex gap-2">
-              <textarea
-                value={newUpdateText}
-                onChange={(e) => setNewUpdateText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    handleAddUpdate();
-                  }
-                }}
-                placeholder="Add a progress note… (Ctrl+Enter to save)"
-                rows={2}
-                className="flex-1 px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-              <button
-                type="button"
-                onClick={handleAddUpdate}
-                disabled={!newUpdateText.trim()}
-                className="self-end px-3 py-2 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Attachments */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Attachments</label>
-              <button
-                type="button"
-                onClick={handlePickFiles}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                title="Attach file"
-              >
-                <Paperclip className="w-3 h-3" />
-                Attach
-              </button>
-            </div>
-            {task.attachments && task.attachments.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {task.attachments.map((att) => (
-                  <div
-                    key={att.id}
-                    className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-100 dark:bg-white/10 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => electronAttachments && electronAttachments.open(att.filePath)}
-                      className="max-w-[180px] truncate text-left hover:underline"
-                      title={`Open ${att.fileName}`}
-                    >
-                      {att.fileName}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeTaskAttachment(editingTaskId, att.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
-                      title="Remove attachment"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-300 dark:text-gray-600">No attachments yet</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Linked Follow-up</label>
-            {task.isFollowUp && (
-              <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
-                <Bookmark className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
-                <span className="flex-1 text-sm text-violet-800 dark:text-violet-300">Bookmarked as a follow-up</span>
-                <button
-                  type="button"
-                  onClick={() => updateTask(editingTaskId, { isFollowUp: false })}
-                  className="flex-shrink-0 p-0.5 hover:bg-violet-100 dark:hover:bg-violet-900/40 rounded transition-colors"
-                  title="Remove bookmark"
-                >
-                  <X className="w-3.5 h-3.5 text-violet-400 hover:text-red-500" />
-                </button>
-              </div>
-            )}
-            {linkedFollowUp ? (
-              <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
-                <Bookmark className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
-                <span className="flex-1 text-sm text-violet-800 dark:text-violet-300 truncate">{linkedFollowUp.text}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateTask(editingTaskId, { linkedFollowUpId: undefined });
-                    updateFollowUp(linkedFollowUp.id, { linkedTaskId: undefined });
-                  }}
-                  className="flex-shrink-0 p-0.5 hover:bg-violet-100 dark:hover:bg-violet-900/40 rounded transition-colors"
-                  title="Remove link"
-                >
-                  <Link2Off className="w-3.5 h-3.5 text-violet-400 hover:text-red-500" />
-                </button>
-              </div>
-            ) : creatingFollowUp ? (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={newFollowUpRef}
-                  autoFocus
-                  type="text"
-                  value={newFollowUpText}
-                  onChange={(e) => setNewFollowUpText(e.target.value)}
-                  placeholder="Follow-up text…"
-                  className="flex-1 px-3 py-2 text-sm border border-violet-300 dark:border-violet-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newFollowUpText.trim()) {
-                      const newId = addFollowUp({
-                        text: newFollowUpText.trim(),
-                        status: 'open',
-                        projectId: task.projectId,
-                        supplierId: task.supplierId,
-                      });
-                      updateTask(editingTaskId, { linkedFollowUpId: newId });
-                      updateFollowUp(newId, { linkedTaskId: editingTaskId });
-                      setCreatingFollowUp(false);
-                      setNewFollowUpText('');
-                    }
-                    if (e.key === 'Escape') {
-                      setCreatingFollowUp(false);
-                      setNewFollowUpText('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={!newFollowUpText.trim()}
-                  onClick={() => {
-                    if (!newFollowUpText.trim()) return;
-                    const newId = addFollowUp({
-                      text: newFollowUpText.trim(),
-                      status: 'open',
-                      projectId: task.projectId,
-                      supplierId: task.supplierId,
-                    });
-                    updateTask(editingTaskId, { linkedFollowUpId: newId });
-                    updateFollowUp(newId, { linkedTaskId: editingTaskId });
-                    setCreatingFollowUp(false);
-                    setNewFollowUpText('');
-                  }}
-                  className="px-3 py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-                >
-                  Add
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setCreatingFollowUp(false); setNewFollowUpText(''); }}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-                >
-                  <X className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-            ) : showFollowUpPicker ? (
-              <div className="space-y-1.5">
-                <select
-                  autoFocus
-                  className="w-full px-3 py-2 text-sm border border-violet-300 dark:border-violet-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white dark:bg-gray-800 dark:text-gray-100"
-                  defaultValue=""
-                  onChange={(e) => {
-                    const followUpId = e.target.value;
-                    if (!followUpId) return;
-                    updateTask(editingTaskId, { linkedFollowUpId: followUpId });
-                    updateFollowUp(followUpId, { linkedTaskId: editingTaskId });
-                    setShowFollowUpPicker(false);
-                  }}
-                  onBlur={(e) => {
-                    if (!e.relatedTarget) setShowFollowUpPicker(false);
-                  }}
-                >
-                  <option value="">— pick a follow-up —</option>
-                  {linkableFollowUps.map((f) => (
-                    <option key={f.id} value={f.id}>{f.text}</option>
+            <section className="flex flex-col gap-2.5">
+              <h3 className="text-xs text-muted-foreground">Progress updates</h3>
+              {updates.length > 0 && (
+                <div className="flex max-h-44 flex-col overflow-y-auto pl-1">
+                  {updates.map((u, i) => (
+                    <div key={u.id} className="group/upd flex gap-3">
+                      <span className="flex shrink-0 flex-col items-center">
+                        <span className={`mt-1.5 size-2 rounded-full ${i === 0 ? 'bg-primary' : 'bg-border-strong'}`} />
+                        {i < updates.length - 1 && <span className="w-px flex-1 bg-border" />}
+                      </span>
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5 pb-3">
+                        <p className="text-ui break-words">{u.text}</p>
+                        <span className="font-mono text-2xs text-muted-foreground">{format(new Date(u.timestamp), 'MMM d, HH:mm')}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => handleDeleteUpdate(u.id)}
+                        aria-label="Remove update"
+                        title="Remove update"
+                        className="text-muted-foreground opacity-0 group-hover/upd:opacity-100 hover:text-destructive"
+                      >
+                        <X />
+                      </Button>
+                    </div>
                   ))}
-                </select>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { setShowFollowUpPicker(false); setCreatingFollowUp(true); }}
-                  className="flex items-center gap-1.5 text-xs text-violet-500 hover:text-violet-700 transition-colors px-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Create new follow-up instead
-                </button>
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <Textarea
+                  aria-label="Add a progress note"
+                  value={newUpdateText}
+                  onChange={(e) => setNewUpdateText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      handleAddUpdate();
+                    }
+                  }}
+                  placeholder="Add a progress note…"
+                  rows={2}
+                  className="text-ui"
+                />
+                <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                  <span>
+                    <Kbd>Ctrl Enter</Kbd> to add
+                  </span>
+                  <Button variant="outline" size="xs" onClick={handleAddUpdate} disabled={!newUpdateText.trim()}>
+                    Add update
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                {linkableFollowUps.length > 0 && (
+            </section>
+
+            <section className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs text-muted-foreground">Attachments</h3>
+                <Button variant="outline" size="xs" onClick={handlePickFiles}>
+                  <Paperclip /> Attach file
+                </Button>
+              </div>
+              {task.attachments && task.attachments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {task.attachments.map((att) => (
+                    <span key={att.id} className="group/att inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-ui">
+                      <button
+                        type="button"
+                        onClick={() => electronAttachments && electronAttachments.open(att.filePath)}
+                        className="max-w-48 truncate hover:underline"
+                        title={`Open ${att.fileName}`}
+                      >
+                        {att.fileName}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeTaskAttachment(editingTaskId, att.id)}
+                        className="hidden text-muted-foreground group-hover/att:inline hover:text-destructive"
+                        aria-label="Remove attachment"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="flex h-12 items-center justify-center rounded-lg border border-dashed text-ui text-muted-foreground">No attachments yet</p>
+              )}
+            </section>
+          </div>
+
+          {/* Properties */}
+          <aside aria-label="Task properties" className="flex flex-[1_1_240px] flex-col gap-4 border-l bg-sidebar p-5">
+            <PropertyRow label="Status" htmlFor="task-status">
+              <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+                <SelectTrigger id="task-status" className="w-full bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['open', 'doing', 'done'] as const).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </PropertyRow>
+            <PropertyRow label="Priority" htmlFor="task-priority">
+              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+                <SelectTrigger id="task-priority" className="w-full bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['low', 'medium', 'high'] as const).map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {PRIORITY_LABEL[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </PropertyRow>
+            <PropertyRow label="Owner" htmlFor="task-owner">
+              <OwnerDropdown
+                id="task-owner"
+                owner={owner}
+                onChange={setOwner}
+                suppliers={suppliers.filter((s) => project && s.projectIds.includes(project.id))}
+              />
+            </PropertyRow>
+            <PropertyRow label="Due date" htmlFor="task-due">
+              <DatePicker id="task-due" value={dueDate} onChange={setDueDate} className="bg-background" />
+            </PropertyRow>
+            <div className="flex flex-wrap gap-1.5">
+              {project && <EntityChip color={project.color}>{project.name}</EntityChip>}
+              <EntityChip color={supplier?.color ?? '#71717a'}>{supplier?.name ?? 'Internal'}</EntityChip>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            <div className="flex items-center gap-3">
+              <Label htmlFor="task-flag" className="flex flex-1 flex-col items-start gap-0.5">
+                <span className="text-ui font-medium">Flag as follow-up</span>
+                <span className="text-xs font-normal text-muted-foreground">Shows in Follow-ups</span>
+              </Label>
+              <Switch id="task-flag" checked={!!task.isFollowUp} onCheckedChange={(v) => updateTask(editingTaskId, { isFollowUp: v })} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Linked follow-up</span>
+              {linkedFollowUp ? (
+                <div className="flex items-center gap-2 rounded-lg bg-brand-soft px-2.5 py-2 text-brand-soft-foreground">
+                  <Bookmark className="size-3.5 shrink-0" />
+                  <span className="flex-1 truncate text-ui">{linkedFollowUp.text}</span>
                   <button
                     type="button"
-                    onClick={() => setShowFollowUpPicker(true)}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-violet-600 transition-colors"
+                    onClick={() => {
+                      updateTask(editingTaskId, { linkedFollowUpId: undefined });
+                      updateFollowUp(linkedFollowUp.id, { linkedTaskId: undefined });
+                    }}
+                    title="Remove link"
+                    aria-label="Remove link"
+                    className="shrink-0 opacity-70 hover:opacity-100"
                   >
-                    <Link2 className="w-3.5 h-3.5" />
-                    Link existing…
+                    <Link2Off className="size-3.5" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setCreatingFollowUp(true)}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-violet-600 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {linkableFollowUps.length === 0 ? 'Create follow-up…' : 'Create new…'}
-                </button>
-              </div>
-            )}
-          </div>
+                </div>
+              ) : creatingFollowUp ? (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    autoFocus
+                    aria-label="Follow-up text"
+                    value={newFollowUpText}
+                    onChange={(e) => setNewFollowUpText(e.target.value)}
+                    placeholder="Follow-up text…"
+                    className="h-8 bg-background text-ui"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') createLinkedFollowUp();
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setCreatingFollowUp(false);
+                        setNewFollowUpText('');
+                      }
+                    }}
+                  />
+                  <Button size="icon-sm" onClick={createLinkedFollowUp} disabled={!newFollowUpText.trim()} aria-label="Create follow-up">
+                    <Plus />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {linkableFollowUps.length > 0 && (
+                    <Select
+                      value=""
+                      onValueChange={(followUpId) => {
+                        updateTask(editingTaskId, { linkedFollowUpId: followUpId });
+                        updateFollowUp(followUpId, { linkedTaskId: editingTaskId });
+                      }}
+                    >
+                      <SelectTrigger className="w-full border-dashed bg-transparent text-muted-foreground">
+                        <span className="flex items-center gap-2">
+                          <Link2 className="size-3.5" /> Link existing follow-up…
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {linkableFollowUps.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.text}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Button variant="ghost" size="xs" className="self-start text-muted-foreground" onClick={() => setCreatingFollowUp(true)}>
+                    <Plus /> {linkableFollowUps.length === 0 ? 'Create follow-up…' : 'Create new…'}
+                  </Button>
+                </div>
+              )}
+            </div>
+            <span className="mt-auto pt-2 text-xs text-muted-foreground">Created {format(new Date(task.createdAt), 'MMM d, yyyy')}</span>
+          </aside>
         </div>
 
-        <div className="flex items-center justify-between mt-6">
-          <button
-            onClick={handleDelete}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setEditingTask(null)}
-              className="px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={save}
-              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-
-      </div>
-    </div>
+        <footer className="flex shrink-0 items-center gap-2 border-t py-3 pr-4 pl-5">
+          <Button variant="ghost" size="sm" onClick={handleDelete} className="text-destructive hover:bg-recording-soft hover:text-destructive">
+            <Trash2 /> Delete task
+          </Button>
+          <span className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={() => setEditingTask(null)}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={save}>
+            Save
+          </Button>
+        </footer>
+      </DialogContent>
+    </Dialog>
   );
 }

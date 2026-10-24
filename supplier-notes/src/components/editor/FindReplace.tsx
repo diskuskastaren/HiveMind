@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { DecorationSet, Decoration } from '@tiptap/pm/view';
 import { useCallback, useEffect } from 'react';
 import { Search, Replace, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export const findReplaceKey = new PluginKey<FindReplaceState>('findReplace');
 
@@ -200,87 +201,69 @@ export function FindReplacePanel({
   };
 
   return (
-    <div className="flex items-center gap-2 px-8 py-2 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 flex-wrap flex-shrink-0">
-      {/* Search row */}
-      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-        <Search className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-        <input
-          autoFocus
-          value={findTerm}
-          onChange={(e) => handleFindChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.shiftKey ? prev(findTerm) : next(findTerm);
-            }
-            if (e.key === 'Escape') handleClose();
-          }}
-          placeholder="Find…"
-          className="flex-1 min-w-0 text-sm bg-transparent border-none outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
-        />
-        {matchCount > 0 && (
-          <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
-            {currentMatch + 1}/{matchCount}
-          </span>
-        )}
-        {findTerm && matchCount === 0 && (
-          <span className="text-xs text-red-400 flex-shrink-0">No results</span>
-        )}
-        <button
-          onClick={() => prev(findTerm)}
-          disabled={matchCount === 0}
-          title="Previous match (Shift+Enter)"
-          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 disabled:opacity-30 transition-colors"
-        >
-          <ChevronUp className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => next(findTerm)}
-          disabled={matchCount === 0}
-          title="Next match (Enter)"
-          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 disabled:opacity-30 transition-colors"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-        </button>
+    <div role="search" className="mt-2 flex flex-col gap-1.5 rounded-lg border bg-card p-2 shadow-xs">
+      <div className="flex items-center gap-1.5">
+        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            aria-label="Find"
+            value={findTerm}
+            onChange={(e) => handleFindChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.shiftKey ? prev(findTerm) : next(findTerm);
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                handleClose();
+              }
+            }}
+            placeholder="Find…"
+            className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+          />
+          {matchCount > 0 && (
+            <span className="shrink-0 font-mono text-2xs whitespace-nowrap text-muted-foreground">
+              {currentMatch + 1} of {matchCount}
+            </span>
+          )}
+          {findTerm && matchCount === 0 && <span className="shrink-0 text-2xs text-destructive">No results</span>}
+        </label>
+        <Button variant="outline" size="icon-sm" onClick={() => prev(findTerm)} disabled={matchCount === 0} title="Previous match (Shift+Enter)" aria-label="Previous match">
+          <ChevronUp />
+        </Button>
+        <Button variant="outline" size="icon-sm" onClick={() => next(findTerm)} disabled={matchCount === 0} title="Next match (Enter)" aria-label="Next match">
+          <ChevronDown />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={handleClose} title="Close (Escape)" aria-label="Close find and replace">
+          <X />
+        </Button>
       </div>
-
-      <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
-
-      {/* Replace row */}
-      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-        <Replace className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-        <input
-          value={replaceTerm}
-          onChange={(e) => setReplaceTerm(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') replaceOne(findTerm, replaceTerm);
-            if (e.key === 'Escape') handleClose();
-          }}
-          placeholder="Replace…"
-          className="flex-1 min-w-0 text-sm bg-transparent border-none outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
-        />
-        <button
-          onClick={() => replaceOne(findTerm, replaceTerm)}
-          disabled={matchCount === 0 || !findTerm}
-          className="text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-30 transition-colors whitespace-nowrap flex-shrink-0"
-        >
+      <div className="flex items-center gap-1.5">
+        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+          <Replace className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            aria-label="Replace"
+            value={replaceTerm}
+            onChange={(e) => setReplaceTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') replaceOne(findTerm, replaceTerm);
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                handleClose();
+              }
+            }}
+            placeholder="Replace…"
+            className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+          />
+        </label>
+        <Button variant="outline" size="sm" onClick={() => replaceOne(findTerm, replaceTerm)} disabled={matchCount === 0 || !findTerm}>
           Replace
-        </button>
-        <button
-          onClick={() => replaceAll(findTerm, replaceTerm)}
-          disabled={matchCount === 0 || !findTerm}
-          className="text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-30 transition-colors whitespace-nowrap flex-shrink-0"
-        >
-          All
-        </button>
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => replaceAll(findTerm, replaceTerm)} disabled={matchCount === 0 || !findTerm}>
+          Replace all
+        </Button>
       </div>
-
-      <button
-        onClick={handleClose}
-        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 transition-colors flex-shrink-0"
-        title="Close (Escape)"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
     </div>
   );
 }

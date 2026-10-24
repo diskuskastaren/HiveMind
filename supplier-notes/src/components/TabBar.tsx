@@ -1,17 +1,23 @@
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { LayoutDashboard, FileText, ChevronRight, ArrowLeft, Search, CheckCircle2, HelpCircle } from 'lucide-react';
+import { ArrowLeft, ChevronRight, PanelRight, Search } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { ColorDot, IconButton } from './common';
 
+const VIEW_LABEL = { dashboard: 'Overview', tasks: 'Follow-up', notes: 'Notes' } as const;
+
+/** Top bar of the main area: breadcrumb, recording status and view-level actions. */
 export function TabBar() {
   const activeProjectId = useStore((s) => s.activeProjectId);
   const activeTabId = useStore((s) => s.activeTabId);
+  const activeNoteId = useStore((s) => s.activeNoteId);
   const suppliers = useStore((s) => s.suppliers);
   const projects = useStore((s) => s.projects);
+  const notes = useStore((s) => s.notes);
   const activeView = useStore((s) => s.activeView);
   const previousView = useStore((s) => s.previousView);
-  const setActiveView = useStore((s) => s.setActiveView);
   const goBackToPreviousView = useStore((s) => s.goBackToPreviousView);
   const toggleSearch = useStore((s) => s.toggleSearch);
-  const toggleHelp = useStore((s) => s.toggleHelp);
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const recordingNoteId = useStore((s) => s.recordingNoteId);
   const navigateToNote = useStore((s) => s.navigateToNote);
@@ -27,128 +33,84 @@ export function TabBar() {
   };
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const activeSupplier = activeTabId && activeTabId !== INTERNAL_TAB_ID
-    ? suppliers.find((s) => s.id === activeTabId)
-    : null;
+  const activeSupplier = activeTabId && activeTabId !== INTERNAL_TAB_ID ? suppliers.find((s) => s.id === activeTabId) : null;
   const isInternal = activeTabId === INTERNAL_TAB_ID;
-
+  const activeNote = notes.find((n) => n.id === activeNoteId);
   const showBackButton = activeView === 'notes' && (previousView === 'dashboard' || previousView === 'tasks');
 
-  return (
-    <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900 px-3 py-1.5 flex-shrink-0 h-10">
-      {/* Left: back button or breadcrumb */}
-      {showBackButton ? (
-        <button
-          onClick={goBackToPreviousView}
-          className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition-colors"
-          title="Back to Dashboard"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Dashboard
-        </button>
-      ) : (
-        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 min-w-0">
-          {activeProject ? (
-            <>
-              <span
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: activeProject.color }}
-              />
-              <span className="font-medium truncate max-w-[120px]" title={activeProject.name}>
-                {activeProject.name}
-              </span>
-            </>
-          ) : (
-            <span className="text-gray-400 dark:text-gray-500 italic">No project</span>
-          )}
+  const crumbSep = <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />;
 
-          {(activeSupplier || isInternal) && (
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1.5 text-ui text-muted-foreground">
+        {showBackButton && previousView && (
+          <>
+            <Button variant="ghost" size="xs" onClick={goBackToPreviousView} className="-ml-1.5 text-subtle-foreground">
+              <ArrowLeft />
+              {VIEW_LABEL[previousView]}
+            </Button>
+            <span className="mx-1 h-4 w-px bg-border" />
+          </>
+        )}
+        {activeProject ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ColorDot color={activeProject.color} />
+            <span className="max-w-40 truncate">{activeProject.name}</span>
+          </span>
+        ) : (
+          <span className="italic">No project</span>
+        )}
+        {activeView !== 'notes' ? (
+          <>
+            {crumbSep}
+            <span className="font-medium text-foreground">{VIEW_LABEL[activeView]}</span>
+          </>
+        ) : (
+          (activeSupplier || isInternal) && (
             <>
-              <ChevronRight className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-              {activeSupplier ? (
+              {crumbSep}
+              <span className="flex min-w-0 items-center gap-1.5">
+                {activeSupplier && <ColorDot color={activeSupplier.color} />}
+                <span className="max-w-40 truncate">{activeSupplier ? activeSupplier.name : 'Internal'}</span>
+              </span>
+              {activeNote && (
                 <>
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: activeSupplier.color }}
-                  />
-                  <span className="truncate max-w-[120px]" title={activeSupplier.name}>
-                    {activeSupplier.name}
-                  </span>
+                  {crumbSep}
+                  <span className="truncate font-medium text-foreground">{activeNote.title || 'Untitled'}</span>
                 </>
-              ) : (
-                <span className="text-gray-400 dark:text-gray-500">Internal</span>
               )}
             </>
-          )}
-        </div>
-      )}
+          )
+        )}
+      </nav>
 
-      {/* Right: recording indicator + search + view toggle */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex shrink-0 items-center gap-1">
         {transcriptRecording && recordingNoteId && (
           <button
+            type="button"
             onClick={handleJumpToRecording}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 transition-colors"
-            title="Active recording — click to return to note"
+            title="Active recording — click to return to the note"
+            className="mr-1 flex h-7 items-center gap-2 rounded-full bg-recording-soft px-2.5 text-xs font-medium text-recording transition-opacity hover:opacity-80"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+            <span className="size-1.5 animate-pulse rounded-full bg-recording" />
             Recording
           </button>
         )}
-        <button
-          onClick={toggleSearch}
-          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-          title="Search (Ctrl+Shift+F)"
-        >
-          <Search className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={toggleHelp}
-          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-          title="Help guide"
-        >
-          <HelpCircle className="w-3.5 h-3.5" />
-        </button>
-
-        <div className="flex items-center gap-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
-          <button
-            onClick={() => setActiveView('notes')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              activeView === 'notes'
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-            title="Notes view"
+        <IconButton label="Search everything" shortcut="Ctrl Shift F" onClick={toggleSearch}>
+          <Search />
+        </IconButton>
+        {activeView === 'notes' && activeTabId && (
+          <IconButton
+            label="Toggle side panel"
+            shortcut="Ctrl ]"
+            onClick={toggleRightPanel}
+            aria-pressed={rightPanelOpen}
+            className={cn(rightPanelOpen && 'bg-accent text-foreground')}
           >
-            <FileText className="w-3.5 h-3.5" />
-            Notes
-          </button>
-          <button
-            onClick={() => setActiveView('tasks')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              activeView === 'tasks'
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-            title="Tasks view"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Tasks
-          </button>
-          <button
-            onClick={() => setActiveView('dashboard')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              activeView === 'dashboard'
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-            title="Dashboard view"
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            Dashboard
-          </button>
-        </div>
+            <PanelRight />
+          </IconButton>
+        )}
       </div>
-    </div>
+    </header>
   );
 }

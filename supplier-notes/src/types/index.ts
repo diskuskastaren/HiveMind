@@ -89,7 +89,7 @@ export interface Decision {
   createdAt: number;
 }
 
-export type RightPanelTab = 'tasks' | 'decisions' | 'transcript';
+export type RightPanelTab = 'tasks' | 'decisions' | 'followups' | 'transcript';
 export type TaskStatus = 'open' | 'doing' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
 export type ActiveView = 'notes' | 'tasks' | 'dashboard';

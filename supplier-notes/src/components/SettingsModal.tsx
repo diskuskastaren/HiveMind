@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  X,
   Bot,
   Mic,
   Video,
@@ -15,25 +14,35 @@ import {
   Upload,
   Trash2,
   Palette,
-  Moon,
-  Sun,
   RefreshCw,
   History,
+  Info,
+  X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
-import { CustomSelect } from './ui/CustomSelect';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 type SettingsTab = 'appearance' | 'ai' | 'recording' | 'teams' | 'releases' | 'data';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'appearance', label: 'Appearance', icon: <Palette className="w-4 h-4" /> },
-  { id: 'ai', label: 'AI & Summarization', icon: <Bot className="w-4 h-4" /> },
-  { id: 'recording', label: 'Recording', icon: <Mic className="w-4 h-4" /> },
-  { id: 'teams', label: 'Teams', icon: <Video className="w-4 h-4" /> },
-  { id: 'releases', label: 'Version history', icon: <History className="w-4 h-4" /> },
-  { id: 'data', label: 'Data & Storage', icon: <Database className="w-4 h-4" /> },
+  { id: 'appearance', label: 'Appearance', icon: <Palette className="size-4" /> },
+  { id: 'ai', label: 'AI & Summarization', icon: <Bot className="size-4" /> },
+  { id: 'recording', label: 'Recording', icon: <Mic className="size-4" /> },
+  { id: 'teams', label: 'Teams', icon: <Video className="size-4" /> },
+  { id: 'releases', label: 'Version history', icon: <History className="size-4" /> },
+  { id: 'data', label: 'Data & Storage', icon: <Database className="size-4" /> },
 ];
 
 const GPT_MODELS = [
@@ -68,70 +77,75 @@ function CostEstimatePanel({ activeModel }: { activeModel: string }) {
   const minutes = 60;
   const whisperCost = minutes * WHISPER_COST_PER_MIN;
   return (
-    <div className="rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 space-y-2.5">
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        Estimated cost — 1 hour meeting
-      </p>
-
-      {/* Column headers */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide px-2">
-        <span>Model</span>
-        <span className="text-right">Transcription</span>
-        <span className="text-right">Summary</span>
-        <span className="text-right">Total</span>
-      </div>
-
-      {/* Per-model rows */}
-      <div className="space-y-0.5">
+    <div className="flex flex-col gap-2 rounded-lg border bg-sidebar p-3.5">
+      <p className="text-xs font-semibold">Estimated cost — 1 hour meeting</p>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-4 gap-y-1 text-xs">
+        <span className="text-muted-foreground">Model</span>
+        <span className="text-right text-muted-foreground">Transcription</span>
+        <span className="text-right text-muted-foreground">Summary</span>
+        <span className="text-right text-muted-foreground">Total</span>
         {GPT_MODELS.map((m) => {
           const { gptCost, total } = estimateMeetingCost(m.value, minutes);
           const isActive = m.value === activeModel;
           const summaryLabel = gptCost < 0.01 ? '<$0.01' : `$${gptCost.toFixed(2)}`;
+          const tone = isActive ? 'text-foreground' : 'text-muted-foreground';
           return (
-            <div
-              key={m.value}
-              className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center text-xs rounded px-2 py-1.5 -mx-2 transition-colors ${
-                isActive ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              <span className={`truncate ${isActive ? 'font-medium' : ''}`}>{m.label}</span>
-              <span className={`font-mono text-right ${isActive ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
-                ${whisperCost.toFixed(2)}
-              </span>
-              <span className={`font-mono text-right ${isActive ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
-                {summaryLabel}
-              </span>
-              <span className={`font-mono text-right font-semibold ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                ${total.toFixed(2)}
-              </span>
+            <div key={m.value} className="contents">
+              <span className={cn('truncate', tone, isActive && 'font-medium')}>{m.label}</span>
+              <span className={cn('text-right font-mono', tone)}>${whisperCost.toFixed(2)}</span>
+              <span className={cn('text-right font-mono', tone)}>{summaryLabel}</span>
+              <span className={cn('text-right font-mono font-semibold', tone)}>${total.toFixed(2)}</span>
             </div>
           );
         })}
       </div>
-
-      <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed pt-0.5">
+      <p className="text-2xs leading-relaxed text-muted-foreground">
         Transcription cost is the same regardless of model. Mic mode uses browser speech recognition — no transcription charge. Transcription via Groq Whisper Large V3 Turbo ($0.04/hr). Summary prices from openai.com/api/pricing, ~100 wpm assumed.
       </p>
     </div>
   );
 }
 
-function SettingRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function SettingRow({ label, hint, htmlFor, children }: { label: string; hint?: React.ReactNode; htmlFor?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={htmlFor} className="text-ui">
+        {label}
+      </Label>
       {children}
-      {hint && <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">{hint}</p>}
+      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider pt-2">{children}</h3>;
+function SectionHeading({ children, aside }: { children: React.ReactNode; aside?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <h3 className="text-sm font-semibold">{children}</h3>
+      {aside && <span className="text-xs text-muted-foreground">{aside}</span>}
+    </div>
+  );
 }
 
 function Divider() {
-  return <div className="border-t border-gray-100 dark:border-gray-800" />;
+  return <div className="h-px bg-border" />;
+}
+
+function KeyStatus({ status, error, saved, savedLabel }: { status: 'idle' | 'testing' | 'ok' | 'error'; error: string; saved: boolean; savedLabel: string }) {
+  if (status === 'error' && error) return <p className="text-xs text-destructive">{error}</p>;
+  if (status === 'ok')
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-success">
+        <Check className="size-3.5" /> Key is valid and saved
+      </p>
+    );
+  if (saved)
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-success">
+        <Check className="size-3.5" /> {savedLabel}
+      </p>
+    );
+  return null;
 }
 
 export function SettingsModal() {
@@ -140,6 +154,7 @@ export function SettingsModal() {
   const toggleSettings = useStore((s) => s.toggleSettings);
   const getExportData = useStore((s) => s.getExportData);
   const importData = useStore((s) => s.importData);
+  const openConfirmDialog = useStore((s) => s.openConfirmDialog);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -271,9 +286,9 @@ export function SettingsModal() {
       try {
         const data = JSON.parse(ev.target?.result as string);
         importData(data);
-        alert('Data imported successfully!');
+        toast.success('Data imported successfully');
       } catch {
-        alert('Invalid backup file. Please select a valid supplier-notes backup JSON.');
+        toast.error('Invalid backup file', { description: 'Please select a valid Combobulator backup JSON.' });
       }
     };
     reader.readAsText(file);
@@ -304,16 +319,22 @@ export function SettingsModal() {
     }
   };
 
-  const handleResetDataDir = async () => {
+  const handleResetDataDir = () => {
     const electronStore = (window as any).electronStore;
     if (!electronStore?.resetDataDir) return;
-    if (!confirm('Reset data folder to the default location? The app will restart.')) return;
-    setDataDirChanging(true);
-    try {
-      await electronStore.resetDataDir();
-    } finally {
-      setDataDirChanging(false);
-    }
+    openConfirmDialog({
+      title: 'Reset data folder?',
+      message: 'Reset the data folder to the default location? The app will restart.',
+      confirmLabel: 'Reset folder',
+      onConfirm: async () => {
+        setDataDirChanging(true);
+        try {
+          await electronStore.resetDataDir();
+        } finally {
+          setDataDirChanging(false);
+        }
+      },
+    });
   };
 
   const handleCheckForUpdates = async () => {
@@ -346,441 +367,384 @@ export function SettingsModal() {
     toggleSettings();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') toggleSettings();
-  };
+  const keyInput = (
+    id: string,
+    value: string,
+    setValue: (v: string) => void,
+    onSave: () => void,
+    show: boolean,
+    setShow: (fn: (v: boolean) => boolean) => void,
+    placeholder: string,
+    status: 'idle' | 'testing' | 'ok' | 'error',
+    onTest: () => void,
+  ) => (
+    <div className="flex gap-2">
+      <div className="relative flex-1">
+        <Input
+          id={id}
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={onSave}
+          placeholder={placeholder}
+          className="pr-9 font-mono text-ui"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          aria-label={show ? 'Hide key' : 'Show key'}
+          className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+        </button>
+      </div>
+      <Button variant="outline" onClick={onTest} disabled={!value.trim() || status === 'testing'}>
+        {status === 'testing' && <Loader2 className="animate-spin" />}
+        {status === 'ok' && <Check className="text-success" />}
+        {status === 'error' && <AlertCircle className="text-destructive" />}
+        {status === 'testing' ? 'Testing…' : status === 'ok' ? 'Valid' : status === 'error' ? 'Failed' : 'Test key'}
+      </Button>
+    </div>
+  );
+
+  const rangeRow = (
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (v: number) => void,
+    display: string,
+    label: string,
+  ) => (
+    <div className="flex items-center gap-4">
+      <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} aria-label={label} className="flex-1" />
+      <span className="w-12 text-right font-mono text-ui">{display}</span>
+    </div>
+  );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      onKeyDown={handleKeyDown}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={toggleSettings} />
-
-      {/* Modal panel */}
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex w-[740px] h-[85vh] overflow-hidden">
-
+    <Dialog open onOpenChange={(open) => !open && toggleSettings()}>
+      <DialogContent showCloseButton={false} className="flex h-[85vh] max-h-[720px] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogDescription className="sr-only">Application settings</DialogDescription>
         {/* Left nav */}
-        <div className="w-48 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col py-5 flex-shrink-0">
-          <div className="px-5 pb-4">
-            <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Settings</span>
-          </div>
-          <nav className="flex flex-col gap-0.5 px-2">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100 font-medium'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-          <div className="mt-auto px-5 pt-4">
-            <span className="text-xs text-gray-400 dark:text-gray-500">v{version}</span>
-          </div>
-        </div>
+        <nav aria-label="Settings sections" className="flex w-56 shrink-0 flex-col gap-0.5 border-r bg-sidebar px-2.5 py-4">
+          <DialogTitle className="px-2 pb-3 text-base font-semibold">Settings</DialogTitle>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={cn(
+                'flex h-8 items-center gap-2.5 rounded-md px-2 text-left text-ui whitespace-nowrap text-subtle-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground [&_svg]:text-muted-foreground',
+                activeTab === tab.id && 'bg-sidebar-accent font-medium text-foreground [&_svg]:text-primary',
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+          <span className="mt-auto px-2 font-mono text-2xs text-muted-foreground">Combobulator v{version}</span>
+        </nav>
 
         {/* Content area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
-            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              {TABS.find((t) => t.id === activeTab)?.label}
-            </h2>
-            <button
-              onClick={toggleSettings}
-              className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b pr-4 pl-7">
+            <h2 className="text-base font-semibold">{TABS.find((t) => t.id === activeTab)?.label}</h2>
+            <Button variant="ghost" size="icon-sm" onClick={toggleSettings} aria-label="Close settings" className="text-muted-foreground">
+              <X />
+            </Button>
+          </header>
 
-          {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-5">
-
-            {/* ── Appearance tab ──────────────────────────────────── */}
+          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-7 py-6">
+            {/* ── Appearance ── */}
             {activeTab === 'appearance' && (
-              <>
-                <SectionHeading>Theme</SectionHeading>
-
-                <div className="space-y-2 py-1">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Color theme</p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                    Choose your preferred color scheme. You can also cycle through themes with the icon in the sidebar footer.
-                  </p>
-                  <div className="flex gap-2 pt-1">
-                    {([
-                      { id: 'light',      label: 'Light',      icon: <Sun className="w-4 h-4" /> },
-                      { id: 'dark',       label: 'Dark',       icon: <Moon className="w-4 h-4" /> },
-                      { id: 'ladysucker', label: 'Ladysucker', icon: <img src={import.meta.env.BASE_URL + 'icon.png'} alt="" className="w-4 h-4 object-contain" /> },
-                    ] as const).map(({ id, label, icon }) => {
-                      const active = settings.theme === id;
-                      return (
-                        <button
-                          key={id}
-                          onClick={() => updateSettings({ theme: id })}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                            active
-                              ? 'border-gray-700 dark:border-gray-300 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
-                          }`}
-                        >
-                          {icon}
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">Theme</span>
+                  <span className="text-ui text-muted-foreground">
+                    Light and dark use the same components — only the color tokens change. You can also switch with the icon in the sidebar footer.
+                  </span>
                 </div>
-              </>
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+                  {(
+                    [
+                      { id: 'light', label: 'Light', bg: '#ffffff', side: '#fafafa', line: '#e4e4e7', text: '#18181b', muted: '#d4d4d8', accent: '#4f46e5' },
+                      { id: 'dark', label: 'Dark', bg: '#0a0a0b', side: '#111113', line: '#27272a', text: '#fafafa', muted: '#3f3f46', accent: '#818cf8' },
+                    ] as const
+                  ).map((t) => {
+                    const active = settings.theme === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => updateSettings({ theme: t.id })}
+                        className={cn(
+                          'flex flex-col gap-2.5 rounded-xl border bg-card p-2.5 text-left transition-colors hover:border-border-strong',
+                          active && 'border-primary ring-2 ring-primary/30 hover:border-primary',
+                        )}
+                      >
+                        <span aria-hidden="true" className="flex h-24 overflow-hidden rounded-lg border" style={{ backgroundColor: t.bg, borderColor: t.line }}>
+                          <span className="w-[30%] border-r" style={{ backgroundColor: t.side, borderColor: t.line }} />
+                          <span className="flex flex-1 flex-col gap-1.5 p-3">
+                            <span className="h-2 w-[70%] rounded-sm" style={{ backgroundColor: t.text }} />
+                            <span className="h-1.5 w-[90%] rounded-sm" style={{ backgroundColor: t.muted }} />
+                            <span className="h-1.5 w-[60%] rounded-sm" style={{ backgroundColor: t.muted }} />
+                            <span className="mt-auto h-3 w-9 rounded-sm" style={{ backgroundColor: t.accent }} />
+                          </span>
+                        </span>
+                        <span className="flex items-center justify-between text-ui font-medium">
+                          {t.label}
+                          {active && <Check className="size-4 text-primary" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
-            {/* ── AI tab ─────────────────────────────────────────── */}
+            {/* ── AI & Summarization ── */}
             {activeTab === 'ai' && (
               <>
-                <SectionHeading>Groq API (Transcription)</SectionHeading>
-
-                <div className="rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 space-y-1.5">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">How to get a free Groq key</p>
-                  <ol className="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-decimal list-inside leading-relaxed">
-                    <li>Go to <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-gray-700 dark:hover:text-gray-200">console.groq.com/keys</a></li>
+                <SectionHeading aside="Transcription">Groq API</SectionHeading>
+                <div className="flex flex-col gap-1.5 rounded-lg border bg-sidebar p-3.5 text-xs text-muted-foreground">
+                  <p className="font-semibold text-foreground">How to get a free Groq key</p>
+                  <ol className="list-inside list-decimal space-y-1 leading-relaxed">
+                    <li>
+                      Go to{' '}
+                      <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+                        console.groq.com/keys
+                      </a>
+                    </li>
                     <li>Sign up or log in (free)</li>
-                    <li>Click <strong className="text-gray-600 dark:text-gray-300">Create API Key</strong>, copy it</li>
-                    <li>Paste it below — starts with <code className="font-mono">gsk_</code></li>
+                    <li>
+                      Click <strong className="text-foreground">Create API Key</strong>, copy it
+                    </li>
+                    <li>
+                      Paste it below — starts with <code className="font-mono">gsk_</code>
+                    </li>
                   </ol>
-                  <p className="text-[10px] text-gray-400 dark:text-gray-500">Free tier: ~8 hrs of transcription/day.</p>
+                  <p className="text-2xs">Free tier: ~8 hrs of transcription/day.</p>
                 </div>
-
                 <SettingRow
-                  label="Groq API Key"
+                  label="Groq API key"
+                  htmlFor="groq-key"
                   hint="Used for system audio transcription via Groq Whisper. Stored locally — never sent anywhere except Groq."
                 >
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={showGroqKey ? 'text' : 'password'}
-                        value={groqKeyDraft}
-                        onChange={(e) => setGroqKeyDraft(e.target.value)}
-                        onBlur={saveGroqKey}
-                        placeholder="gsk_…"
-                        className="w-full pr-9 pl-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowGroqKey((v) => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
-                      >
-                        {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleTestGroqKey}
-                      disabled={!groqKeyDraft.trim() || groqTestStatus === 'testing'}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                    >
-                      {groqTestStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      {groqTestStatus === 'ok' && <Check className="w-3.5 h-3.5 text-green-500" />}
-                      {groqTestStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
-                      {groqTestStatus === 'idle' && null}
-                      {groqTestStatus === 'testing' ? 'Testing…' : groqTestStatus === 'ok' ? 'Valid!' : groqTestStatus === 'error' ? 'Failed' : 'Test key'}
-                    </button>
-                  </div>
-                  {groqTestStatus === 'error' && groqTestError && (
-                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">{groqTestError}</p>
-                  )}
-                  {settings.groqApiKey && groqTestStatus !== 'ok' && (
-                    <p className="text-xs text-green-600 dark:text-green-400">✓ Groq key saved</p>
-                  )}
+                  {keyInput('groq-key', groqKeyDraft, setGroqKeyDraft, saveGroqKey, showGroqKey, setShowGroqKey, 'gsk_…', groqTestStatus, handleTestGroqKey)}
+                  <KeyStatus status={groqTestStatus} error={groqTestError} saved={!!settings.groqApiKey} savedLabel="Groq key saved" />
                 </SettingRow>
 
                 <Divider />
-                <SectionHeading>OpenAI API (Summarization)</SectionHeading>
-
+                <SectionHeading aside="Summarization">OpenAI API</SectionHeading>
                 <SettingRow
-                  label="OpenAI API Key"
+                  label="OpenAI API key"
+                  htmlFor="openai-key"
                   hint="Used for generating meeting summaries. Stored locally — never sent anywhere except OpenAI."
                 >
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={showApiKey ? 'text' : 'password'}
-                        value={apiKeyDraft}
-                        onChange={(e) => setApiKeyDraft(e.target.value)}
-                        onBlur={saveApiKey}
-                        placeholder="sk-…"
-                        className="w-full pr-9 pl-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey((v) => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
-                      >
-                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleTestApiKey}
-                      disabled={!apiKeyDraft.trim() || testStatus === 'testing'}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                    >
-                      {testStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      {testStatus === 'ok' && <Check className="w-3.5 h-3.5 text-green-500" />}
-                      {testStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
-                      {testStatus === 'idle' && null}
-                      {testStatus === 'testing' ? 'Testing…' : testStatus === 'ok' ? 'Valid!' : testStatus === 'error' ? 'Failed' : 'Test key'}
-                    </button>
-                  </div>
-                  {testStatus === 'error' && testError && (
-                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">{testError}</p>
-                  )}
-                  {settings.openaiApiKey && testStatus !== 'ok' && (
-                    <p className="text-xs text-green-600 dark:text-green-400">✓ API key saved</p>
-                  )}
+                  {keyInput('openai-key', apiKeyDraft, setApiKeyDraft, saveApiKey, showApiKey, setShowApiKey, 'sk-…', testStatus, handleTestApiKey)}
+                  <KeyStatus status={testStatus} error={testError} saved={!!settings.openaiApiKey} savedLabel="API key saved" />
                 </SettingRow>
 
                 <Divider />
                 <SectionHeading>Summarization</SectionHeading>
-
-                <SettingRow label="GPT Model" hint="gpt-4o-mini is recommended — fast and cheap. Use gpt-4o for higher-quality summaries.">
-                  <CustomSelect
-                    value={settings.gptModel}
-                    onChange={(v) => updateSettings({ gptModel: v })}
-                    className="w-full px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300"
-                    options={GPT_MODELS}
-                  />
+                <SettingRow label="GPT model" htmlFor="gpt-model" hint="gpt-4o-mini is recommended — fast and cheap. Use gpt-4o for higher-quality summaries.">
+                  <Select value={settings.gptModel} onValueChange={(v) => updateSettings({ gptModel: v })}>
+                    <SelectTrigger id="gpt-model" className="w-full max-w-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GPT_MODELS.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </SettingRow>
 
                 <CostEstimatePanel activeModel={settings.gptModel} />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <SettingRow
-                    label="Temperature"
-                    hint="Controls how the AI writes the summary. Lower = sticks closely to what was said. Higher = more varied phrasing. For meeting notes, keep this low."
-                  >
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={settings.temperature}
-                          onChange={(e) => updateSettings({ temperature: Math.max(0, Math.min(1, Number(e.target.value))) })}
-                          className="flex-1"
-                        />
-                        <span className="text-sm font-mono font-medium text-gray-700 dark:text-gray-300 w-8 text-right">
-                          {settings.temperature.toFixed(2).replace(/\.?0+$/, '') || '0'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500">
-                        <span>0 — always the same</span>
-                        <span>1 — more varied</span>
-                      </div>
-                      <span
-                        className={`self-start text-xs font-medium px-2 py-0.5 rounded-full ${
-                          settings.temperature <= 0.3
-                            ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                            : settings.temperature <= 0.6
-                            ? 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400'
-                            : 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'
-                        }`}
-                      >
-                        {settings.temperature <= 0.3
-                          ? '✓ Good for meeting notes'
-                          : settings.temperature <= 0.6
-                          ? 'Balanced'
-                          : 'More creative — summaries may vary'}
-                      </span>
+                <SettingRow
+                  label="Temperature"
+                  hint="Controls how the AI writes the summary. Lower = sticks closely to what was said. Higher = more varied phrasing. For meeting notes, keep this low."
+                >
+                  <div className="flex max-w-md flex-col gap-2">
+                    {rangeRow(
+                      settings.temperature,
+                      0,
+                      1,
+                      0.05,
+                      (v) => updateSettings({ temperature: Math.max(0, Math.min(1, v)) }),
+                      settings.temperature.toFixed(2).replace(/\.?0+$/, '') || '0',
+                      'Temperature',
+                    )}
+                    <div className="flex justify-between text-2xs text-muted-foreground">
+                      <span>0 — always the same</span>
+                      <span>1 — more varied</span>
                     </div>
-                  </SettingRow>
-                </div>
+                    <span
+                      className={cn(
+                        'inline-flex h-5 items-center self-start rounded-full px-2 text-2xs font-medium',
+                        settings.temperature <= 0.3
+                          ? 'bg-success-soft text-success'
+                          : settings.temperature <= 0.6
+                            ? 'bg-warning-soft text-warning'
+                            : 'bg-recording-soft text-recording',
+                      )}
+                    >
+                      {settings.temperature <= 0.3 ? 'Good for meeting notes' : settings.temperature <= 0.6 ? 'Balanced' : 'More creative — summaries may vary'}
+                    </span>
+                  </div>
+                </SettingRow>
 
                 <SettingRow
                   label="Custom summary instructions"
+                  htmlFor="custom-instructions"
                   hint='Appended to the system prompt. E.g. "Always respond in French" or "Focus on pricing and delivery risks".'
                 >
-                  <textarea
+                  <Textarea
+                    id="custom-instructions"
                     value={settings.customSummaryInstructions}
                     onChange={(e) => updateSettings({ customSummaryInstructions: e.target.value })}
                     placeholder="Optional extra instructions for the AI…"
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
                   />
                 </SettingRow>
               </>
             )}
 
-            {/* ── Recording tab ───────────────────────────────────── */}
+            {/* ── Recording ── */}
             {activeTab === 'recording' && (
               <>
                 <SectionHeading>Audio</SectionHeading>
-
                 <SettingRow label="Default audio source" hint="The mode pre-selected when opening the recording screen.">
-                  <div className="flex gap-2">
-                    {(['mic', 'system'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => updateSettings({ defaultAudioMode: m })}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm rounded-lg border transition-colors ${
-                          settings.defaultAudioMode === m
-                            ? 'bg-gray-100 dark:bg-white/10 border-gray-400 dark:border-white/30 text-gray-900 dark:text-white font-medium'
-                            : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                        }`}
-                      >
-                        <Mic className="w-3.5 h-3.5" />
-                        {m === 'mic' ? 'Mic only' : 'All audio (system)'}
-                      </button>
-                    ))}
-                  </div>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={settings.defaultAudioMode}
+                    onValueChange={(v) => v && updateSettings({ defaultAudioMode: v as 'mic' | 'system' })}
+                    className="self-start"
+                    aria-label="Default audio source"
+                  >
+                    <ToggleGroupItem value="mic" className="px-4">
+                      <Mic /> Mic only
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="system" className="px-4">
+                      <Mic /> All audio (system)
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </SettingRow>
 
                 <Divider />
                 <SectionHeading>Transcription</SectionHeading>
-
-                <SettingRow
-                  label="Chunk interval (seconds)"
-                  hint="How often audio is sent for transcription. Shorter = more real-time but more API calls."
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min={15}
-                      max={120}
-                      step={15}
-                      value={settings.chunkIntervalSeconds}
-                      onChange={(e) => updateSettings({ chunkIntervalSeconds: Number(e.target.value) })}
-                      className="flex-1"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-12 text-right">
-                      {settings.chunkIntervalSeconds}s
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 -mt-1">
-                    <span>15s (real-time)</span>
-                    <span>120s (fewer calls)</span>
+                <SettingRow label="Chunk interval" hint="How often audio is sent for transcription. Shorter = more real-time but more API calls.">
+                  <div className="flex max-w-md flex-col gap-1.5">
+                    {rangeRow(
+                      settings.chunkIntervalSeconds,
+                      15,
+                      120,
+                      15,
+                      (v) => updateSettings({ chunkIntervalSeconds: v }),
+                      `${settings.chunkIntervalSeconds}s`,
+                      'Chunk interval in seconds',
+                    )}
+                    <div className="flex justify-between text-2xs text-muted-foreground">
+                      <span>15s (real-time)</span>
+                      <span>120s (fewer calls)</span>
+                    </div>
                   </div>
                 </SettingRow>
-
-                <SettingRow
-                  label="Auto-stop after (hours)"
-                  hint="Recording automatically stops after this duration as a safety net."
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min={1}
-                      max={8}
-                      step={1}
-                      value={settings.autoStopHours}
-                      onChange={(e) => updateSettings({ autoStopHours: Number(e.target.value) })}
-                      className="flex-1"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-12 text-right">
-                      {settings.autoStopHours}h
-                    </span>
+                <SettingRow label="Auto-stop after" hint="Recording automatically stops after this duration as a safety net.">
+                  <div className="max-w-md">
+                    {rangeRow(
+                      settings.autoStopHours,
+                      1,
+                      8,
+                      1,
+                      (v) => updateSettings({ autoStopHours: v }),
+                      `${settings.autoStopHours}h`,
+                      'Auto-stop after hours',
+                    )}
                   </div>
                 </SettingRow>
               </>
             )}
 
-            {/* ── Teams tab ───────────────────────────────────────── */}
+            {/* ── Teams ── */}
             {activeTab === 'teams' && (
               <>
-                <SectionHeading>Microsoft Teams Integration</SectionHeading>
-
-                <div className="flex items-start justify-between gap-4 py-1">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Teams meeting detection</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
+                <div className="flex items-start gap-4 rounded-lg border p-4">
+                  <Label htmlFor="teams-enabled" className="flex flex-1 flex-col items-start gap-1">
+                    <span className="text-sm font-medium">Teams meeting detection</span>
+                    <span className="text-ui leading-relaxed font-normal text-muted-foreground">
                       When enabled, the app detects when you join a Teams meeting and shows a prompt to start recording.
-                    </p>
-                  </div>
-                  <button
-                    role="switch"
-                    aria-checked={settings.teamsEnabled}
-                    onClick={() => updateSettings({ teamsEnabled: !settings.teamsEnabled })}
-                    className={`flex-shrink-0 relative w-10 h-6 rounded-full transition-colors ${
-                      settings.teamsEnabled ? 'bg-gray-700 dark:bg-gray-300' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                        settings.teamsEnabled ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
+                    </span>
+                  </Label>
+                  <Switch id="teams-enabled" checked={settings.teamsEnabled} onCheckedChange={(v) => updateSettings({ teamsEnabled: v })} />
                 </div>
-
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg p-3 text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                  <strong>Note:</strong> Changes to Teams integration take effect after restarting the app.
+                <div role="note" className="flex gap-2.5 rounded-lg bg-warning-soft px-3.5 py-3 text-ui text-warning">
+                  <Info className="mt-0.5 size-4 shrink-0" />
+                  <span>Changes to Teams integration take effect after restarting the app.</span>
                 </div>
-
                 <Divider />
-
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">How to set up Teams integration</p>
-                  <ol className="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-decimal list-inside leading-relaxed">
-                    <li>Open Microsoft Teams → Settings → Privacy</li>
-                    <li>Enable <strong>Third-party app API</strong></li>
-                    <li>Restart this app — it will pair automatically when you join a meeting</li>
-                  </ol>
+                <div className="flex flex-col gap-3">
+                  <SectionHeading>How to set up Teams integration</SectionHeading>
+                  {[
+                    'Open Microsoft Teams → Settings → Privacy',
+                    <>
+                      Enable <strong>Third-party app API</strong>
+                    </>,
+                    'Restart this app — it will pair automatically when you join a meeting',
+                  ].map((step, i) => (
+                    <div key={i} className="flex items-start gap-3 text-ui">
+                      <span className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-2xs font-semibold text-subtle-foreground">
+                        {i + 1}
+                      </span>
+                      <span className="pt-0.5">{step}</span>
+                    </div>
+                  ))}
                 </div>
               </>
             )}
 
-            {/* ── Version history tab (GitHub releases, read-only) ─── */}
+            {/* ── Version history (GitHub releases, read-only) ── */}
             {activeTab === 'releases' && (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <SectionHeading>Release notes</SectionHeading>
-                  <button
-                    onClick={fetchGithubReleases}
-                    disabled={githubReleasesLoading}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${githubReleasesLoading ? 'animate-spin' : ''}`} />
+                  <p className="text-ui text-muted-foreground">Fetched from GitHub. Only published releases are shown.</p>
+                  <Button variant="outline" size="sm" onClick={fetchGithubReleases} disabled={githubReleasesLoading}>
+                    <RefreshCw className={githubReleasesLoading ? 'animate-spin' : undefined} />
                     {githubReleasesLoading ? 'Loading…' : 'Refresh'}
-                  </button>
+                  </Button>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
-                  Fetched from GitHub. Only published releases are shown.
-                </p>
 
                 {githubReleasesError && (
-                  <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2.5 text-sm text-red-700 dark:text-red-300">
-                    {githubReleasesError}
-                  </div>
+                  <div className="rounded-lg bg-recording-soft px-3.5 py-3 text-ui text-recording">{githubReleasesError}</div>
                 )}
-
                 {!githubReleasesError && githubReleasesLoading && githubReleases.length === 0 && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading releases…</p>
+                  <p className="text-ui text-muted-foreground">Loading releases…</p>
                 )}
-
                 {!githubReleasesError && !githubReleasesLoading && githubReleases.length === 0 && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No releases found.</p>
+                  <p className="text-ui text-muted-foreground">No releases found.</p>
                 )}
-
-                {!githubReleasesError && (githubReleases.length > 0 || githubReleasesLoading) && (
-                  <div className="space-y-3">
+                {!githubReleasesError && githubReleases.length > 0 && (
+                  <div className="flex flex-col gap-3">
                     {githubReleases.map((r) => (
-                      <div key={r.tag_name} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{r.tag_name}</p>
-                        {r.published_at && (
-                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
-                            {new Date(r.published_at).toLocaleString()}
-                          </p>
-                        )}
+                      <div key={r.tag_name} className="flex flex-col gap-1.5 rounded-lg border px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-ui font-semibold">{r.tag_name}</span>
+                          {r.tag_name.replace(/^v/, '') === version && (
+                            <span className="inline-flex h-5 items-center rounded-full bg-success-soft px-2 text-2xs font-medium text-success">Installed</span>
+                          )}
+                        </div>
+                        {r.published_at && <p className="text-2xs text-muted-foreground">{new Date(r.published_at).toLocaleString()}</p>}
                         {r.body ? (
-                          <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed mt-2 whitespace-pre-wrap">{r.body}</p>
+                          <p className="text-ui leading-relaxed whitespace-pre-wrap text-subtle-foreground">{r.body}</p>
                         ) : (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 italic">No release notes.</p>
+                          <p className="text-xs text-muted-foreground italic">No release notes.</p>
                         )}
                       </div>
                     ))}
@@ -789,153 +753,102 @@ export function SettingsModal() {
               </>
             )}
 
-            {/* ── Data tab ────────────────────────────────────────── */}
+            {/* ── Data & Storage ── */}
             {activeTab === 'data' && (
               <>
-                <SectionHeading>Backup & Restore</SectionHeading>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={handleExport}
-                    className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 transition-colors"
-                  >
-                    <Download className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                    Export backup
-                  </button>
-
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 transition-colors"
-                  >
-                    <Upload className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                    Import backup
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={handleImport}
-                  />
-                </div>
-
-                <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                  Exports all projects, suppliers, notes, tasks, decisions, and follow-ups as a JSON file.
-                  Settings (including your API key) are not included in the export.
-                </p>
-
-                <Divider />
-                <SectionHeading>Storage</SectionHeading>
-
-                {/* Current data folder path */}
-                {currentDataDir && (
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
-                    <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Current data folder</p>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 font-mono break-all leading-relaxed">{currentDataDir}</p>
+                <div className="flex flex-col gap-3">
+                  <SectionHeading>Backup &amp; restore</SectionHeading>
+                  <p className="text-ui text-muted-foreground">
+                    Exports all projects, suppliers, notes, tasks, decisions, and follow-ups as a JSON file. Settings (including your API keys) are not included.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handleExport}>
+                      <Download /> Export backup
+                    </Button>
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                      <Upload /> Import backup
+                    </Button>
+                    <input ref={fileInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImport} />
                   </div>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleOpenFolder}
-                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 transition-colors flex-1"
-                  >
-                    <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                    Open folder
-                  </button>
-
-                  {(window as any).electronStore?.changeDataDir && (
-                    <button
-                      onClick={handleChangeDataDir}
-                      disabled={dataDirChanging}
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-1"
-                    >
-                      <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                      {dataDirChanging ? 'Changing…' : 'Change folder…'}
-                    </button>
-                  )}
                 </div>
 
-                <p className="text-xs text-gray-400 dark:text-gray-500 -mt-2 leading-relaxed">
-                  Changing the folder copies your existing data to the new location and restarts the app.
-                  Point both computers to the same shared drive to access your data from anywhere.
-                </p>
-
-                {isCustomDataDir && (window as any).electronStore?.resetDataDir && (
-                  <button
-                    onClick={handleResetDataDir}
-                    disabled={dataDirChanging}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Reset to default folder
-                  </button>
-                )}
-
                 <Divider />
+                <div className="flex flex-col gap-3">
+                  <SectionHeading>Storage</SectionHeading>
+                  {currentDataDir && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">Current data folder</span>
+                      <code className="block rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-subtle-foreground">{currentDataDir}</code>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={handleOpenFolder}>
+                      <FolderOpen /> Open folder
+                    </Button>
+                    {(window as any).electronStore?.changeDataDir && (
+                      <Button variant="outline" size="sm" onClick={handleChangeDataDir} disabled={dataDirChanging}>
+                        <FolderOpen /> {dataDirChanging ? 'Changing…' : 'Change folder…'}
+                      </Button>
+                    )}
+                    {isCustomDataDir && (window as any).electronStore?.resetDataDir && (
+                      <Button variant="ghost" size="sm" onClick={handleResetDataDir} disabled={dataDirChanging} className="text-muted-foreground">
+                        Reset to default folder
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Changing the folder copies your existing data to the new location and restarts the app. Point both computers to the same shared drive to access your data from anywhere.
+                  </p>
+                </div>
+
                 {(window as any).electronUpdater && (
                   <>
-                    <SectionHeading>Application</SectionHeading>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={handleCheckForUpdates}
-                          disabled={updateCheckStatus === 'checking'}
-                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          <RefreshCw className={`w-4 h-4 text-gray-500 dark:text-gray-400 ${updateCheckStatus === 'checking' ? 'animate-spin' : ''}`} />
-                          Check for updates
-                        </button>
-                        {updateCheckStatus === 'checking' && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">Checking…</span>
-                        )}
-                        {updateCheckStatus === 'up-to-date' && (
-                          <span className="text-xs text-green-500 dark:text-green-400">You're up to date</span>
-                        )}
-                        {updateCheckStatus === 'available' && (
-                          <span className="text-xs text-blue-500 dark:text-blue-400">Update available — downloading…</span>
-                        )}
-                        {updateCheckStatus === 'error' && (
-                          <span className="text-xs text-red-400">Could not check for updates</span>
-                        )}
-                      </div>
-                      <span className="text-xs text-gray-400 dark:text-gray-500">v{version}</span>
-                    </div>
                     <Divider />
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3">
+                      <div className="flex flex-1 flex-col gap-0.5">
+                        <span className="text-sm font-medium">Application</span>
+                        <span className="flex items-center gap-1.5 text-ui text-muted-foreground">
+                          <span className="font-mono">v{version}</span>
+                          {updateCheckStatus === 'checking' && <span>· Checking…</span>}
+                          {updateCheckStatus === 'up-to-date' && <span className="text-success">· You’re up to date</span>}
+                          {updateCheckStatus === 'available' && <span className="text-primary">· Update available — downloading…</span>}
+                          {updateCheckStatus === 'error' && <span className="text-destructive">· Could not check for updates</span>}
+                        </span>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={handleCheckForUpdates} disabled={updateCheckStatus === 'checking'}>
+                        <RefreshCw className={updateCheckStatus === 'checking' ? 'animate-spin' : undefined} />
+                        Check for updates
+                      </Button>
+                    </div>
                   </>
                 )}
 
-                {/* Danger zone */}
-                <div className="border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-3">
+                <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-recording-soft p-4">
                   <div className="flex items-center gap-2">
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                    <p className="text-sm font-semibold text-red-600 dark:text-red-400">Danger zone</p>
+                    <Trash2 className="size-4 text-destructive" />
+                    <p className="text-sm font-semibold text-destructive">Danger zone</p>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                    Permanently deletes all projects, suppliers, notes, tasks, decisions, and follow-ups.
-                    <strong> This cannot be undone.</strong> Export a backup first.
+                  <p className="text-ui leading-relaxed text-subtle-foreground">
+                    Permanently deletes all projects, suppliers, notes, tasks, decisions, and follow-ups. <strong>This cannot be undone.</strong> Export a backup first.
                   </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
+                  <div className="flex flex-wrap gap-2">
+                    <Input
                       value={clearConfirm}
+                      aria-label="Type DELETE to confirm"
                       onChange={(e) => setClearConfirm(e.target.value)}
-                      placeholder='Type DELETE to confirm'
-                      className="flex-1 px-3 py-1.5 text-sm border border-red-200 dark:border-red-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-300 dark:placeholder-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                      placeholder="Type DELETE to confirm"
+                      className="max-w-60 bg-background"
                     />
-                    <button
-                      onClick={handleClearData}
-                      disabled={clearConfirm !== 'DELETE'}
-                      className="px-4 py-1.5 text-sm font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
+                    <Button variant="destructive" onClick={handleClearData} disabled={clearConfirm !== 'DELETE'}>
                       Clear all data
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+      </DialogContent>
+    </Dialog>
   );
 }

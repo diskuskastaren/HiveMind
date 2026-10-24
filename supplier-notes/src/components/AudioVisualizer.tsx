@@ -37,7 +37,7 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
     if (!stream) {
       // Only draw idle bars if levels aren't supplying live data either.
       if (!levels?.length) {
-        drawBars(ctx, canvas.width, canvas.height, new Uint8Array(BAR_COUNT).fill(0));
+        drawBars(ctx, canvas.width, canvas.height, new Uint8Array(BAR_COUNT).fill(0), recordingColor(canvas));
       }
       return cleanup;
     }
@@ -71,7 +71,7 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
           canvas.height = rect.height * dpr;
           ctx.scale(dpr, dpr);
         }
-        drawBars(ctx, rect.width, rect.height, dataArray);
+        drawBars(ctx, rect.width, rect.height, dataArray, recordingColor(canvas));
       };
 
       draw();
@@ -100,7 +100,7 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
     }
-    drawBars(ctx, rect.width, rect.height, new Uint8Array(levels));
+    drawBars(ctx, rect.width, rect.height, new Uint8Array(levels), recordingColor(canvas));
   }, [levels, stream]);
 
   return (
@@ -112,11 +112,17 @@ export function AudioVisualizer({ stream, levels }: AudioVisualizerProps) {
   );
 }
 
+/** The --recording design token, so the bars follow the light/dark theme. */
+function recordingColor(el: Element): string {
+  return getComputedStyle(el).getPropertyValue('--recording').trim() || '#dc2626';
+}
+
 function drawBars(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   data: Uint8Array,
+  color: string,
 ) {
   ctx.clearRect(0, 0, width, height);
 
@@ -142,13 +148,14 @@ function drawBars(
     const y = (height - barH) / 2; // vertically centred
 
     // Color: low amplitude → muted pink, high → vivid red
-    const alpha = 0.25 + normalised * 0.75;
-    ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`; // tailwind red-500
+    ctx.globalAlpha = 0.25 + normalised * 0.75;
+    ctx.fillStyle = color;
 
     const radius = Math.max(0, Math.min(barWidth / 2, 3));
     roundRect(ctx, x, y, barWidth, barH, radius);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 }
 
 function roundRect(

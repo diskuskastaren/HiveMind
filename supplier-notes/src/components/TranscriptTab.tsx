@@ -14,7 +14,13 @@ import {
   Mail,
   ChevronRight,
   Pencil,
+  Sparkles,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useStore } from '../store/store';
 import { useTranscription, type TranscriptionMode } from '../hooks/useTranscription';
@@ -37,13 +43,13 @@ function renderSummary(md: string) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/^## (.+)$/gm, '<p class="font-semibold text-gray-800 dark:text-gray-200 mt-3 mb-1 first:mt-0">$1</p>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-gray-700 dark:text-gray-300 leading-snug">$1</li>')
+    .replace(/^## (.+)$/gm, '<p class="font-semibold mt-3 mb-1 first:mt-0">$1</p>')
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc leading-snug text-subtle-foreground">$1</li>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   return { __html: html };
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
@@ -51,13 +57,10 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button
-      onClick={handleCopy}
-      className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-    >
-      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-      {copied ? 'Copied' : 'Copy'}
-    </button>
+    <Button variant="outline" size="xs" onClick={handleCopy}>
+      {copied ? <Check className="text-success" /> : <Copy />}
+      {copied ? 'Copied' : label}
+    </Button>
   );
 }
 
@@ -165,244 +168,145 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   }, [transcript.id]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2 flex-shrink-0">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-        </button>
-        <span className="text-[10px] text-gray-400 dark:text-gray-500">
-          {transcript.duration != null ? formatDuration(transcript.duration) : '–'}
-          {transcript.recordedAt
-            ? ` · ${format(new Date(transcript.recordedAt), 'MMM d, HH:mm')}`
-            : ''}
-        </span>
-        <div className="flex-1" />
-        <button
-          onClick={handleDelete}
-          className="p-1 text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 rounded transition-colors"
-          title="Delete this recording"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 border-b px-2 py-2.5">
+        <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to recordings">
+          <ChevronLeft />
+        </Button>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="text-ui font-semibold">
+            {transcript.recordedAt ? format(new Date(transcript.recordedAt), 'MMM d · HH:mm') : 'Recording'}
+          </span>
+          <span className="font-mono text-2xs text-muted-foreground">
+            {transcript.duration != null ? formatDuration(transcript.duration) : '–'}
+          </span>
+        </div>
+        <Button variant="ghost" size="icon-sm" onClick={handleDelete} title="Delete this recording" aria-label="Delete this recording" className="text-muted-foreground hover:text-destructive">
+          <Trash2 />
+        </Button>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="flex border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-        {(['summary', 'raw'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setSubTab(t)}
-            className={`flex-1 py-2 text-xs font-medium transition-colors ${
-              subTab === t
-                ? 'text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white'
-                : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-            }`}
-          >
-            {t === 'summary' ? 'Summary' : 'Raw Transcript'}
-          </button>
-        ))}
-      </div>
+      <Tabs value={subTab} onValueChange={(v) => setSubTab(v as 'summary' | 'raw')} className="px-3 pt-3">
+        <TabsList className="w-full">
+          <TabsTrigger value="summary" className="text-xs">
+            {isSummarizing ? <RefreshCw className="size-3 animate-spin text-ai" /> : <Sparkles className="size-3 text-ai" />}
+            {isSummarizing ? 'Summarizing…' : 'Summary'}
+          </TabsTrigger>
+          <TabsTrigger value="raw" className="text-xs">
+            Transcript
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="px-4 py-4 text-ui leading-relaxed">
         {subTab === 'summary' && (
           <>
             {isSummarizing && (
-              <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                <RefreshCw className="w-3 h-3 animate-spin" />
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <RefreshCw className="size-3 animate-spin" />
                 Generating summary…
               </div>
             )}
-            {!isSummarizing && transcript.summary && (
-              <div
-                className="text-sm leading-relaxed"
-                dangerouslySetInnerHTML={renderSummary(transcript.summary)}
-              />
-            )}
+            {!isSummarizing && transcript.summary && <div dangerouslySetInnerHTML={renderSummary(transcript.summary)} />}
             {!isSummarizing && !transcript.summary && (
-              <div className="text-center py-6 space-y-2">
-                {summarizeError && (
-                  <p className="text-xs text-red-400 dark:text-red-400">{summarizeError}</p>
-                )}
-                <p className="text-xs text-gray-400 dark:text-gray-500">
+              <div className="flex flex-col items-center gap-2 py-6 text-center">
+                {summarizeError && <p className="text-xs text-destructive">{summarizeError}</p>}
+                <p className="text-xs text-muted-foreground">
                   {apiKey ? 'No summary generated yet.' : 'Add an OpenAI API key to generate summaries.'}
                 </p>
                 {apiKey ? (
-                  <button
-                    onClick={handleRegenerateSummary}
-                    className="text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  >
+                  <Button variant="outline" size="xs" onClick={handleRegenerateSummary}>
+                    <Sparkles className="text-ai" />
                     Generate summary
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             )}
           </>
         )}
 
-        {subTab === 'raw' && (
-          isEditingRaw
-            ? <textarea
-                className="w-full h-full text-sm text-gray-700 dark:text-gray-300 leading-relaxed resize-none border border-gray-300 dark:border-gray-600 rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white dark:bg-gray-800"
-                value={editedRawText}
-                onChange={(e) => setEditedRawText(e.target.value)}
-                autoFocus
-              />
-            : <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-                {transcript.rawText ?? ''}
-              </p>
-        )}
+        {subTab === 'raw' &&
+          (isEditingRaw ? (
+            <Textarea
+              aria-label="Edit transcript"
+              className="min-h-64 text-ui"
+              value={editedRawText}
+              onChange={(e) => setEditedRawText(e.target.value)}
+              autoFocus
+            />
+          ) : (
+            <p className="whitespace-pre-wrap text-subtle-foreground">{transcript.rawText ?? ''}</p>
+          ))}
       </div>
 
-      {/* Footer actions */}
-      <div className="px-4 pt-2.5 pb-2 border-t border-gray-100 dark:border-gray-800 flex flex-col gap-2 flex-shrink-0">
+      <div className="flex flex-col gap-2 border-t px-3 py-3">
         {subTab === 'summary' && transcript.summary && (
-          <div className="flex gap-2">
-            <button
-              onClick={handleAddSummaryToNote}
-              className="flex-1 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
-            >
-              <FileText className="w-3 h-3 flex-shrink-0" /> Add summary to note
-            </button>
-            <button
-              onClick={handleEmailSummary}
-              className="flex-1 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
-              title="Open default mail app with summary in body"
-            >
-              <Mail className="w-3 h-3 flex-shrink-0" /> Email summary
-            </button>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="xs" className="flex-1" onClick={handleAddSummaryToNote}>
+              <FileText /> Add to note
+            </Button>
+            <Button variant="outline" size="xs" className="flex-1" onClick={handleEmailSummary} title="Open default mail app with summary in body">
+              <Mail /> Email summary
+            </Button>
           </div>
         )}
-
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
           {subTab === 'summary' && (transcript.summary || isSummarizing) && (
             <>
               {transcript.summary && <CopyButton text={transcript.summary} />}
-              <button
-                onClick={handleRegenerateSummary}
-                disabled={isSummarizing || !apiKey}
-                className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 transition-colors"
-              >
-                <RefreshCw className="w-3 h-3" /> Regenerate
-              </button>
+              <Button variant="ghost" size="xs" onClick={handleRegenerateSummary} disabled={isSummarizing || !apiKey}>
+                <RefreshCw /> Regenerate
+              </Button>
             </>
           )}
           {subTab === 'raw' && !isEditingRaw && transcript.rawText && (
             <>
               <CopyButton text={transcript.rawText} />
-              <button
-                onClick={handleInsertIntoNote}
-                className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              <Button variant="ghost" size="xs" onClick={handleInsertIntoNote}>
+                <FileText /> Insert into note
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  setEditedRawText(transcript.rawText ?? '');
+                  setIsEditingRaw(true);
+                }}
               >
-                <FileText className="w-3 h-3" /> Insert into note
-              </button>
-              <button
-                onClick={() => { setEditedRawText(transcript.rawText ?? ''); setIsEditingRaw(true); }}
-                className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                <Pencil className="w-3 h-3" /> Edit
-              </button>
+                <Pencil /> Edit
+              </Button>
             </>
           )}
           {subTab === 'raw' && isEditingRaw && (
             <>
-              <button
-                onClick={() => { updateTranscript(noteId, transcript.id, { rawText: editedRawText }); setIsEditingRaw(false); }}
-                className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition-colors"
+              <Button
+                size="xs"
+                onClick={() => {
+                  updateTranscript(noteId, transcript.id, { rawText: editedRawText });
+                  setIsEditingRaw(false);
+                }}
               >
-                <Check className="w-3 h-3" /> Save
-              </button>
-              <button
-                onClick={() => setIsEditingRaw(false)}
-                className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
+                <Check /> Save
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => setIsEditingRaw(false)}>
                 Cancel
-              </button>
+              </Button>
             </>
           )}
-          <div className="flex-1" />
+          <span className="flex-1" />
           {!isRecording && (
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={onStartNew}
-              className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               title="Start a new recording for this note"
+              className="bg-recording-soft text-recording hover:bg-recording-soft hover:text-recording hover:opacity-80"
             >
-              <Mic className="w-3 h-3" /> New recording
-            </button>
+              <span className="size-1.5 rounded-full bg-current" /> New recording
+            </Button>
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Transcript list view ─────────────────────────────────────────────────────
-interface TranscriptListProps {
-  transcripts: Transcript[];
-  onSelect: (id: string) => void;
-  onStartNew: () => void;
-  isRecording: boolean;
-}
-
-function TranscriptList({ transcripts, onSelect, onStartNew, isRecording }: TranscriptListProps) {
-  // Newest first
-  const sorted = [...transcripts].sort((a, b) => b.recordedAt - a.recordedAt);
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center flex-shrink-0">
-        <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider flex-1">
-          Recordings
-        </span>
-        <span className="text-[10px] text-gray-300 dark:text-gray-600">{transcripts.length} total</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {sorted.map((t, i) => (
-          <button
-            key={t.id}
-            onClick={() => onSelect(t.id)}
-            className="w-full text-left px-4 py-3 border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-3 group"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {i === 0 ? 'Latest' : `Recording ${sorted.length - i}`}
-                </span>
-                {t.summary && (
-                  <span className="text-[9px] bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
-                    AI summary
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-gray-400 dark:text-gray-500">
-                {t.recordedAt ? format(new Date(t.recordedAt), 'MMM d, HH:mm') : '–'}
-                {t.duration ? ` · ${formatDuration(t.duration)}` : ''}
-              </div>
-              {t.rawText && (
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 truncate leading-relaxed">
-                  {t.rawText.slice(0, 80)}…
-                </p>
-              )}
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400 flex-shrink-0 transition-colors" />
-          </button>
-        ))}
-      </div>
-
-      {!isRecording && (
-        <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
-          <button
-            onClick={onStartNew}
-            className="w-full py-2 text-sm font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
-          >
-            <Mic className="w-4 h-4" /> New Recording
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -532,47 +436,41 @@ export function TranscriptTab() {
   if (isRecording) {
     const displayedLive = (inProgressTranscript?.rawText ?? '') + (liveText ? liveText : '');
     return (
-      <div className="flex flex-col h-full">
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2 flex-shrink-0">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-          <span className="text-xs font-semibold text-red-500">REC</span>
-          {mode === 'system' && (
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
-              System audio
-            </span>
-          )}
-          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto tabular-nums">{formatDuration(elapsed)}</span>
-        </div>
-
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+      <div className="flex flex-col gap-4 p-3">
+        <div className="flex flex-col gap-3.5 rounded-xl border bg-card p-3.5 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="size-2 shrink-0 animate-pulse rounded-full bg-recording" />
+            <span className="text-ui font-semibold">Recording</span>
+            <span className="flex-1" />
+            <span className="font-mono text-ui text-subtle-foreground tabular-nums">{formatDuration(elapsed)}</span>
+          </div>
           <AudioVisualizer stream={visualizerStream} levels={visualizerLevels} />
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {mode === 'system' ? <Volume2 className="size-3.5" /> : <Mic className="size-3.5" />}
+            {mode === 'system' ? 'All audio (system) · Groq Whisper' : 'Microphone · built-in speech recognition'}
+          </div>
+          <Button variant="destructive" size="sm" onClick={handleStop}>
+            <Square className="size-3 fill-current" /> Stop recording
+          </Button>
         </div>
 
-        <div ref={liveScrollRef} className="flex-1 overflow-y-auto p-4">
-          {displayedLive ? (
-            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-              {displayedLive}
-              {liveText && <span className="text-gray-400 dark:text-gray-500 italic"> {liveText}</span>}
-            </p>
-          ) : (
-            <p className="text-sm text-gray-300 dark:text-gray-600 italic">Listening…</p>
-          )}
-          {debugStatus ? (
-            <p className="text-[10px] text-amber-500 mt-3 font-mono">{debugStatus}</p>
-          ) : mode === 'system' && (
-            <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-3">
-              Transcribing in batches via Groq Whisper…
-            </p>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
-          <button
-            onClick={handleStop}
-            className="w-full py-2 text-sm font-medium bg-gray-800 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-900 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
-          >
-            <Square className="w-3.5 h-3.5 fill-current" /> Stop Recording
-          </button>
+        <div className="flex flex-col gap-2 px-1">
+          <span className="text-xs font-medium text-muted-foreground">Live transcript</span>
+          <div ref={liveScrollRef} className="max-h-[50vh] overflow-y-auto">
+            {displayedLive ? (
+              <p className="text-ui leading-relaxed whitespace-pre-wrap">
+                {displayedLive}
+                {liveText && <span className="text-muted-foreground italic"> {liveText}</span>}
+              </p>
+            ) : (
+              <p className="text-ui text-muted-foreground italic">Listening…</p>
+            )}
+            {debugStatus ? (
+              <p className="mt-3 font-mono text-2xs text-warning">{debugStatus}</p>
+            ) : (
+              mode === 'system' && <p className="mt-3 text-2xs text-muted-foreground">Transcribing in batches via Groq Whisper…</p>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -581,97 +479,68 @@ export function TranscriptTab() {
   // ── Start / mode selection screen ───────────────────────────────────────
   if (!hasTranscripts || showStartScreen) {
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="flex flex-col gap-4 p-3">
         <div className="flex items-center justify-between">
           {hasTranscripts ? (
-            <button
-              onClick={() => setShowStartScreen(false)}
-              className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Back
-            </button>
+            <Button variant="ghost" size="xs" onClick={() => setShowStartScreen(false)} className="-ml-1 text-muted-foreground">
+              <ChevronLeft /> Back
+            </Button>
           ) : (
-            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-              Transcript
-            </span>
+            <span className="text-xs font-medium text-muted-foreground">Record this meeting</span>
           )}
-          <button
-            onClick={toggleSettings}
-            className="p-1 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 rounded transition-colors"
-            title="Open settings"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
+          <Button variant="ghost" size="icon-xs" onClick={toggleSettings} title="Open settings" aria-label="Open settings" className="text-muted-foreground">
+            <Settings />
+          </Button>
         </div>
 
         {!hasTranscripts && (
-          <div className="text-center py-2">
-            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Mic className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-            </div>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Record this meeting</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-              Transcribe audio and generate an AI summary when done
-            </p>
-          </div>
+          <p className="-mt-2 px-0.5 text-xs text-muted-foreground">Transcribe audio and generate an AI summary when done.</p>
         )}
 
-        {/* Mode toggle */}
-        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex gap-1">
-          <button
-            onClick={() => setMode('mic')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-md transition-colors ${
-              mode === 'mic'
-                ? 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm font-medium'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            <Mic className="w-3 h-3" /> Mic only
-          </button>
-          <button
-            onClick={() => setMode('system')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-md transition-colors ${
-              mode === 'system'
-                ? 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm font-medium'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            <Volume2 className="w-3 h-3" /> All audio
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={mode}
+          onValueChange={(v) => v && setMode(v as TranscriptionMode)}
+          className="grid w-full grid-cols-2"
+          aria-label="Audio source"
+        >
+          <ToggleGroupItem value="mic" className="text-xs">
+            <Mic /> Mic only
+          </ToggleGroupItem>
+          <ToggleGroupItem value="system" className="text-xs">
+            <Volume2 /> All audio
+          </ToggleGroupItem>
+        </ToggleGroup>
 
         {mode === 'system' && (
-          <div className="text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg p-3 space-y-1">
-            <p className="font-medium text-gray-700 dark:text-gray-200">Groq API key needed to transcribe</p>
+          <div className={cn('flex flex-col gap-1 rounded-lg border p-3 text-xs', groqApiKey ? 'bg-card' : 'bg-warning-soft border-transparent')}>
+            <p className="font-medium">Captures remote participants too. Transcribed via Groq Whisper.</p>
             {!groqApiKey && (
-              <button
-                onClick={toggleSettings}
-                className="text-gray-600 dark:text-gray-300 underline underline-offset-2 mt-1"
-              >
+              <Button variant="link" size="xs" onClick={toggleSettings} className="h-auto self-start p-0 text-warning">
                 Add Groq API key in Settings →
-              </button>
+              </Button>
             )}
-            {groqApiKey && <p className="text-green-600 dark:text-green-400 font-medium">✓ Groq API key configured</p>}
+            {groqApiKey && (
+              <p className="flex items-center gap-1.5 text-success">
+                <Check className="size-3.5" /> Groq API key configured
+              </p>
+            )}
           </div>
         )}
 
         {mode === 'mic' && (
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center">
-            Transcribes your microphone in real-time. Free — no API key needed.
+          <p className="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
+            Transcribes your microphone in real time with built-in speech recognition. Free — no API key needed.
           </p>
         )}
 
-        <button
-          onClick={handleStart}
-          disabled={mode === 'system' && !groqApiKey}
-          className="w-full py-2 text-sm font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <Mic className="w-4 h-4" /> Start Recording
-        </button>
+        <Button variant="destructive" onClick={handleStart} disabled={mode === 'system' && !groqApiKey}>
+          <span className="size-2 rounded-full bg-white" /> Start recording
+        </Button>
       </div>
     );
   }
-
   // ── Transcript detail ───────────────────────────────────────────────────
   const selectedTranscript = selectedId
     ? transcripts.find((t) => t.id === selectedId)
@@ -692,64 +561,49 @@ export function TranscriptTab() {
 
   // ── Transcript list ─────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
-      {/* List header with settings */}
-      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center flex-shrink-0">
-        <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider flex-1">
-          Recordings
-        </span>
-        <span className="text-[10px] text-gray-300 dark:text-gray-600 mr-2">{transcripts.length} total</span>
-        <button
-          onClick={toggleSettings}
-          className="p-1 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 rounded transition-colors"
-          title="Open settings"
-        >
-          <Settings className="w-3 h-3" />
-        </button>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+        <span className="flex-1 text-xs font-medium text-muted-foreground">Recordings in this note</span>
+        <span className="text-2xs text-muted-foreground tabular-nums">{transcripts.length}</span>
+        <Button variant="ghost" size="icon-xs" onClick={toggleSettings} title="Open settings" aria-label="Open settings" className="text-muted-foreground">
+          <Settings />
+        </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex flex-col gap-0.5 px-2">
         {[...transcripts]
           .sort((a, b) => b.recordedAt - a.recordedAt)
           .map((t, i, arr) => (
             <button
               key={t.id}
+              type="button"
               onClick={() => setSelectedId(t.id)}
-              className="w-full text-left px-4 py-3 border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-3 group"
+              className="group/rec flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-accent/60"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {i === 0 ? 'Latest' : `Recording ${arr.length - i}`}
-                  </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-ui font-medium">{i === 0 ? 'Latest' : `Recording ${arr.length - i}`}</span>
                   {t.summary && (
-                    <span className="text-[9px] bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
-                      AI summary
+                    <span className="inline-flex h-4.5 items-center gap-1 rounded-full bg-ai-soft px-1.5 text-2xs font-medium text-ai">
+                      <Sparkles className="size-2.5" /> Summary
                     </span>
                   )}
                 </div>
-                <div className="text-[10px] text-gray-400 dark:text-gray-500">
+                <div className="font-mono text-2xs text-muted-foreground">
                   {t.recordedAt ? format(new Date(t.recordedAt), 'MMM d, HH:mm') : '–'}
                   {t.duration ? ` · ${formatDuration(t.duration)}` : ''}
                 </div>
-                {t.rawText && (
-                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 truncate leading-relaxed">
-                    {t.rawText.slice(0, 80)}…
-                  </p>
-                )}
+                {t.rawText && <p className="mt-0.5 truncate text-2xs text-muted-foreground">{t.rawText.slice(0, 80)}…</p>}
               </div>
-              <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400 flex-shrink-0 transition-colors" />
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           ))}
       </div>
 
-      <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
-        <button
-          onClick={() => setShowStartScreen(true)}
-          className="w-full py-2 text-sm font-medium bg-gray-900 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
-        >
-          <Mic className="w-4 h-4" /> New Recording
-        </button>
+      <div className="p-3">
+        <Button variant="destructive" className="w-full" onClick={() => setShowStartScreen(true)}>
+          <span className="size-2 rounded-full bg-white" /> New recording
+        </Button>
       </div>
     </div>
   );

@@ -1,94 +1,139 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useStore, INTERNAL_TAB_ID, SUPPLIER_COLORS } from '../store/store';
+import { TEMPLATES } from '../utils/templates';
 import { format } from 'date-fns';
 import {
-  Plus,
-  Search,
-  Trash2,
-  FileText,
-  ChevronDown,
-  ChevronRight,
-  MoreHorizontal,
-  FolderOpen,
-  Link2,
-  Unlink,
-  Settings,
   Archive,
   ArchiveRestore,
+  Building2,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  FileText,
+  HelpCircle,
+  Home,
+  Link2,
+  ListChecks,
   Moon,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Search,
+  Settings2,
   Sun,
+  Trash2,
+  Unlink,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Kbd } from '@/components/ui/kbd';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
+import { ColorDot, IconButton, Monogram } from './common';
+import type { ActiveView, Note, Supplier } from '../types';
+
+function htmlPreview(html: string): string {
+  const el = document.createElement('div');
+  // Separate block elements so headings and paragraphs don't run together
+  el.innerHTML = html.replace(/<\/(p|h[1-6]|li|div|blockquote)>/g, ' </$1>');
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+  return text.length > 60 ? text.slice(0, 60) + '…' : text;
+}
+
+const NAV_ITEM =
+  'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-ui text-subtle-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground';
 
 export function Sidebar() {
   const [search, setSearch] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [addingProject, setAddingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [linkMenuOpen, setLinkMenuOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [suppliersCollapsed, setSuppliersCollapsed] = useState(false);
   const [archivedNotesExpanded, setArchivedNotesExpanded] = useState(false);
   const [editingProject, setEditingProject] = useState(false);
   const [editProjectName, setEditProjectName] = useState('');
-  const supplierInputRef = useRef<HTMLInputElement>(null);
-  const projectInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useStore((s) => s.projects);
   const activeProjectId = useStore((s) => s.activeProjectId);
   const suppliers = useStore((s) => s.suppliers);
   const notes = useStore((s) => s.notes);
+  const tasks = useStore((s) => s.tasks);
+  const followUps = useStore((s) => s.followUps);
   const activeTabId = useStore((s) => s.activeTabId);
   const activeNoteId = useStore((s) => s.activeNoteId);
+  const activeView = useStore((s) => s.activeView);
+  const setActiveView = useStore((s) => s.setActiveView);
   const addProject = useStore((s) => s.addProject);
   const updateProject = useStore((s) => s.updateProject);
   const deleteProject = useStore((s) => s.deleteProject);
   const setActiveProject = useStore((s) => s.setActiveProject);
   const addSupplier = useStore((s) => s.addSupplier);
+  const updateSupplier = useStore((s) => s.updateSupplier);
   const deleteSupplier = useStore((s) => s.deleteSupplier);
+  const togglePinSupplier = useStore((s) => s.togglePinSupplier);
+  const setSupplierTemplate = useStore((s) => s.setSupplierTemplate);
   const linkSupplierToProject = useStore((s) => s.linkSupplierToProject);
   const unlinkSupplierFromProject = useStore((s) => s.unlinkSupplierFromProject);
   const openTab = useStore((s) => s.openTab);
   const addNote = useStore((s) => s.addNote);
   const addInternalNote = useStore((s) => s.addInternalNote);
-  const setActiveNote = useStore((s) => s.setActiveNote);
   const navigateToNote = useStore((s) => s.navigateToNote);
   const deleteNote = useStore((s) => s.deleteNote);
   const toggleArchiveNote = useStore((s) => s.toggleArchiveNote);
   const toggleSettings = useStore((s) => s.toggleSettings);
+  const toggleHelp = useStore((s) => s.toggleHelp);
+  const toggleCommandPalette = useStore((s) => s.toggleCommandPalette);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
   const theme = useStore((s) => s.settings.theme);
   const updateSettings = useStore((s) => s.updateSettings);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  const projectSuppliers = activeProjectId
-    ? suppliers.filter((s) => s.projectIds.includes(activeProjectId))
-    : [];
-
-  const filtered = projectSuppliers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
-
-  const unlinkableSuppliers = activeProjectId
-    ? suppliers.filter((s) => !s.projectIds.includes(activeProjectId))
-    : [];
+  const projectSuppliers = activeProjectId ? suppliers.filter((s) => s.projectIds.includes(activeProjectId)) : [];
+  const filtered = projectSuppliers
+    .filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name));
+  const unlinkableSuppliers = activeProjectId ? suppliers.filter((s) => !s.projectIds.includes(activeProjectId)) : [];
 
   const isInternalTab = activeTabId === INTERNAL_TAB_ID;
 
-  const allContextNotes = activeTabId && activeProjectId
-    ? isInternalTab
-      ? notes.filter((n) => n.internal && n.projectIds.includes(activeProjectId)).sort((a, b) => b.createdAt - a.createdAt)
-      : notes.filter((n) => n.supplierIds.includes(activeTabId) && n.projectIds.includes(activeProjectId)).sort((a, b) => b.createdAt - a.createdAt)
-    : [];
-
-  const activeNotes = allContextNotes.filter((n) => !n.archived);
-  const archivedNotes = allContextNotes.filter((n) => n.archived);
-
-  const internalNoteCount = activeProjectId
-    ? notes.filter((n) => n.internal && !n.archived && n.projectIds.includes(activeProjectId)).length
+  const projectNotes = activeProjectId ? notes.filter((n) => !n.archived && n.projectIds.includes(activeProjectId)) : [];
+  const noteCountFor = (supplierId: string) =>
+    supplierId === INTERNAL_TAB_ID
+      ? projectNotes.filter((n) => n.internal).length
+      : projectNotes.filter((n) => n.supplierIds.includes(supplierId)).length;
+  const followUpCount = activeProjectId
+    ? tasks.filter((t) => t.projectId === activeProjectId && t.status !== 'done').length +
+      followUps.filter((f) => f.projectId === activeProjectId && f.status === 'open').length
     : 0;
 
-  const activeSupplier = isInternalTab ? null : suppliers.find((s) => s.id === activeTabId);
+  const allContextNotes =
+    activeTabId && activeProjectId
+      ? isInternalTab
+        ? notes.filter((n) => n.internal && n.projectIds.includes(activeProjectId)).sort((a, b) => b.createdAt - a.createdAt)
+        : notes
+            .filter((n) => n.supplierIds.includes(activeTabId) && n.projectIds.includes(activeProjectId))
+            .sort((a, b) => b.createdAt - a.createdAt)
+      : [];
+  const activeNotes = allContextNotes.filter((n) => !n.archived);
+  const archivedNotes = allContextNotes.filter((n) => n.archived);
 
   const handleAddSupplier = () => {
     if (newSupplierName.trim()) {
@@ -104,543 +149,541 @@ export function Sidebar() {
       addProject(newProjectName.trim());
       setNewProjectName('');
       setAddingProject(false);
-      setProjectMenuOpen(false);
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    setContextMenu({ id, x: e.clientX, y: e.clientY });
+  const commitProjectRename = () => {
+    if (activeProject && editProjectName.trim()) updateProject(activeProject.id, { name: editProjectName.trim() });
+    setEditingProject(false);
   };
 
-  function htmlPreview(html: string): string {
-    const el = document.createElement('div');
-    el.innerHTML = html;
-    const text = el.textContent || '';
-    return text.length > 60 ? text.slice(0, 60) + '…' : text;
-  }
+  const openSupplier = (id: string) => {
+    openTab(id);
+    setActiveView('notes');
+  };
 
-  const ColorDot = ({ supplier }: { supplier: (typeof suppliers)[0] }) => {
-    const [open, setOpen] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
-    const updateSupplier = useStore((s) => s.updateSupplier);
+  const confirmDeleteNote = (id: string) =>
+    openConfirmDialog({
+      title: 'Delete note?',
+      message: 'This note and all its linked tasks and decisions will be removed.',
+      confirmLabel: 'Delete note',
+      onConfirm: () => deleteNote(id),
+    });
 
-    useEffect(() => {
-      if (!open) return;
-      const handler = (e: MouseEvent) => {
-        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-      };
-      document.addEventListener('mousedown', handler);
-      return () => document.removeEventListener('mousedown', handler);
-    }, [open]);
-
+  const navItem = (view: ActiveView, label: string, icon: React.ReactNode, trailing?: React.ReactNode) => {
+    const on = activeView === view;
     return (
-      <div ref={ref} className="relative flex-shrink-0">
-        <button
-          className="w-2 h-2 rounded-full hover:ring-2 hover:ring-offset-1 hover:ring-gray-400 transition-all"
-          style={{ backgroundColor: supplier.color }}
-          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-          title="Change color"
-        />
-        {open && (
-          <div className="absolute left-0 top-4 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1.5 w-[120px]">
-            {SUPPLIER_COLORS.map((c) => (
-              <button
-                key={c}
-                className="block w-4 h-4 rounded-full hover:scale-110 transition-transform"
-                style={{ backgroundColor: c, outline: c === supplier.color ? '2px solid #374151' : 'none', outlineOffset: '2px' }}
-                onClick={(e) => { e.stopPropagation(); updateSupplier(supplier.id, { color: c }); setOpen(false); }}
-              />
-            ))}
-          </div>
+      <button
+        type="button"
+        onClick={() => setActiveView(view)}
+        aria-current={on ? 'page' : undefined}
+        className={cn(NAV_ITEM, on && 'bg-sidebar-accent font-medium text-foreground')}
+      >
+        <span className={cn('flex text-muted-foreground', on && 'text-primary')}>{icon}</span>
+        <span className="flex-1 text-left">{label}</span>
+        {trailing}
+      </button>
+    );
+  };
+
+  const NoteRow = ({ note, archived }: { note: Note; archived?: boolean }) => {
+    const on = activeNoteId === note.id && activeView === 'notes';
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          navigateToNote(note.id);
+          setActiveView('notes');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            navigateToNote(note.id);
+            setActiveView('notes');
+          }
+        }}
+        className={cn(
+          'group/note flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
+          on && 'bg-sidebar-accent',
+          archived && !on && 'opacity-60',
         )}
+      >
+        <div className="min-w-0 flex-1">
+          <div className={cn('truncate text-ui', on ? 'font-medium text-foreground' : 'text-subtle-foreground')}>
+            {note.title || 'Untitled'}
+          </div>
+          {note.content && !archived && <div className="truncate text-2xs text-muted-foreground">{htmlPreview(note.content)}</div>}
+        </div>
+        <span className="mt-0.5 shrink-0 text-2xs text-muted-foreground tabular-nums group-hover/note:hidden">
+          {format(new Date(note.createdAt), 'MMM d')}
+        </span>
+        <div className="hidden shrink-0 items-center gap-0.5 group-hover/note:flex">
+          <IconButton
+            label={archived ? 'Unarchive note' : 'Archive note'}
+            size="icon-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleArchiveNote(note.id);
+            }}
+          >
+            {archived ? <ArchiveRestore /> : <Archive />}
+          </IconButton>
+          <IconButton
+            label="Delete note"
+            size="icon-xs"
+            className="hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              confirmDeleteNote(note.id);
+            }}
+          >
+            <Trash2 />
+          </IconButton>
+        </div>
       </div>
     );
   };
 
-  const SupplierRow = ({ supplier }: { supplier: (typeof suppliers)[0] }) => (
-    <div
-      role="button"
-      tabIndex={0}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group cursor-pointer ${
-        activeTabId === supplier.id ? 'bg-gray-100 dark:bg-gray-800 font-medium' : ''
-      }`}
-      onClick={() => openTab(supplier.id)}
-      onKeyDown={(e) => e.key === 'Enter' && openTab(supplier.id)}
-      onContextMenu={(e) => handleContextMenu(e, supplier.id)}
-    >
-      <ColorDot supplier={supplier} />
-      <span className="truncate flex-1">{supplier.name}</span>
-      <button
-        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-opacity"
-        onClick={(e) => {
-          e.stopPropagation();
-          handleContextMenu(e, supplier.id);
-        }}
-      >
-        <MoreHorizontal className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-      </button>
-    </div>
-  );
-
-  return (
-    <div className="w-60 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50/50 dark:bg-gray-900 h-full select-none flex-shrink-0">
-      {/* Project selector */}
-      <div className="p-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-        <div className="relative">
-          <button
-            onClick={() => setProjectMenuOpen(!projectMenuOpen)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors text-sm"
-          >
-            {activeProject ? (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color }} />
-                <span className="truncate flex-1 font-medium text-left">{activeProject.name}</span>
-              </>
-            ) : (
-              <>
-                <FolderOpen className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                <span className="text-gray-400 dark:text-gray-500 flex-1 text-left">Select project…</span>
-              </>
-            )}
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-          </button>
-
-          {projectMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => { setProjectMenuOpen(false); setAddingProject(false); }} />
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 max-h-[300px] overflow-y-auto">
-                {projects.filter((p) => !p.archived).map((p) => (
-                  <button
-                    key={p.id}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                      p.id === activeProjectId ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : ''
-                    }`}
-                    onClick={() => {
-                      setActiveProject(p.id);
-                      setProjectMenuOpen(false);
-                    }}
-                  >
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                    <span className="truncate flex-1">{p.name}</span>
-                  </button>
-                ))}
-                {projects.length === 0 && !addingProject && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No projects yet</p>
-                )}
-                <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
-                  {addingProject ? (
-                    <div className="px-2 py-1">
-                      <input
-                        ref={projectInputRef}
-                        autoFocus
-                        type="text"
-                        placeholder="Project name…"
-                        value={newProjectName}
-                        onChange={(e) => setNewProjectName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleAddProject();
-                          if (e.key === 'Escape') { setAddingProject(false); setNewProjectName(''); }
-                        }}
-                        onBlur={() => { if (!newProjectName.trim()) { setAddingProject(false); setNewProjectName(''); } }}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-500 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-100"
-                      />
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setAddingProject(true)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> New project
-                    </button>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Project actions row */}
-        {activeProject && (
-          <div className="flex items-center gap-1 mt-1.5 px-1">
-            {editingProject ? (
-              <input
-                autoFocus
-                type="text"
-                value={editProjectName}
-                onChange={(e) => setEditProjectName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && editProjectName.trim()) {
-                    updateProject(activeProject.id, { name: editProjectName.trim() });
-                    setEditingProject(false);
-                  }
-                  if (e.key === 'Escape') setEditingProject(false);
-                }}
-                onBlur={() => {
-                  if (editProjectName.trim()) updateProject(activeProject.id, { name: editProjectName.trim() });
-                  setEditingProject(false);
-                }}
-                className="flex-1 px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-100"
-              />
-            ) : (
-              <>
-                <button
-                  onClick={() => { setEditProjectName(activeProject.name); setEditingProject(true); }}
-                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
-                  title="Rename project"
-                >
-                  <Settings className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => {
-                    openConfirmDialog({
-                      title: 'Delete project',
-                      message: `Delete project "${activeProject.name}"? All notes, tasks, and decisions in this project will be removed.`,
-                      confirmLabel: 'Delete',
-                      onConfirm: () => deleteProject(activeProject.id),
-                    });
-                  }}
-                  className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400 dark:text-gray-500 hover:text-red-500"
-                  title="Delete project"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Search */}
-      {activeProjectId && (
-        <div className="p-3 pb-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search suppliers…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
-            />
-          </div>
-        </div>
+  const NotesTree = () => (
+    <div className="mt-0.5 mb-1.5 ml-[15px] flex flex-col gap-px border-l border-sidebar-border pl-2">
+      {activeNotes.map((n) => (
+        <NoteRow key={n.id} note={n} />
+      ))}
+      {activeNotes.length === 0 && (
+        <p className="px-2 py-1.5 text-2xs text-muted-foreground">
+          {archivedNotes.length > 0 ? 'All notes are archived.' : 'No notes yet.'}
+        </p>
       )}
-
-      {/* Suppliers */}
-      <div className="flex-1 overflow-y-auto px-2">
-        {activeProjectId ? (
-          <>
-            <div className="mb-1">
-              <button
-                className="flex items-center gap-1 px-1 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-gray-200 w-full"
-                onClick={() => setSuppliersCollapsed(!suppliersCollapsed)}
-              >
-                {suppliersCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                Suppliers
-              </button>
-
-              {!suppliersCollapsed && (
-                <div className="space-y-0.5">
-                  {filtered.sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
-                    <SupplierRow key={s.id} supplier={s} />
-                  ))}
-                  {filtered.length === 0 && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">
-                      {search ? 'No matches' : 'No suppliers in this project'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Internal workspace */}
-            <button
-              className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mt-1 ${
-                isInternalTab ? 'bg-gray-100 dark:bg-gray-800 font-medium' : ''
-              }`}
-              onClick={() => openTab(INTERNAL_TAB_ID)}
-            >
-              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-gray-400 dark:bg-gray-600" />
-              <span className="truncate flex-1 text-gray-600 dark:text-gray-400">Internal</span>
-            </button>
-
-            {/* Add supplier */}
-            {addingSupplier ? (
-              <div className="px-1 py-1">
-                <input
-                  ref={supplierInputRef}
-                  autoFocus
-                  type="text"
-                  placeholder="Supplier name…"
-                  value={newSupplierName}
-                  onChange={(e) => setNewSupplierName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddSupplier();
-                    if (e.key === 'Escape') {
-                      setAddingSupplier(false);
-                      setNewSupplierName('');
-                    }
-                  }}
-                  onBlur={() => {
-                    if (!newSupplierName.trim()) {
-                      setAddingSupplier(false);
-                      setNewSupplierName('');
-                    }
-                  }}
-                  className="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:text-gray-100"
-                />
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                <button
-                  onClick={() => setAddingSupplier(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md w-full transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add supplier
-                </button>
-                {unlinkableSuppliers.length > 0 && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setLinkMenuOpen(!linkMenuOpen)}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md w-full transition-colors"
-                    >
-                      <Link2 className="w-3.5 h-3.5" /> Link existing supplier
-                    </button>
-                    {linkMenuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setLinkMenuOpen(false)} />
-                        <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[180px] max-h-[200px] overflow-y-auto">
-                          {unlinkableSuppliers.map((s) => (
-                            <button
-                              key={s.id}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
-                              onClick={() => {
-                                linkSupplierToProject(s.id, activeProjectId);
-                                setLinkMenuOpen(false);
-                              }}
-                            >
-                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                              {s.name}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Notes for active supplier / internal */}
-            {activeTabId && (
-              <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">
-                <div className="flex items-center justify-between px-1 mb-1">
-                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    {isInternalTab ? 'Internal Notes' : `Notes${activeSupplier ? ` — ${activeSupplier.name}` : ''}`}
-                  </span>
-                  <div className="flex items-center gap-1">
-                      <button
-                      onClick={() => isInternalTab ? addInternalNote() : addNote(activeTabId)}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-blue-600"
-                      title="New blank note"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-0.5">
-                  {activeNotes.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                        activeNoteId === n.id ? 'bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15' : ''
-                      }`}
-                      onClick={() => navigateToNote(n.id)}
-                    >
-                      <FileText className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate dark:text-gray-300">{n.title || 'Untitled'}</div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
-                        {n.content && (
-                          <div className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{htmlPreview(n.content)}</div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                        <button
-                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                          onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
-                          title="Archive note"
-                        >
-                          <Archive className="w-3 h-3 text-gray-400 hover:text-amber-500" />
-                        </button>
-                        <button
-                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openConfirmDialog({
-                              title: 'Delete note',
-                              message: 'Delete this note and all its linked tasks and decisions?',
-                              confirmLabel: 'Delete',
-                              onConfirm: () => deleteNote(n.id),
-                            });
-                          }}
-                          title="Delete note"
-                        >
-                          <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {activeNotes.length === 0 && archivedNotes.length === 0 && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No notes yet. Create one above.</p>
-                  )}
-                  {activeNotes.length === 0 && archivedNotes.length > 0 && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">All notes are archived.</p>
-                  )}
-                </div>
-
-                {/* Archived notes section */}
-                {archivedNotes.length > 0 && (
-                  <div className="mt-2">
-                    <button
-                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 w-full transition-colors"
-                      onClick={() => setArchivedNotesExpanded((v) => !v)}
-                    >
-                      {archivedNotesExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                      <Archive className="w-3 h-3" />
-                      {archivedNotes.length} archived
-                    </button>
-                    {archivedNotesExpanded && (
-                      <div className="space-y-0.5">
-                        {archivedNotes.map((n) => (
-                          <div
-                            key={n.id}
-                            className={`group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors opacity-60 ${
-                              activeNoteId === n.id ? 'bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 opacity-100' : ''
-                            }`}
-                            onClick={() => navigateToNote(n.id)}
-                          >
-                            <FileText className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate text-gray-500 dark:text-gray-400">{n.title || 'Untitled'}</div>
-                              <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(n.createdAt), 'MMM d, HH:mm')}</div>
-                            </div>
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                              <button
-                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                onClick={(e) => { e.stopPropagation(); toggleArchiveNote(n.id); }}
-                                title="Unarchive note"
-                              >
-                                <ArchiveRestore className="w-3 h-3 text-gray-400 hover:text-blue-500" />
-                              </button>
-                              <button
-                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openConfirmDialog({
-                                  title: 'Delete note',
-                                  message: 'Delete this note and all its linked tasks and decisions?',
-                                  confirmLabel: 'Delete',
-                                  onConfirm: () => deleteNote(n.id),
-                                });
-                              }}
-                              title="Delete note"
-                              >
-                                <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="px-3 py-8 text-center">
-            <FolderOpen className="w-8 h-8 text-gray-200 dark:text-gray-700 mx-auto mb-2" />
-            <p className="text-xs text-gray-400 dark:text-gray-500">Select or create a project to get started</p>
-          </div>
-        )}
-      </div>
-
-      {/* Settings footer */}
-      <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 p-2 flex items-center gap-1">
-        <button
-          onClick={toggleSettings}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md flex-1 transition-colors"
-          title="Settings (Ctrl+,)"
-        >
-          <Settings className="w-3.5 h-3.5" />
-          Settings
-        </button>
-        <button
-          onClick={() => {
-            const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'ladysucker' : 'light';
-            updateSettings({ theme: next });
-          }}
-          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0"
-          title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to Ladysucker theme' : 'Switch to light mode'}
-        >
-          {theme === 'light' && <Moon className="w-4 h-4" />}
-          {theme === 'dark' && <img src={import.meta.env.BASE_URL + 'icon.png'} alt="Ladysucker" className="w-4 h-4 object-contain" />}
-          {theme === 'ladysucker' && <Sun className="w-4 h-4" />}
-        </button>
-      </div>
-
-      {/* Context menu */}
-      {contextMenu && (
+      <button
+        type="button"
+        onClick={() => (isInternalTab ? addInternalNote() : activeTabId && addNote(activeTabId))}
+        className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-ui text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+      >
+        <Plus className="size-3.5" />
+        <span className="flex-1 text-left">New note</span>
+        <Kbd className="bg-transparent">Ctrl N</Kbd>
+      </button>
+      {archivedNotes.length > 0 && (
         <>
-          <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
-          <div
-            className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[180px]"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+          <button
+            type="button"
+            onClick={() => setArchivedNotesExpanded((v) => !v)}
+            className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-ui text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
           >
-            {(() => {
-              const sup = suppliers.find((s) => s.id === contextMenu.id);
-              if (!sup) return null;
-              return (
-                <>
-                  {activeProjectId && (
-                    <button
-                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center gap-2"
-                      onClick={() => {
-                        openConfirmDialog({
-                          title: 'Remove from project',
-                          message: `Remove "${sup.name}" from this project? Notes in this project for this supplier will be deleted.`,
-                          confirmLabel: 'Remove',
-                          onConfirm: () => unlinkSupplierFromProject(sup.id, activeProjectId),
-                        });
-                        setContextMenu(null);
-                      }}
-                    >
-                      <Unlink className="w-3.5 h-3.5" /> Remove from project
-                    </button>
-                  )}
-                  <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center gap-2"
-                      onClick={() => {
-                        openConfirmDialog({
-                          title: 'Delete supplier',
-                          message: `Delete "${sup.name}" globally? This removes ALL notes, tasks, and decisions for this supplier across all projects.`,
-                          confirmLabel: 'Delete',
-                          onConfirm: () => deleteSupplier(sup.id),
-                        });
-                        setContextMenu(null);
-                    }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete supplier
-                  </button>
-                </>
-              );
-            })()}
-          </div>
+            <Archive className="size-3.5" />
+            <span className="flex-1 text-left">Archived</span>
+            <span className="text-2xs tabular-nums">{archivedNotes.length}</span>
+            {archivedNotesExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          </button>
+          {archivedNotesExpanded && archivedNotes.map((n) => <NoteRow key={n.id} note={n} archived />)}
         </>
       )}
     </div>
   );
+
+  const SupplierMenu = ({ supplier }: { supplier: Supplier }) => (
+    <DropdownMenu open={menuFor === supplier.id} onOpenChange={(o) => setMenuFor(o ? supplier.id : null)}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${supplier.name} options`}
+          onClick={(e) => e.stopPropagation()}
+          className="flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover/sup:opacity-100 hover:bg-background hover:text-foreground data-[state=open]:opacity-100"
+        >
+          <MoreHorizontal className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">{supplier.name}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => togglePinSupplier(supplier.id)}>
+          {supplier.pinned ? <PinOff /> : <Pin />}
+          {supplier.pinned ? 'Unpin' : 'Pin to top'}
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <FileText className="text-muted-foreground" />
+            <span className="flex-1">Default template</span>
+            <span className="text-xs text-muted-foreground">
+              {supplier.defaultTemplate ? TEMPLATES[supplier.defaultTemplate]?.name.split(' ')[0] : 'None'}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            <DropdownMenuRadioGroup
+              value={supplier.defaultTemplate ?? 'none'}
+              onValueChange={(v) => setSupplierTemplate(supplier.id, v === 'none' ? null : v)}
+            >
+              <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
+              {Object.entries(TEMPLATES).map(([key, tpl]) => (
+                <DropdownMenuRadioItem key={key} value={key}>
+                  {tpl.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <div className="px-2 py-1.5">
+          <div className="mb-1.5 text-xs text-muted-foreground">Color</div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {SUPPLIER_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`Color ${c}`}
+                className="h-5 rounded-full transition-transform hover:scale-110"
+                style={{
+                  backgroundColor: c,
+                  boxShadow: c === supplier.color ? `0 0 0 2px var(--popover), 0 0 0 4px ${c}` : undefined,
+                }}
+                onClick={() => {
+                  updateSupplier(supplier.id, { color: c });
+                  setMenuFor(null);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <DropdownMenuSeparator />
+        {activeProjectId && (
+          <DropdownMenuItem
+            onSelect={() =>
+              openConfirmDialog({
+                title: 'Remove from project?',
+                message: `Remove "${supplier.name}" from this project? Notes in this project for this supplier will be deleted.`,
+                confirmLabel: 'Remove',
+                onConfirm: () => unlinkSupplierFromProject(supplier.id, activeProjectId),
+              })
+            }
+          >
+            <Unlink />
+            Remove from project
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() =>
+            openConfirmDialog({
+              title: 'Delete supplier?',
+              message: `Delete "${supplier.name}" globally? This removes ALL notes, tasks, and decisions for this supplier across all projects.`,
+              confirmLabel: 'Delete supplier',
+              onConfirm: () => deleteSupplier(supplier.id),
+            })
+          }
+        >
+          <Trash2 />
+          Delete supplier…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const SupplierRow = ({ supplier }: { supplier: Supplier }) => {
+    const on = activeTabId === supplier.id;
+    return (
+      <>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => openSupplier(supplier.id)}
+          onKeyDown={(e) => e.key === 'Enter' && openSupplier(supplier.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuFor(supplier.id);
+          }}
+          className={cn(NAV_ITEM, 'group/sup', on && 'font-medium text-foreground')}
+        >
+          <span className="flex w-4 justify-center">
+            <ColorDot color={supplier.color} />
+          </span>
+          <span className="flex-1 truncate text-left">{supplier.name}</span>
+          {supplier.pinned && <Pin className="size-3 text-muted-foreground" aria-label="Pinned" />}
+          <span className="text-2xs text-muted-foreground tabular-nums group-hover/sup:hidden">{noteCountFor(supplier.id)}</span>
+          <SupplierMenu supplier={supplier} />
+        </div>
+        {on && <NotesTree />}
+      </>
+    );
+  };
+
+  return (
+    <nav
+      aria-label="Primary"
+      className="flex h-full w-62 shrink-0 flex-col gap-5 border-r border-sidebar-border bg-sidebar px-2.5 py-3 text-sidebar-foreground select-none"
+    >
+      {/* Project switcher + search */}
+      <div className="flex flex-col gap-2">
+        {editingProject && activeProject ? (
+          <Input
+            autoFocus
+            value={editProjectName}
+            aria-label="Project name"
+            onChange={(e) => setEditProjectName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitProjectRename();
+              if (e.key === 'Escape') setEditingProject(false);
+            }}
+            onBlur={commitProjectRename}
+            className="h-10"
+          />
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Switch project"
+                className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent"
+              >
+                {activeProject ? (
+                  <Monogram name={activeProject.name} color={activeProject.color} />
+                ) : (
+                  <span className="flex size-7 items-center justify-center rounded-md border border-dashed border-border-strong text-muted-foreground">
+                    <Plus className="size-3.5" />
+                  </span>
+                )}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-ui font-semibold">{activeProject?.name ?? 'Select project'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {activeProject
+                      ? `Project · ${projectSuppliers.length} supplier${projectSuppliers.length === 1 ? '' : 's'}`
+                      : `${projects.filter((p) => !p.archived).length} projects`}
+                  </span>
+                </span>
+                <ChevronsUpDown className="size-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-60">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Projects</DropdownMenuLabel>
+              {projects
+                .filter((p) => !p.archived)
+                .map((p) => (
+                  <DropdownMenuItem key={p.id} onSelect={() => setActiveProject(p.id)}>
+                    <Monogram name={p.name} color={p.color} className="size-5 rounded text-2xs" />
+                    <span className="flex-1 truncate">{p.name}</span>
+                    {p.id === activeProjectId && <Check />}
+                  </DropdownMenuItem>
+                ))}
+              {projects.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No projects yet</div>}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setAddingProject(true)}>
+                <Plus />
+                New project
+              </DropdownMenuItem>
+              {activeProject && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setEditProjectName(activeProject.name);
+                      setEditingProject(true);
+                    }}
+                  >
+                    <Pencil />
+                    Rename “{activeProject.name}”
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() =>
+                      openConfirmDialog({
+                        title: 'Delete project?',
+                        message: `Delete project "${activeProject.name}"? All notes, tasks, and decisions in this project will be removed.`,
+                        confirmLabel: 'Delete project',
+                        onConfirm: () => deleteProject(activeProject.id),
+                      })
+                    }
+                  >
+                    <Trash2 />
+                    Delete project…
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {addingProject && (
+          <Input
+            autoFocus
+            placeholder="Project name…"
+            aria-label="New project name"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddProject();
+              if (e.key === 'Escape') {
+                setAddingProject(false);
+                setNewProjectName('');
+              }
+            }}
+            onBlur={() => {
+              if (!newProjectName.trim()) {
+                setAddingProject(false);
+                setNewProjectName('');
+              }
+            }}
+            className="h-8"
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={toggleCommandPalette}
+          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2 text-ui text-muted-foreground shadow-xs transition-colors hover:text-foreground"
+        >
+          <Search className="size-4" />
+          <span className="flex-1 text-left">Search or jump to…</span>
+          <Kbd>Ctrl K</Kbd>
+        </button>
+      </div>
+
+      {/* Primary navigation */}
+      <div className="flex flex-col gap-0.5">
+        {navItem('dashboard', 'Overview', <Home className="size-4" />)}
+        {navItem(
+          'notes',
+          'Notes',
+          <FileText className="size-4" />,
+          activeProjectId ? <span className="text-xs text-muted-foreground tabular-nums">{projectNotes.length}</span> : undefined,
+        )}
+        {navItem(
+          'tasks',
+          'Follow-up',
+          <ListChecks className="size-4" />,
+          followUpCount > 0 ? (
+            <span className="inline-flex h-4.5 items-center rounded-full bg-brand-soft px-1.5 text-2xs font-semibold text-brand-soft-foreground tabular-nums">
+              {followUpCount}
+            </span>
+          ) : undefined,
+        )}
+      </div>
+
+      {/* Suppliers */}
+      <div className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+        {activeProjectId ? (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex h-6 items-center justify-between pr-0.5 pl-2">
+              <button
+                type="button"
+                onClick={() => setSuppliersCollapsed(!suppliersCollapsed)}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Suppliers
+                {suppliersCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
+              </button>
+              <div className="flex items-center gap-0.5">
+                <IconButton label="Filter suppliers" size="icon-xs" onClick={() => setFilterOpen((v) => !v)}>
+                  <Search />
+                </IconButton>
+                {unlinkableSuppliers.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton label="Link existing supplier" size="icon-xs">
+                        <Link2 />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-64 w-52">
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">Link existing supplier</DropdownMenuLabel>
+                      {unlinkableSuppliers.map((s) => (
+                        <DropdownMenuItem key={s.id} onSelect={() => linkSupplierToProject(s.id, activeProjectId)}>
+                          <ColorDot color={s.color} />
+                          {s.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <IconButton label="Add supplier" size="icon-xs" onClick={() => setAddingSupplier(true)}>
+                  <Plus />
+                </IconButton>
+              </div>
+            </div>
+
+            {(filterOpen || search) && (
+              <Input
+                autoFocus
+                placeholder="Filter suppliers…"
+                aria-label="Filter suppliers"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearch('');
+                    setFilterOpen(false);
+                  }
+                }}
+                className="mb-1 h-7 text-ui"
+              />
+            )}
+
+            {addingSupplier && (
+              <Input
+                autoFocus
+                placeholder="Supplier name…"
+                aria-label="New supplier name"
+                value={newSupplierName}
+                onChange={(e) => setNewSupplierName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddSupplier();
+                  if (e.key === 'Escape') {
+                    setAddingSupplier(false);
+                    setNewSupplierName('');
+                  }
+                }}
+                onBlur={() => {
+                  if (!newSupplierName.trim()) {
+                    setAddingSupplier(false);
+                    setNewSupplierName('');
+                  }
+                }}
+                className="mb-1 h-7 text-ui"
+              />
+            )}
+
+            {!suppliersCollapsed && (
+              <>
+                {filtered.map((s) => (
+                  <SupplierRow key={s.id} supplier={s} />
+                ))}
+                {filtered.length === 0 && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">{search ? 'No matches' : 'No suppliers in this project'}</p>
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => openSupplier(INTERNAL_TAB_ID)}
+              className={cn(NAV_ITEM, 'mt-1', isInternalTab && 'font-medium text-foreground')}
+            >
+              <span className="flex w-4 justify-center text-muted-foreground">
+                <Building2 className="size-3.5" />
+              </span>
+              <span className="flex-1 text-left">Internal</span>
+              <span className="text-2xs text-muted-foreground tabular-nums">{noteCountFor(INTERNAL_TAB_ID)}</span>
+            </button>
+            {isInternalTab && <NotesTree />}
+          </div>
+        ) : (
+          <div className="px-3 py-8 text-center text-xs text-muted-foreground">Select or create a project to get started</div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-0.5 border-t border-sidebar-border pt-2.5">
+        <button type="button" onClick={toggleSettings} className={cn(NAV_ITEM, 'flex-1')}>
+          <Settings2 className="size-4 text-muted-foreground" />
+          <span className="flex-1 text-left">Settings</span>
+          <Kbd className="bg-transparent">Ctrl ,</Kbd>
+        </button>
+        <IconButton label="Help guide" side="top" onClick={toggleHelp}>
+          <HelpCircle />
+        </IconButton>
+        <IconButton
+          label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          side="top"
+          onClick={() => updateSettings({ theme: theme === 'dark' ? 'light' : 'dark' })}
+        >
+          {theme === 'dark' ? <Sun /> : <Moon />}
+        </IconButton>
+      </div>
+    </nav>
+  );
 }
+

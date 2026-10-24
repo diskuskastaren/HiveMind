@@ -1,23 +1,23 @@
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { useStore } from '../store/store';
-import { FileText, FolderOpen, Building2, Sparkles, Mic, CheckSquare, ArrowRight } from 'lucide-react';
+import { CheckSquare, FileText, Mic, Sparkles, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { pickAndImportBackup } from '../utils/backup';
 
 const steps = [
-  { icon: FolderOpen, title: 'Create a project', sub: 'e.g. "Radius", "Torrent 2"' },
-  { icon: Building2, title: 'Add suppliers', sub: 'Luxshare, Sigma, etc.' },
-  { icon: FileText, title: 'Take notes', sub: 'Tasks & decisions auto-captured' },
-];
-
-const features = [
-  { icon: Sparkles, label: 'AI summaries' },
-  { icon: Mic, label: 'Meeting transcription' },
-  { icon: CheckSquare, label: 'Task & decision tracking' },
+  { title: 'Create a project', sub: 'e.g. “Radius” or “Torrent 2”' },
+  { title: 'Add suppliers', sub: 'Luxshare, Sigma — whoever you meet' },
+  { title: 'Take notes', sub: 'Capture tasks and decisions as you write' },
 ];
 
 export function WelcomeScreen() {
   const [projectName, setProjectName] = useState('');
   const addProject = useStore((s) => s.addProject);
   const setActiveProject = useStore((s) => s.setActiveProject);
+  const importData = useStore((s) => s.importData);
+
   const handleCreate = () => {
     const trimmed = projectName.trim();
     if (!trimmed) return;
@@ -26,67 +26,62 @@ export function WelcomeScreen() {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-10 bg-white dark:bg-gray-900 overflow-auto">
-      {/* Brand */}
-      <div className="text-center mb-10">
-        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
-          <FileText className="w-8 h-8 text-white" />
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Combobulator</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm mx-auto leading-relaxed">
-          Capture everything from supplier meetings — tasks, decisions, follow-ups, and transcripts — organised by project and supplier.
+    <main className="flex h-full flex-col items-center justify-center gap-10 overflow-auto bg-sidebar px-6 py-12 text-center">
+      <div className="flex max-w-lg flex-col items-center gap-4">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
+          <FileText className="size-6" />
+        </span>
+        <h1 className="text-display font-semibold tracking-tight">Welcome to Combobulator</h1>
+        <p className="text-base text-subtle-foreground">
+          Capture everything from supplier meetings — tasks, decisions, follow-ups and transcripts — organised by project and supplier.
         </p>
       </div>
 
-      {/* How it works */}
-      <div className="flex items-center gap-3 mb-10">
-        {steps.map(({ icon: Icon, title, sub }, i) => (
-          <Fragment key={title}>
-            <div className="flex flex-col items-center w-36 text-center">
-              <div className="w-11 h-11 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center mb-2">
-                <Icon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{sub}</p>
-            </div>
-            {i < steps.length - 1 && (
-              <ArrowRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mb-4" />
-            )}
-          </Fragment>
+      <ol aria-label="How it works" className="flex max-w-3xl flex-wrap justify-center gap-3">
+        {steps.map((s, i) => (
+          <li key={s.title} className="flex flex-[1_1_200px] flex-col items-start gap-1.5 rounded-xl border bg-card p-4 text-left shadow-xs">
+            <span className="font-mono text-2xs font-medium text-primary">{String(i + 1).padStart(2, '0')}</span>
+            <span className="text-sm font-semibold">{s.title}</span>
+            <span className="text-ui text-muted-foreground">{s.sub}</span>
+          </li>
         ))}
-      </div>
+      </ol>
 
-      {/* CTA */}
-      <div className="w-full max-w-xs mb-8">
-        <div className="flex gap-2 mb-3">
-          <input
-            type="text"
+      <div className="flex w-full max-w-sm flex-col gap-2.5">
+        <Label htmlFor="first-project" className="text-left">
+          Name your first project
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            id="first-project"
+            autoFocus
             value={projectName}
+            placeholder="e.g. Radius"
             onChange={(e) => setProjectName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            placeholder="Name your first project…"
-            autoFocus
-            className="flex-1 min-w-0 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            className="h-10"
           />
-          <button
-            onClick={handleCreate}
-            disabled={!projectName.trim()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-          >
-            Create
-          </button>
+          <Button size="lg" onClick={handleCreate} disabled={!projectName.trim()}>
+            Create project
+          </Button>
         </div>
+        <Button variant="link" size="sm" className="self-center text-muted-foreground" onClick={() => pickAndImportBackup(importData)}>
+          <Upload />
+          Restore from a backup instead
+        </Button>
       </div>
 
-      {/* Feature pills */}
-      <div className="flex gap-6">
-        {features.map(({ icon: Icon, label }) => (
-          <div key={label} className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
-            <Icon className="w-3.5 h-3.5" />
-            <span>{label}</span>
-          </div>
-        ))}
+      <div className="flex flex-wrap justify-center gap-2">
+        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-ai-soft px-3 text-xs font-medium text-ai">
+          <Sparkles className="size-3.5" /> AI summaries
+        </span>
+        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-recording-soft px-3 text-xs font-medium text-recording">
+          <Mic className="size-3.5" /> Meeting transcription
+        </span>
+        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-brand-soft px-3 text-xs font-medium text-brand-soft-foreground">
+          <CheckSquare className="size-3.5" /> Task &amp; decision tracking
+        </span>
       </div>
-    </div>
+    </main>
   );
 }

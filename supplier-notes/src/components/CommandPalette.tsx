@@ -1,290 +1,231 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import {
-  Search,
-  FileText,
-  Plus,
-  ArrowRightLeft,
-  PanelRight,
-  Download,
+  Building2,
   Columns3,
+  Download,
   FolderOpen,
+  HelpCircle,
+  Home,
+  ListChecks,
+  PanelRight,
+  Plus,
+  Search,
+  Settings2,
+  SquareCheck,
+  Upload,
 } from 'lucide-react';
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+  CommandShortcut,
+} from '@/components/ui/command';
+import { Input } from '@/components/ui/input';
 import { exportAllData } from '../utils/export';
-
-interface Command {
-  id: string;
-  label: string;
-  description?: string;
-  icon: React.ReactNode;
-  action: () => void;
-  keywords?: string;
-}
+import { pickAndImportBackup } from '../utils/backup';
+import { ColorDot } from './common';
+import type { ActiveView } from '../types';
 
 export function CommandPalette() {
-  const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [newProjectMode, setNewProjectMode] = useState(false);
+  const [projectName, setProjectName] = useState('');
 
   const projects = useStore((s) => s.projects);
   const suppliers = useStore((s) => s.suppliers);
   const activeProjectId = useStore((s) => s.activeProjectId);
   const activeTabId = useStore((s) => s.activeTabId);
+  const rightPanelOpen = useStore((s) => s.rightPanelOpen);
   const toggleCommandPalette = useStore((s) => s.toggleCommandPalette);
   const toggleSearch = useStore((s) => s.toggleSearch);
+  const toggleSettings = useStore((s) => s.toggleSettings);
+  const toggleHelp = useStore((s) => s.toggleHelp);
   const openTab = useStore((s) => s.openTab);
   const addNote = useStore((s) => s.addNote);
   const addInternalNote = useStore((s) => s.addInternalNote);
   const addProject = useStore((s) => s.addProject);
   const setActiveProject = useStore((s) => s.setActiveProject);
+  const setActiveView = useStore((s) => s.setActiveView);
   const toggleRightPanel = useStore((s) => s.toggleRightPanel);
-  const toggleKanban = useStore((s) => s.toggleKanban);
   const getExportData = useStore((s) => s.getExportData);
   const importData = useStore((s) => s.importData);
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const run = (fn: () => void) => () => {
+    toggleCommandPalette();
+    fn();
+  };
 
-  const commands = useMemo<Command[]>(() => {
-    const cmds: Command[] = [];
+  const projectSuppliers = activeProjectId ? suppliers.filter((s) => s.projectIds.includes(activeProjectId)) : suppliers;
 
-    projects.filter((p) => !p.archived).forEach((p) => {
-      cmds.push({
-        id: `project-${p.id}`,
-        label: p.name,
-        description: 'Switch to project',
-        icon: <FolderOpen className="w-4 h-4" />,
-        action: () => {
-          setActiveProject(p.id);
-          toggleCommandPalette();
-        },
-        keywords: `switch project ${p.name}`,
-      });
-    });
+  const openSupplier = (id: string) => {
+    openTab(id);
+    setActiveView('notes');
+  };
 
-    cmds.push({
-      id: 'new-project',
-      label: 'New project',
-      description: 'Create a new project',
-      icon: <Plus className="w-4 h-4" />,
-      action: () => {
-        const name = prompt('Project name:');
-        if (name?.trim()) addProject(name.trim());
-        toggleCommandPalette();
-      },
-      keywords: 'new project create',
-    });
+  const goTo = (view: ActiveView) => setActiveView(view);
 
-    const projectSuppliers = activeProjectId
-      ? suppliers.filter((s) => s.projectIds.includes(activeProjectId))
-      : suppliers;
-
-    if (activeProjectId) {
-      cmds.push({
-        id: 'open-internal',
-        label: 'Internal workspace',
-        description: 'Notes & tasks not linked to any supplier',
-        icon: <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />,
-        action: () => {
-          openTab(INTERNAL_TAB_ID);
-          toggleCommandPalette();
-        },
-        keywords: 'internal workspace notes tasks',
-      });
-    }
-
-    projectSuppliers.forEach((s) => {
-      cmds.push({
-        id: `switch-${s.id}`,
-        label: s.name,
-        description: 'Switch to supplier',
-        icon: <ArrowRightLeft className="w-4 h-4" />,
-        action: () => {
-          openTab(s.id);
-          toggleCommandPalette();
-        },
-        keywords: `switch supplier ${s.name}`,
-      });
-    });
-
-    if (activeTabId) {
-      cmds.push({
-        id: 'new-note',
-        label: 'New note',
-        description: activeTabId === INTERNAL_TAB_ID ? 'Create a blank internal note' : 'Create a blank note',
-        icon: <Plus className="w-4 h-4" />,
-        action: () => {
-          if (activeTabId === INTERNAL_TAB_ID) {
-            addInternalNote();
-          } else {
-            addNote(activeTabId);
-          }
-          toggleCommandPalette();
-        },
-        keywords: 'new note create',
-      });
-      cmds.push({
-        id: 'new-task',
-        label: 'New task',
-        description: 'Open task panel',
-        icon: <FileText className="w-4 h-4" />,
-        action: () => {
-          setRightPanelTab('tasks');
-          toggleCommandPalette();
-        },
-        keywords: 'new task action item',
-      });
-    }
-
-    cmds.push({
-      id: 'search',
-      label: 'Search everything',
-      description: 'Global search across all data',
-      icon: <Search className="w-4 h-4" />,
-      action: () => {
-        toggleCommandPalette();
-        setTimeout(() => toggleSearch(), 50);
-      },
-      keywords: 'search find',
-    });
-
-    cmds.push({
-      id: 'toggle-panel',
-      label: 'Toggle right panel',
-      icon: <PanelRight className="w-4 h-4" />,
-      action: () => {
-        toggleRightPanel();
-        toggleCommandPalette();
-      },
-      keywords: 'toggle panel sidebar',
-    });
-
-    cmds.push({
-      id: 'kanban',
-      label: 'Kanban board',
-      description: 'View tasks as Kanban',
-      icon: <Columns3 className="w-4 h-4" />,
-      action: () => {
-        toggleKanban();
-        toggleCommandPalette();
-      },
-      keywords: 'kanban board tasks',
-    });
-
-    cmds.push({
-      id: 'backup',
-      label: 'Backup all data',
-      description: 'Export everything to JSON',
-      icon: <Download className="w-4 h-4" />,
-      action: () => {
-        exportAllData(getExportData());
-        toggleCommandPalette();
-      },
-      keywords: 'backup export data json',
-    });
-
-    cmds.push({
-      id: 'restore',
-      label: 'Restore from backup',
-      description: 'Import JSON backup file',
-      icon: <Download className="w-4 h-4" />,
-      action: () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = (e) => {
-          const file = (e.target as HTMLInputElement).files?.[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            try {
-              const data = JSON.parse(ev.target?.result as string);
-              if (data.version === 1 || data.version === 2) {
-                importData(data);
-              } else {
-                alert('Unrecognized backup format.');
-              }
-            } catch {
-              alert('Failed to parse backup file.');
-            }
-          };
-          reader.readAsText(file);
-        };
-        input.click();
-        toggleCommandPalette();
-      },
-      keywords: 'restore import backup json',
-    });
-
-    return cmds;
-  }, [projects, suppliers, activeProjectId, activeTabId, openTab, addNote, addInternalNote, addProject, setActiveProject, toggleCommandPalette, toggleSearch, toggleRightPanel, toggleKanban, getExportData, importData, setRightPanelTab]);
-
-  const filtered = query
-    ? commands.filter(
-        (c) =>
-          c.label.toLowerCase().includes(query.toLowerCase()) ||
-          c.description?.toLowerCase().includes(query.toLowerCase()) ||
-          c.keywords?.toLowerCase().includes(query.toLowerCase()),
-      )
-    : commands;
-
-  useEffect(() => {
-    setSelectedIdx(0);
-  }, [query]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && filtered[selectedIdx]) {
-      e.preventDefault();
-      filtered[selectedIdx].action();
-    }
+  const createProject = () => {
+    if (projectName.trim()) addProject(projectName.trim());
+    toggleCommandPalette();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
-      <div className="fixed inset-0 bg-black/30" onClick={toggleCommandPalette} />
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg overflow-hidden">
-        <div className="flex items-center px-4 border-b border-gray-200 dark:border-gray-700">
-          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Type a command…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 px-3 py-3.5 text-sm border-none outline-none bg-transparent dark:text-gray-100 dark:placeholder-gray-500"
+    <CommandDialog
+      open
+      onOpenChange={(open) => !open && toggleCommandPalette()}
+      title="Command palette"
+      description="Jump to a supplier, project or action"
+      showCloseButton={false}
+      className="top-[15vh] translate-y-0 sm:max-w-xl"
+    >
+      {newProjectMode ? (
+        <div className="flex flex-col gap-3 p-4">
+          <label htmlFor="cmd-new-project" className="text-ui font-medium">
+            New project
+          </label>
+          <Input
+            id="cmd-new-project"
+            autoFocus
+            placeholder="Project name…"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') createProject();
+            }}
           />
-          <kbd className="text-[10px] text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5">ESC</kbd>
+          <p className="text-xs text-muted-foreground">Press Enter to create, Esc to cancel.</p>
         </div>
+      ) : (
+        <>
+          <CommandInput placeholder="Type a command or search…" />
+          <CommandList className="max-h-[420px]">
+            <CommandEmpty>No matching commands</CommandEmpty>
 
-        <div className="max-h-[300px] overflow-y-auto py-2">
-          {filtered.map((cmd, idx) => (
-            <button
-              key={cmd.id}
-              className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors ${
-                idx === selectedIdx ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
-              onClick={cmd.action}
-              onMouseEnter={() => setSelectedIdx(idx)}
-            >
-              <span className="text-gray-400 dark:text-gray-500">{cmd.icon}</span>
-              <span className="flex-1">{cmd.label}</span>
-              {cmd.description && <span className="text-xs text-gray-400 dark:text-gray-500">{cmd.description}</span>}
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">No matching commands</p>
-          )}
-        </div>
-      </div>
-    </div>
+            {activeTabId && (
+              <CommandGroup heading="Actions">
+                <CommandItem
+                  keywords={['new', 'note', 'create']}
+                  onSelect={run(() => {
+                    if (activeTabId === INTERNAL_TAB_ID) addInternalNote();
+                    else addNote(activeTabId);
+                    setActiveView('notes');
+                  })}
+                >
+                  <Plus />
+                  New note
+                  <CommandShortcut>Ctrl N</CommandShortcut>
+                </CommandItem>
+                <CommandItem
+                  keywords={['new', 'task', 'action', 'item']}
+                  onSelect={run(() => {
+                    setActiveView('notes');
+                    setRightPanelTab('tasks');
+                    if (!rightPanelOpen) toggleRightPanel();
+                  })}
+                >
+                  <SquareCheck />
+                  New task
+                  <span className="ml-auto text-xs text-muted-foreground">Opens the task panel</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
+
+            <CommandGroup heading="Go to">
+              <CommandItem keywords={['home', 'dashboard', 'overview']} onSelect={run(() => goTo('dashboard'))}>
+                <Home />
+                Overview
+              </CommandItem>
+              <CommandItem keywords={['tasks', 'decisions', 'follow-ups', 'follow up']} onSelect={run(() => goTo('tasks'))}>
+                <ListChecks />
+                Follow-up
+              </CommandItem>
+              <CommandItem keywords={['kanban', 'board', 'tasks']} onSelect={run(() => goTo('tasks'))}>
+                <Columns3 />
+                Kanban board
+                <span className="ml-auto text-xs text-muted-foreground">View tasks as Kanban</span>
+              </CommandItem>
+              <CommandItem keywords={['search', 'find']} onSelect={run(() => setTimeout(() => toggleSearch(), 50))}>
+                <Search />
+                Search everything
+                <CommandShortcut>Ctrl Shift F</CommandShortcut>
+              </CommandItem>
+            </CommandGroup>
+
+            {(activeProjectId || projectSuppliers.length > 0) && (
+              <CommandGroup heading="Suppliers">
+                {activeProjectId && (
+                  <CommandItem value="Internal workspace" keywords={['internal', 'workspace']} onSelect={run(() => openSupplier(INTERNAL_TAB_ID))}>
+                    <Building2 />
+                    Internal workspace
+                    <span className="ml-auto text-xs text-muted-foreground">Notes not linked to a supplier</span>
+                  </CommandItem>
+                )}
+                {projectSuppliers.map((s) => (
+                  <CommandItem key={s.id} value={`supplier ${s.name} ${s.id}`} keywords={['switch', 'supplier']} onSelect={run(() => openSupplier(s.id))}>
+                    <span className="flex size-4 items-center justify-center">
+                      <ColorDot color={s.color} />
+                    </span>
+                    {s.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            <CommandGroup heading="Projects">
+              {projects
+                .filter((p) => !p.archived)
+                .map((p) => (
+                  <CommandItem key={p.id} value={`project ${p.name} ${p.id}`} keywords={['switch', 'project']} onSelect={run(() => setActiveProject(p.id))}>
+                    <FolderOpen />
+                    {p.name}
+                    {p.id === activeProjectId && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
+                  </CommandItem>
+                ))}
+              <CommandItem keywords={['new', 'project', 'create']} onSelect={() => setNewProjectMode(true)}>
+                <Plus />
+                New project
+              </CommandItem>
+            </CommandGroup>
+
+            <CommandSeparator />
+            <CommandGroup heading="App">
+              <CommandItem keywords={['toggle', 'panel', 'sidebar']} onSelect={run(toggleRightPanel)}>
+                <PanelRight />
+                Toggle side panel
+                <CommandShortcut>Ctrl ]</CommandShortcut>
+              </CommandItem>
+              <CommandItem keywords={['backup', 'export', 'data', 'json']} onSelect={run(() => exportAllData(getExportData()))}>
+                <Download />
+                Backup all data
+                <span className="ml-auto text-xs text-muted-foreground">Export everything to JSON</span>
+              </CommandItem>
+              <CommandItem keywords={['restore', 'import', 'backup', 'json']} onSelect={run(() => pickAndImportBackup(importData))}>
+                <Upload />
+                Restore from backup
+              </CommandItem>
+              <CommandItem keywords={['settings', 'preferences']} onSelect={run(toggleSettings)}>
+                <Settings2 />
+                Settings
+                <CommandShortcut>Ctrl ,</CommandShortcut>
+              </CommandItem>
+              <CommandItem keywords={['help', 'guide']} onSelect={run(toggleHelp)}>
+                <HelpCircle />
+                Help guide
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+          <div className="flex gap-4 border-t px-4 py-2 text-xs text-muted-foreground">
+            <span>↑↓ to navigate</span>
+            <span>Enter to run</span>
+            <span>Esc to close</span>
+          </div>
+        </>
+      )}
+    </CommandDialog>
   );
 }

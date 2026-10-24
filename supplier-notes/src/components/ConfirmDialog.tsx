@@ -1,54 +1,44 @@
-import { useEffect } from 'react';
 import { useStore } from '../store/store';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { buttonVariants } from '@/components/ui/button';
 
 export function ConfirmDialog() {
   const dialog = useStore((s) => s.confirmDialog);
   const closeConfirmDialog = useStore((s) => s.closeConfirmDialog);
 
-  useEffect(() => {
-    if (!dialog) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeConfirmDialog();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, closeConfirmDialog]);
-
-  if (!dialog) return null;
-
-  const isDanger = dialog.variant !== 'default';
-  const confirmLabel = dialog.confirmLabel ?? (isDanger ? 'Delete' : 'Confirm');
+  const isDanger = dialog?.variant !== 'default';
+  const confirmLabel = dialog?.confirmLabel ?? (isDanger ? 'Delete' : 'Confirm');
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/20" onClick={closeConfirmDialog} />
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-xs p-5">
-        {dialog.title && (
-          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{dialog.title}</p>
-        )}
-        <p className="text-sm text-gray-500 dark:text-gray-400">{dialog.message}</p>
-
-        <div className="flex justify-end gap-2 mt-5">
-          <button
-            onClick={closeConfirmDialog}
-            className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
+    <AlertDialog open={!!dialog} onOpenChange={(open) => !open && closeConfirmDialog()}>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{dialog?.title ?? (isDanger ? 'Are you sure?' : 'Confirm')}</AlertDialogTitle>
+          <AlertDialogDescription>{dialog?.message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
             autoFocus
+            className={isDanger ? buttonVariants({ variant: 'destructive' }) : undefined}
             onClick={() => {
-              dialog.onConfirm();
+              dialog?.onConfirm();
               closeConfirmDialog();
             }}
-            className={`px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors ${
-              isDanger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
-            }`}
           >
             {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

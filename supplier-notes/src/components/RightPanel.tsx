@@ -1,21 +1,16 @@
 import { useState, useMemo, useRef } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
-import type { TaskStatus, Priority, Task } from '../types';
-import {
-  Plus,
-  CheckCircle2,
-  Circle,
-  Clock,
-  Trash2,
-  Lightbulb,
-  Zap,
-  Bookmark,
-  FileText,
-  Pencil,
-  Mic,
-} from 'lucide-react';
+import type { TaskStatus, Task, Decision } from '../types';
+import { Bookmark, CheckCircle2, Circle, Clock, FileText, Gavel, Pencil, Plus, Trash2, Zap } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { TranscriptTab } from './TranscriptTab';
+import { FollowUpsPanel } from './FollowUpsPanel';
+import { IconButton, PriorityBadge, SectionLabel } from './common';
+import type { RightPanelTab } from '../types';
 
 function detectActionLines(html: string): string[] {
   if (!html) return [];
@@ -32,21 +27,9 @@ function detectActionLines(html: string): string[] {
 }
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
-  open: <Circle className="w-4 h-4 text-gray-400" />,
-  doing: <Clock className="w-4 h-4 text-yellow-500" />,
-  done: <CheckCircle2 className="w-4 h-4 text-green-500" />,
-};
-
-const PRIORITY_BORDER: Record<Priority, string> = {
-  low:    'border-l-gray-200',
-  medium: 'border-l-amber-400',
-  high:   'border-l-red-500',
-};
-
-const PRIORITY_LABEL: Record<Priority, { text: string; classes: string }> = {
-  low:    { text: 'Low',    classes: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'  },
-  medium: { text: 'Medium', classes: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
-  high:   { text: 'High',   classes: 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400'    },
+  open: <Circle className="size-4 text-border-strong" />,
+  doing: <Clock className="size-4 text-warning" />,
+  done: <CheckCircle2 className="size-4 text-success" />,
 };
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
@@ -56,13 +39,12 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
 };
 
 function ownerInitials(owner: string): string {
-  return owner.trim().split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
-}
-
-function ownerHue(owner: string): number {
-  let hash = 0;
-  for (let i = 0; i < owner.length; i++) hash = owner.charCodeAt(i) + ((hash << 5) - hash);
-  return Math.abs(hash) % 360;
+  return owner
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .slice(0, 2)
+    .join('');
 }
 
 type DueDateUrgency = 'overdue' | 'soon' | 'normal';
@@ -95,9 +77,9 @@ function formatTimeLeft(dueDate: string): string {
 }
 
 const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
-  overdue: 'text-red-500 dark:text-red-400 font-medium',
-  soon:    'text-amber-600 dark:text-amber-400',
-  normal:  'text-gray-400 dark:text-gray-500',
+  overdue: 'text-recording font-medium',
+  soon: 'text-warning',
+  normal: 'text-muted-foreground',
 };
 
 export function RightPanel() {
@@ -112,6 +94,7 @@ export function RightPanel() {
   const tasks = useStore((s) => s.tasks);
   const notes = useStore((s) => s.notes);
   const decisions = useStore((s) => s.decisions);
+  const followUps = useStore((s) => s.followUps);
   const addTask = useStore((s) => s.addTask);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
@@ -173,6 +156,10 @@ export function RightPanel() {
     [decisions, activeProjectId, contextSupplierId, activeNoteId],
   );
 
+  const openFollowUpCount =
+    tasks.filter((t) => t.supplierId === contextSupplierId && t.projectId === activeProjectId && t.isFollowUp && t.status !== 'done').length +
+    followUps.filter((f) => f.supplierId === contextSupplierId && f.projectId === activeProjectId && f.status === 'open').length;
+
   const handleQuickAddTask = () => {
     if (!quickTask.trim() || !activeTabId || !activeNoteId || !activeProjectId) return;
     addTask({
@@ -198,170 +185,230 @@ export function RightPanel() {
   const tabCounts = {
     tasks: noteTasks.length + otherTasks.length,
     decisions: noteDecisions.length + otherDecisions.length,
+    followups: openFollowUpCount,
   };
 
   const renderTaskCard = (task: Task, showNoteLink: boolean) => {
     const taskNote = notes.find((n) => n.id === task.noteId);
     const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
-    const ownerAvatar = (() => {
-      if (!task.owner) return null;
-      if (task.owner === 'Internal') return { initials: 'I', bg: 'hsl(0 0% 75%)', title: 'Internal' };
-      return { initials: ownerInitials(task.owner), bg: `hsl(${ownerHue(task.owner)} 55% 52%)`, title: task.owner };
-    })();
+    const done = task.status === 'done';
 
     return (
       <div
         key={task.id}
+        role="button"
+        tabIndex={0}
         onClick={() => setEditingTask(task.id)}
-        className={`
-          group bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700
-          border-l-[3px] ${PRIORITY_BORDER[task.priority]}
-          p-2.5 cursor-pointer hover:shadow-sm transition-all duration-150
-        `}
+        onKeyDown={(e) => e.key === 'Enter' && setEditingTask(task.id)}
+        className="group/task flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-accent/60"
       >
-        <div className="flex items-start gap-2">
-          <button
-            onClick={(e) => { e.stopPropagation(); updateTask(task.id, { status: NEXT_STATUS[task.status] }); }}
-            className="mt-0.5 flex-shrink-0"
-            title={`Status: ${task.status} — click to cycle`}
-          >
-            {STATUS_ICONS[task.status]}
-          </button>
-          <p className={`flex-1 text-sm font-medium leading-snug line-clamp-2 ${task.status === 'done' ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
-            {task.title}
-          </p>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            <button
-              className={`p-0.5 rounded transition-colors ${task.isFollowUp ? 'text-violet-500' : 'opacity-0 group-hover:opacity-100 text-gray-300 dark:text-gray-600 hover:text-violet-400'}`}
-              onClick={(e) => { e.stopPropagation(); updateTask(task.id, { isFollowUp: !task.isFollowUp }); }}
-              title={task.isFollowUp ? 'Remove from follow-ups' : 'Add to follow-ups'}
-            >
-              <Bookmark className="w-3.5 h-3.5" fill={task.isFollowUp ? 'currentColor' : 'none'} />
-            </button>
-            <button
-              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-opacity"
-              onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
-              title="Delete task"
-            >
-              <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-2 mt-1.5 pl-6">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${PRIORITY_LABEL[task.priority].classes}`}>
-              {PRIORITY_LABEL[task.priority].text}
-            </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            updateTask(task.id, { status: NEXT_STATUS[task.status] });
+          }}
+          className="mt-0.5 shrink-0"
+          title={`Status: ${task.status} — click to cycle`}
+          aria-label={`Status ${task.status}, click to change`}
+        >
+          {STATUS_ICONS[task.status]}
+        </button>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <p className={cn('line-clamp-2 text-ui leading-snug', done && 'text-muted-foreground line-through')}>{task.title}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PriorityBadge priority={task.priority} />
             {task.dueDate && urgency && (
-              <span className={`text-[11px] ${DUE_DATE_CLASSES[urgency]}`}>
-                {urgency === 'overdue' ? '⚑ ' : ''}{formatDueDate(task.dueDate)} · {formatTimeLeft(task.dueDate)}
+              <span className={cn('text-2xs tabular-nums', DUE_DATE_CLASSES[urgency])}>
+                {formatDueDate(task.dueDate)} · {formatTimeLeft(task.dueDate)}
+              </span>
+            )}
+            <span className="flex-1" />
+            {task.owner && (
+              <span
+                title={task.owner}
+                className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-2xs font-semibold text-subtle-foreground"
+              >
+                {ownerInitials(task.owner)}
               </span>
             )}
           </div>
-          {ownerAvatar && (
-            <span
-              className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
-              style={{ backgroundColor: ownerAvatar.bg }}
-              title={ownerAvatar.title}
+          {showNoteLink && taskNote && (
+            <button
+              type="button"
+              className="flex max-w-full items-center gap-1 self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateToNote(task.noteId);
+              }}
+              title="Go to source note"
             >
-              {ownerAvatar.initials}
-            </span>
+              <FileText className="size-3 shrink-0" />
+              <span className="truncate">{taskNote.title || 'Untitled note'}</span>
+            </button>
           )}
         </div>
-        {showNoteLink && taskNote && (
-          <button
-            className="flex items-center gap-1 mt-1.5 pl-6 text-[11px] text-gray-400 dark:text-gray-500 hover:text-blue-600 transition-colors max-w-full"
-            onClick={(e) => { e.stopPropagation(); navigateToNote(task.noteId); }}
-            title="Go to source note"
+        <div className="flex shrink-0 items-center">
+          <IconButton
+            label={task.isFollowUp ? 'Remove from follow-ups' : 'Add to follow-ups'}
+            size="icon-xs"
+            className={cn(task.isFollowUp ? 'text-primary' : 'opacity-0 group-hover/task:opacity-100')}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateTask(task.id, { isFollowUp: !task.isFollowUp });
+            }}
           >
-            <FileText className="w-3 h-3 flex-shrink-0" />
-            <span className="truncate">{taskNote.title || 'Untitled note'}</span>
-          </button>
+            <Bookmark className={task.isFollowUp ? 'fill-current' : undefined} />
+          </IconButton>
+          <IconButton
+            label="Delete task"
+            size="icon-xs"
+            className="opacity-0 group-hover/task:opacity-100 hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteTask(task.id);
+            }}
+          >
+            <Trash2 />
+          </IconButton>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDecision = (d: Decision, showNoteLink: boolean) => {
+    const isEditing = editingDecisionId === d.id;
+    const sourceNote = showNoteLink ? notes.find((n) => n.id === d.noteId) : undefined;
+    const startEdit = () => {
+      setEditingDecision(d.id);
+      setEditDecisionText(d.text);
+    };
+    return (
+      <div key={d.id} className="group/dec flex items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5">
+        <Gavel className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {isEditing ? (
+            <Input
+              ref={decisionEditRef}
+              autoFocus
+              aria-label="Edit decision"
+              value={editDecisionText}
+              onChange={(e) => setEditDecisionText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && editDecisionText.trim()) {
+                  updateDecision(d.id, { text: editDecisionText.trim() });
+                  setEditingDecision(null);
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setEditingDecision(null);
+                }
+              }}
+              onBlur={() => {
+                if (editDecisionText.trim()) updateDecision(d.id, { text: editDecisionText.trim() });
+                setEditingDecision(null);
+              }}
+              className="h-8 text-ui"
+            />
+          ) : (
+            <button type="button" className="text-left text-ui leading-snug" onClick={startEdit} title="Click to edit">
+              {d.text}
+            </button>
+          )}
+          <div className="flex items-center gap-2 text-2xs text-muted-foreground">
+            <span className="tabular-nums">{format(new Date(d.createdAt), 'MMM d, HH:mm')}</span>
+            {sourceNote && (
+              <button
+                type="button"
+                className="flex min-w-0 items-center gap-1 transition-colors hover:text-foreground"
+                onClick={() => navigateToNote(d.noteId)}
+                title="Go to source note"
+              >
+                <FileText className="size-3 shrink-0" />
+                <span className="truncate">{sourceNote.title || 'Untitled note'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+        {!isEditing && (
+          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/dec:opacity-100">
+            <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
+              <Pencil />
+            </IconButton>
+            <IconButton label="Delete decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
+              <Trash2 />
+            </IconButton>
+          </div>
         )}
       </div>
     );
   };
 
+  const quickAdd = (value: string, setValue: (v: string) => void, onAdd: () => void, placeholder: string) => (
+    <div className="flex items-center gap-1.5">
+      <Input
+        placeholder={placeholder}
+        aria-label={placeholder}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onAdd()}
+        className="h-8 bg-card text-ui"
+      />
+      <Button size="icon-sm" onClick={onAdd} aria-label={placeholder} disabled={!value.trim()}>
+        <Plus />
+      </Button>
+    </div>
+  );
+
+  const countBadge = (n: number) => (n > 0 ? <span className="text-2xs text-muted-foreground tabular-nums">{n}</span> : null);
+
   return (
-    <div
-      className="border-l border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 h-full flex-shrink-0 w-96"
-    >
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-        {(['tasks', 'decisions'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setRightPanelTab(tab)}
-            className={`flex-1 px-2 py-2.5 text-xs font-medium capitalize transition-colors ${
-              rightPanelTab === tab
-                ? 'text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            {tab}
-            {tabCounts[tab] > 0 && (
-              <span className="ml-1 text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-full px-1.5 py-0.5">
-                {tabCounts[tab]}
-              </span>
-            )}
-          </button>
-        ))}
-        <button
-          onClick={() => setRightPanelTab('transcript')}
-          className={`flex-1 px-2 py-2.5 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
-            rightPanelTab === 'transcript'
-              ? 'text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-          }`}
-        >
-          <Mic className="w-3 h-3" />
-          {isRecording ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          ) : (activeNote?.transcripts?.length ?? 0) > 0 ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-          ) : null}
-        </button>
-      </div>
+    <aside aria-label="Note side panel" className="flex h-full w-90 shrink-0 flex-col border-l bg-sidebar">
+      <Tabs value={rightPanelTab} onValueChange={(v) => setRightPanelTab(v as RightPanelTab)} className="shrink-0 p-3 pb-0">
+        <TabsList className="w-full">
+          <TabsTrigger value="tasks" className="text-xs">
+            Tasks {countBadge(tabCounts.tasks)}
+          </TabsTrigger>
+          <TabsTrigger value="decisions" className="text-xs">
+            Decisions {countBadge(tabCounts.decisions)}
+          </TabsTrigger>
+          <TabsTrigger value="followups" className="text-xs">
+            Follow-ups {countBadge(tabCounts.followups)}
+          </TabsTrigger>
+          <TabsTrigger value="transcript" className="text-xs">
+            {isRecording ? (
+              <span className="size-1.5 animate-pulse rounded-full bg-recording" />
+            ) : (activeNote?.transcripts?.length ?? 0) > 0 ? (
+              <span className="size-1.5 rounded-full bg-success" />
+            ) : null}
+            Transcript
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {/* Always mounted so recording survives switching to Tasks/Decisions tabs */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Always mounted so recording survives switching to the other tabs */}
         <div className={rightPanelTab !== 'transcript' ? 'hidden' : ''}>
           <TranscriptTab />
         </div>
+
         {rightPanelTab === 'tasks' && (
-          <div className="p-3 space-y-1">
-            {/* Quick add */}
-            <div className="flex items-center gap-1 mb-3">
-              <input
-                type="text"
-                placeholder="Quick add task…"
-                value={quickTask}
-                onChange={(e) => setQuickTask(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleQuickAddTask()}
-                className="flex-1 text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-              <button
-                onClick={handleQuickAddTask}
-                className="p-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+          <div className="flex flex-col gap-4 p-3">
+            {quickAdd(quickTask, setQuickTask, handleQuickAddTask, 'Add task to this note…')}
 
             {detectedActions.length > 0 && (
-              <div className="mb-3 border border-amber-200 dark:border-amber-800 rounded-lg bg-amber-50/50 dark:bg-amber-900/20 p-2">
-                <div className="text-[10px] font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                  <Zap className="w-3 h-3" /> Detected in note
+              <div className="flex flex-col gap-1.5 rounded-lg bg-warning-soft p-2.5">
+                <div className="flex items-center gap-1 text-xs font-medium text-warning">
+                  <Zap className="size-3.5" /> Detected in note
                 </div>
                 {detectedActions.map((line, i) => (
-                  <div key={i} className="flex items-center gap-1.5 py-0.5">
-                    <span className="flex-1 text-xs text-amber-900 dark:text-amber-300 truncate" title={line}>
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 truncate text-xs" title={line}>
                       {line}
                     </span>
-                    <button
-                      className="text-[10px] px-1.5 py-0.5 bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 rounded hover:bg-amber-300 dark:hover:bg-amber-700 flex-shrink-0 transition-colors"
+                    <Button
+                      variant="outline"
+                      size="xs"
                       onClick={() => {
                         const title = line.replace(/^(TODO|AI):\s*/i, '');
                         if (title && activeTabId && activeNoteId && activeProjectId) {
@@ -380,240 +427,56 @@ export function RightPanel() {
                       }}
                     >
                       → Task
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* This note section */}
-            <div className="flex items-center gap-3 pt-2 pb-1">
-              <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500 dark:text-blue-400 flex-shrink-0">
-                This note
-              </span>
-              {noteTasks.length > 0 && (
-                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full px-1.5 py-0.5 font-medium flex-shrink-0">
-                  {noteTasks.length}
-                </span>
-              )}
-              <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
+            <div className="flex flex-col gap-0.5">
+              <SectionLabel count={noteTasks.length}>This note</SectionLabel>
+              {noteTasks.map((task) => renderTaskCard(task, false))}
+              {noteTasks.length === 0 && <p className="px-1 py-1.5 text-xs text-muted-foreground">None yet — add one above or select text in the editor.</p>}
             </div>
 
-            {noteTasks.map((task) => renderTaskCard(task, false))}
-
-            {noteTasks.length === 0 && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 py-1.5 pl-1 italic">
-                None yet — add one above or select text in the editor.
-              </p>
-            )}
-
-            {/* Other notes section */}
             {otherTasks.length > 0 && (
-              <>
-                <div className="flex items-center gap-3 pt-3 pb-1">
-                  <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 flex-shrink-0">
-                    Other notes
-                  </span>
-                  <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-                </div>
+              <div className="flex flex-col gap-0.5">
+                <SectionLabel count={otherTasks.length}>Other notes</SectionLabel>
                 {otherTasks.map((task) => renderTaskCard(task, true))}
-              </>
+              </div>
             )}
           </div>
         )}
 
         {rightPanelTab === 'decisions' && (
-          <div className="p-3 space-y-1">
-            <div className="flex items-center gap-1 mb-3">
-              <input
-                type="text"
-                placeholder="Quick add decision…"
-                value={quickDecision}
-                onChange={(e) => setQuickDecision(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleQuickAddDecision()}
-                className="flex-1 text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-              <button
-                onClick={handleQuickAddDecision}
-                className="p-1.5 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* This note section */}
-            <div className="flex items-center gap-3 pt-2 pb-1">
-              <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500 dark:text-blue-400 flex-shrink-0">
+          <div className="flex flex-col gap-4 p-3">
+            {quickAdd(quickDecision, setQuickDecision, handleQuickAddDecision, 'Record a decision…')}
+            <div className="flex flex-col gap-2">
+              <SectionLabel count={noteDecisions.length} className="pb-0">
                 This note
-              </span>
-              {noteDecisions.length > 0 && (
-                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full px-1.5 py-0.5 font-medium flex-shrink-0">
-                  {noteDecisions.length}
-                </span>
+              </SectionLabel>
+              {noteDecisions.map((d) => renderDecision(d, false))}
+              {noteDecisions.length === 0 && (
+                <p className="px-1 py-1.5 text-xs text-muted-foreground">None yet — add one above or select text in the editor.</p>
               )}
-              <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
             </div>
-
-            {noteDecisions.map((d) => {
-              const isEditing = editingDecisionId === d.id;
-              return (
-                <div key={d.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <Lightbulb className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <input
-                        ref={decisionEditRef}
-                        autoFocus
-                        type="text"
-                        value={editDecisionText}
-                        onChange={(e) => setEditDecisionText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && editDecisionText.trim()) {
-                            updateDecision(d.id, { text: editDecisionText.trim() });
-                            setEditingDecision(null);
-                          }
-                          if (e.key === 'Escape') setEditingDecision(null);
-                        }}
-                        onBlur={() => {
-                          if (editDecisionText.trim()) updateDecision(d.id, { text: editDecisionText.trim() });
-                          setEditingDecision(null);
-                        }}
-                        className="w-full text-sm px-1.5 py-1 border border-green-300 dark:border-green-700 rounded focus:outline-none focus:ring-1 focus:ring-green-400 dark:bg-gray-700 dark:text-gray-100"
-                      />
-                    ) : (
-                      <div
-                        className="text-sm cursor-pointer dark:text-gray-300 hover:text-gray-600 dark:hover:text-gray-400"
-                        onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
-                        title="Click to edit"
-                      >
-                        {d.text}
-                      </div>
-                    )}
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-                      {format(new Date(d.createdAt), 'MMM d, HH:mm')}
-                    </div>
-                  </div>
-                  {!isEditing && (
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button
-                        className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                        onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
-                        title="Edit decision"
-                      >
-                        <Pencil className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                      </button>
-                      <button
-                        className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                        onClick={() => deleteDecision(d.id)}
-                        title="Delete decision"
-                      >
-                        <Trash2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {noteDecisions.length === 0 && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 py-1.5 pl-1 italic">
-                None yet — add one above or select text in the editor.
-              </p>
-            )}
-
-            {/* Other notes section */}
             {otherDecisions.length > 0 && (
-              <>
-                <div className="flex items-center gap-3 pt-3 pb-1">
-                  <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 flex-shrink-0">
-                    Other notes
-                  </span>
-                  <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
-                </div>
-
-                {otherDecisions.map((d) => {
-                  const isEditing = editingDecisionId === d.id;
-                  const sourceNote = notes.find((n) => n.id === d.noteId);
-                  return (
-                    <div key={d.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
-                      <Lightbulb className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        {isEditing ? (
-                          <input
-                            ref={decisionEditRef}
-                            autoFocus
-                            type="text"
-                            value={editDecisionText}
-                            onChange={(e) => setEditDecisionText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && editDecisionText.trim()) {
-                                updateDecision(d.id, { text: editDecisionText.trim() });
-                                setEditingDecision(null);
-                              }
-                              if (e.key === 'Escape') setEditingDecision(null);
-                            }}
-                            onBlur={() => {
-                              if (editDecisionText.trim()) updateDecision(d.id, { text: editDecisionText.trim() });
-                              setEditingDecision(null);
-                            }}
-                            className="w-full text-sm px-1.5 py-1 border border-green-300 dark:border-green-700 rounded focus:outline-none focus:ring-1 focus:ring-green-400 dark:bg-gray-700 dark:text-gray-100"
-                          />
-                        ) : (
-                          <div
-                            className="text-sm cursor-pointer dark:text-gray-300 hover:text-gray-600 dark:hover:text-gray-400"
-                            onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
-                            title="Click to edit"
-                          >
-                            {d.text}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                            {format(new Date(d.createdAt), 'MMM d, HH:mm')}
-                          </span>
-                          {sourceNote && (
-                            <button
-                              className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 hover:text-blue-600 transition-colors"
-                              onClick={() => navigateToNote(d.noteId)}
-                              title="Go to source note"
-                            >
-                              <FileText className="w-3 h-3 flex-shrink-0" />
-                              <span className="truncate max-w-[120px]">{sourceNote.title || 'Untitled note'}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {!isEditing && (
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                          <button
-                            className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                            onClick={() => { setEditingDecision(d.id); setEditDecisionText(d.text); }}
-                            title="Edit decision"
-                          >
-                            <Pencil className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                          </button>
-                          <button
-                            className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                            onClick={() => deleteDecision(d.id)}
-                            title="Delete decision"
-                          >
-                            <Trash2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
+              <div className="flex flex-col gap-2">
+                <SectionLabel count={otherDecisions.length} className="pb-0">
+                  Other notes
+                </SectionLabel>
+                {otherDecisions.map((d) => renderDecision(d, true))}
+              </div>
             )}
           </div>
         )}
 
+        {rightPanelTab === 'followups' && (
+          <div className="p-3">
+            <FollowUpsPanel />
+          </div>
+        )}
       </div>
-    </div>
+    </aside>
   );
 }

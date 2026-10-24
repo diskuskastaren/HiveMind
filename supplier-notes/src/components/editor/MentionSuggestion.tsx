@@ -44,7 +44,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
     if (items.length === 0) return null;
 
     return (
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 w-52 overflow-y-auto max-h-60">
+      <div className="flex max-h-60 w-56 flex-col overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
         {items.map((item, index) => (
           <button
             key={item.id}
@@ -52,18 +52,16 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
               e.preventDefault();
               command(item);
             }}
-            className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors ${
-              index === selectedIndex
-                ? 'bg-gray-100 dark:bg-gray-700'
-                : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui transition-colors ${
+              index === selectedIndex ? 'bg-accent' : 'hover:bg-accent/60'
             }`}
           >
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="size-2 shrink-0 rounded-full"
               style={{ backgroundColor: item.color }}
             />
-            <span className="text-gray-800 dark:text-gray-200 flex-1 truncate">{item.label}</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 capitalize">{item.type}</span>
+            <span className="flex-1 truncate">{item.label}</span>
+            <span className="text-xs text-muted-foreground capitalize">{item.type}</span>
           </button>
         ))}
       </div>

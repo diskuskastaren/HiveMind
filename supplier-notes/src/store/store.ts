@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { TEMPLATES } from '../utils/templates';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
@@ -12,7 +13,7 @@ export interface AppSettings {
   chunkIntervalSeconds: number;
   autoStopHours: number;
   teamsEnabled: boolean;
-  theme: 'light' | 'dark' | 'ladysucker';
+  theme: 'light' | 'dark';
   releaseVersionDraft: string;
   releaseNotesDraft: string;
   releaseHistory: Array<{
@@ -441,8 +442,10 @@ export const useStore = create<AppState>()(
         const { activeProjectId } = get();
         const now = Date.now();
         const projectIds = activeProjectId ? [activeProjectId] : [];
+        const template = get().suppliers.find((x) => x.id === supplierId)?.defaultTemplate;
+        const content = (template && TEMPLATES[template]?.content) || '';
         set((s) => ({
-          notes: [...s.notes, { id, projectIds, supplierIds: [supplierId], title: '', content: '', attendees: '', createdAt: now, updatedAt: now }],
+          notes: [...s.notes, { id, projectIds, supplierIds: [supplierId], title: '', content, attendees: '', createdAt: now, updatedAt: now }],
           activeNoteId: id,
         }));
         return id;
@@ -743,7 +746,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'Combobulator-data',
-      version: 9,
+      version: 10,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -854,6 +857,12 @@ export const useStore = create<AppState>()(
               releaseHistory: Array.isArray(state.settings?.releaseHistory) ? state.settings.releaseHistory : [],
             },
           };
+        }
+        if (version < 10) {
+          // The "ladysucker" theme was removed in the shadcn/ui redesign
+          if (state.settings?.theme !== 'dark') {
+            state = { ...state, settings: { ...state.settings, theme: 'light' } };
+          }
         }
         return state;
       },

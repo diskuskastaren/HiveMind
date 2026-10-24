@@ -5,6 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Teams Meeting Detected</title>
   <style>
+    /* Mirrors the app's "Calm workspace" tokens (src/index.css) — this window is plain HTML outside the React bundle */
+    :root {
+      --card: #ffffff;
+      --border: #e4e4e7;
+      --foreground: #18181b;
+      --muted-foreground: #66666e;
+      --accent: #ededf0;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-foreground: #ffffff;
+      --recording: #dc2626;
+      --shadow: 0 0 0 1px rgba(16, 24, 40, 0.04), 0 12px 32px rgba(16, 24, 40, 0.18);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --card: #161618;
+        --border: #27272a;
+        --foreground: #fafafa;
+        --muted-foreground: #a1a1aa;
+        --accent: #232326;
+        --primary: #818cf8;
+        --primary-hover: #a5b4fc;
+        --primary-foreground: #0b0b1e;
+        --recording: #f87171;
+        --shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+      }
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -16,18 +44,19 @@
       height: 100%;
       background: transparent;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter Variable', Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
 
     .wrapper {
-      padding: 40px 40px 40px 40px;
+      padding: 40px;
     }
 
     .pill {
-      background: #1c1c1e;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
       overflow: hidden;
       -webkit-app-region: drag;
     }
@@ -36,14 +65,14 @@
     .top-row {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 10px 10px 12px;
+      gap: 12px;
+      padding: 12px 12px 12px 14px;
     }
 
     .app-icon {
       width: 36px;
       height: 36px;
-      border-radius: 10px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -59,12 +88,21 @@
     }
 
     .app-name {
-      font-size: 9px;
-      font-weight: 700;
-      color: #6366f1;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin-bottom: 2px;
+    }
+
+    .app-name::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--recording);
     }
 
     .text {
@@ -74,18 +112,18 @@
     }
 
     .title {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
-      color: #f4f4f5;
-      line-height: 1.2;
+      color: var(--foreground);
+      line-height: 1.25;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .subtitle {
-      font-size: 11px;
-      color: #71717a;
+      font-size: 12px;
+      color: var(--muted-foreground);
       margin-top: 1px;
       white-space: nowrap;
     }
@@ -93,19 +131,21 @@
     .actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       flex-shrink: 0;
       -webkit-app-region: no-drag;
     }
 
     .record-btn {
-      background: #6366f1;
-      color: white;
+      background: var(--primary);
+      color: var(--primary-foreground);
       border: none;
-      border-radius: 100px;
-      padding: 7px 14px;
-      font-size: 12px;
-      font-weight: 600;
+      border-radius: 8px;
+      height: 32px;
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
       white-space: nowrap;
       transition: background 0.15s;
@@ -113,20 +153,26 @@
     }
 
     .record-btn:hover {
-      background: #818cf8;
+      background: var(--primary-hover);
+    }
+
+    .record-btn:focus-visible,
+    .dismiss-btn:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
     }
 
     .dismiss-btn {
-      background: rgba(255, 255, 255, 0.06);
+      background: transparent;
       border: none;
-      color: #71717a;
+      color: var(--muted-foreground);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
       transition: color 0.15s, background 0.15s;
       flex-shrink: 0;
       padding: 0;
@@ -134,13 +180,13 @@
     }
 
     .dismiss-btn:hover {
-      color: #d4d4d8;
-      background: rgba(255, 255, 255, 0.12);
+      color: var(--foreground);
+      background: var(--accent);
     }
 
     .dismiss-btn svg {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
     }
 
     /* ── Consent row (hidden by default, expands on hover) ── */
@@ -148,21 +194,21 @@
       max-height: 0;
       overflow: hidden;
       transition: max-height 0.22s ease, padding 0.22s ease;
-      padding: 0 12px;
+      padding: 0 14px;
       -webkit-app-region: no-drag;
     }
 
     .pill:hover .consent-row {
       max-height: 60px;
-      padding: 0 12px 11px 12px;
+      padding: 0 14px 12px 14px;
     }
 
     .consent-text {
-      font-size: 11px;
-      color: #52525b;
+      font-size: 12px;
+      color: var(--muted-foreground);
       line-height: 1.5;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-      padding-top: 9px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
     }
   </style>
 </head>
@@ -175,15 +221,15 @@
         </div>
 
         <div class="text">
-          <div class="app-name">Combobulator</div>
+          <div class="app-name">Teams meeting detected</div>
           <div class="title">Start Meeting Transcription</div>
           <div class="subtitle">Choose which note to record in</div>
         </div>
 
         <div class="actions">
-          <button class="record-btn" id="recordBtn">Start Recording</button>
-          <button class="dismiss-btn" id="dismissBtn" title="Dismiss">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <button class="record-btn" id="recordBtn">Start recording</button>
+          <button class="dismiss-btn" id="dismissBtn" title="Dismiss" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
             </svg>

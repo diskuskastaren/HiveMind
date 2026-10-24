@@ -1,46 +1,221 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─── Design tokens: "Calm workspace" ──────────────────────────────────────
+   Every component reads these variables. Light is the default; the .dark
+   class on <html> swaps the set. */
+:root {
+  --radius: 0.5rem;
+
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #66666e;
+  --accent: #ededf0;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --input: #e4e4e7;
+  --ring: #4f46e5;
+
+  --subtle-foreground: #3f3f46;
+  --brand-soft: #eef2ff;
+  --brand-soft-foreground: #3730a3;
+  --ai: #6d28d9;
+  --ai-soft: #f5f3ff;
+  --recording: #dc2626;
+  --recording-soft: #fef2f2;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --highlight: #fef3c7;
+  --highlight-strong: #fde68a;
+  --selection: #e0e7ff;
+  --overlay: rgba(9, 9, 11, 0.4);
+
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #4f46e5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ededf0;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #4f46e5;
+}
+
+.dark {
+  --background: #0a0a0b;
+  --foreground: #fafafa;
+  --card: #161618;
+  --card-foreground: #fafafa;
+  --popover: #161618;
+  --popover-foreground: #fafafa;
+  --primary: #818cf8;
+  --primary-foreground: #0b0b1e;
+  --secondary: #1f1f22;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f22;
+  --muted-foreground: #a1a1aa;
+  --accent: #232326;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --input: #27272a;
+  --ring: #818cf8;
+
+  --subtle-foreground: #d4d4d8;
+  --brand-soft: rgba(129, 140, 248, 0.14);
+  --brand-soft-foreground: #c7d2fe;
+  --ai: #c4b5fd;
+  --ai-soft: rgba(167, 139, 250, 0.14);
+  --recording: #f87171;
+  --recording-soft: rgba(248, 113, 113, 0.12);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --highlight: rgba(251, 191, 36, 0.22);
+  --highlight-strong: rgba(251, 191, 36, 0.42);
+  --selection: rgba(129, 140, 248, 0.28);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --sidebar: #111113;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #818cf8;
+  --sidebar-primary-foreground: #0b0b1e;
+  --sidebar-accent: #232326;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #818cf8;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* Fixed type scale: 11 / 12 / 13 / 14 / 16 / 20 / 24 / 28 */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.2;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-foreground: var(--brand-soft-foreground);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-recording: var(--recording);
+  --color-recording-soft: var(--recording-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-highlight: var(--highlight);
+  --color-highlight-strong: var(--highlight-strong);
+  --color-selection: var(--selection);
+  --color-overlay: var(--overlay);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
 
 @layer base {
   * {
-    @apply border-gray-200 dark:border-gray-700;
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
   }
   body {
-    @apply bg-white text-gray-900 text-sm dark:bg-gray-900 dark:text-gray-100;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    @apply bg-background text-foreground text-sm antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
   }
   strong {
     font-weight: 600;
   }
-
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
-/* TipTap editor */
+/* ─── TipTap editor content ─────────────────────────────────────────────── */
 .tiptap {
   outline: none;
   min-height: 400px;
   padding: 0.5rem 0;
+  font-size: 15px;
+  line-height: 1.65;
 }
-
 .tiptap > * + * {
-  margin-top: 0.5em;
+  margin-top: 0.6em;
 }
-
+.tiptap > :first-child {
+  margin-top: 0;
+}
 .tiptap h1 {
-  @apply text-2xl font-bold text-gray-900 dark:text-gray-100;
+  @apply text-2xl font-semibold tracking-tight text-foreground mt-6;
 }
 .tiptap h2 {
-  @apply text-xl font-semibold text-gray-800 mt-6 mb-2 dark:text-gray-200;
+  @apply text-xl font-semibold tracking-tight text-foreground mt-7 mb-1;
 }
 .tiptap h3 {
-  @apply text-lg font-semibold text-gray-700 mt-4 mb-1 dark:text-gray-300;
+  @apply text-base font-semibold text-foreground mt-5;
 }
-
-.tiptap p {
-  @apply leading-relaxed;
-}
-
 .tiptap ul {
   @apply list-disc pl-6 my-2;
 }
@@ -53,139 +228,84 @@
 .tiptap li p {
   @apply my-0;
 }
-
 .tiptap blockquote {
-  @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-3 dark:border-gray-600 dark:text-gray-400;
+  @apply border-l-2 border-border-strong pl-4 text-muted-foreground my-3;
 }
-
 .tiptap code {
-  @apply bg-gray-100 text-pink-600 rounded px-1 py-0.5 text-xs font-mono dark:bg-gray-800 dark:text-pink-400;
+  @apply bg-muted text-foreground rounded-sm px-1 py-0.5 font-mono text-[0.85em];
 }
-
 .tiptap pre {
-  @apply bg-gray-900 text-gray-100 rounded-lg p-4 my-3 overflow-x-auto;
+  @apply bg-zinc-900 text-zinc-100 rounded-lg p-4 my-3 overflow-x-auto;
 }
 .tiptap pre code {
-  @apply bg-transparent text-gray-100 p-0;
+  @apply bg-transparent text-zinc-100 p-0;
 }
-
 .tiptap hr {
-  @apply border-t border-gray-200 my-4 dark:border-gray-700;
+  @apply border-t border-border my-6;
 }
-
 .tiptap mark {
-  @apply bg-yellow-200 rounded px-0.5 dark:bg-yellow-900 dark:text-yellow-200;
+  @apply bg-highlight text-inherit rounded-sm px-0.5;
 }
-
 .tiptap strong {
-  @apply font-bold;
-}
-
-.tiptap em {
-  @apply italic;
-}
-
-.tiptap u {
-  @apply underline;
-}
-
-.tiptap s {
-  @apply line-through;
+  @apply font-semibold;
 }
 
 /* Task lists */
 .tiptap ul[data-type="taskList"] {
   @apply list-none pl-0;
 }
-
 .tiptap ul[data-type="taskList"] li {
-  @apply flex items-start gap-2 my-1;
+  @apply flex items-start gap-2.5 my-1;
 }
-
 .tiptap ul[data-type="taskList"] li label {
-  @apply flex-shrink-0 mt-0.5;
+  @apply shrink-0 mt-[0.3em];
 }
-
 .tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
-  @apply w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer;
+  @apply size-4 cursor-pointer;
+  accent-color: var(--primary);
 }
-
 .tiptap ul[data-type="taskList"] li div {
   @apply flex-1;
 }
-
 .tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
-  @apply line-through text-gray-400;
+  @apply line-through text-muted-foreground;
 }
 
 /* Placeholder */
 .tiptap p.is-editor-empty:first-child::before {
-  @apply text-gray-400 float-left h-0 pointer-events-none;
+  @apply text-muted-foreground float-left h-0 pointer-events-none;
   content: attr(data-placeholder);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full dark:bg-gray-600;
-}
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400 dark:bg-gray-500;
-}
-
-/* Transitions */
-.panel-transition {
-  transition: width 150ms ease, opacity 150ms ease;
-}
-
-.no-transition * {
-  transition: none !important;
-}
-
-/* Selection in editor for task creation */
+/* Selection used while creating a task/decision from text */
 .tiptap .selection-highlight {
-  @apply bg-blue-100 dark:bg-white/20;
+  @apply bg-selection rounded-sm;
 }
 
 /* Images */
 .tiptap img {
-  @apply max-w-full rounded-lg my-3 border border-gray-200 dark:border-gray-700;
-  display: block;
+  @apply max-w-full rounded-lg my-3 border border-border;
 }
-
 .tiptap img.ProseMirror-selectednode {
-  @apply outline outline-2 outline-blue-400;
+  @apply outline-2 outline-primary;
 }
 
 /* Links */
 .tiptap a.tiptap-link {
-  @apply text-blue-600 dark:text-blue-400 underline underline-offset-2 cursor-pointer;
+  @apply text-primary underline underline-offset-2 cursor-pointer;
 }
 .tiptap a.tiptap-link:hover {
-  @apply text-blue-800 dark:text-blue-300;
+  @apply opacity-80;
 }
 
-/* Superscript / Subscript */
-.tiptap sup {
-  @apply text-xs;
-  vertical-align: super;
-  line-height: 0;
-}
+.tiptap sup,
 .tiptap sub {
   @apply text-xs;
-  vertical-align: sub;
-  line-height: 0;
 }
 
 /* Mention chip */
 .tiptap .mention {
-  @apply inline-flex items-center bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded px-1 py-0.5 text-sm font-medium select-none;
+  @apply inline-flex items-center rounded-sm bg-brand-soft text-brand-soft-foreground px-1.5 text-[0.93em] font-medium select-none;
 }
 
 /* Tables */
@@ -194,16 +314,13 @@
 }
 .tiptap table th,
 .tiptap table td {
-  @apply border border-gray-300 dark:border-gray-600 px-3 py-2 text-left align-top;
+  @apply border border-border px-3 py-2 text-left align-top relative;
 }
 .tiptap table th {
-  @apply bg-gray-100 dark:bg-gray-800 font-semibold text-gray-700 dark:text-gray-200;
-}
-.tiptap table tr:nth-child(even) td {
-  @apply bg-gray-50 dark:bg-gray-800/40;
+  @apply bg-muted font-semibold;
 }
 .tiptap .selectedCell {
-  @apply bg-blue-50 dark:bg-blue-900/20;
+  @apply bg-selection;
 }
 .tiptap .column-resize-handle {
   position: absolute;
@@ -211,7 +328,7 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background-color: theme('colors.blue.400');
+  background-color: var(--primary);
   pointer-events: none;
   z-index: 20;
 }
@@ -219,210 +336,36 @@
   cursor: col-resize;
 }
 
-/* Find & Replace highlight decorations */
+/* Find & replace decorations */
 .find-match {
-  background-color: theme('colors.yellow.200');
+  background-color: var(--highlight);
   border-radius: 2px;
-}
-.dark .find-match {
-  background-color: rgba(161, 128, 0, 0.5);
 }
 .find-current {
-  background-color: theme('colors.orange.300');
+  background-color: var(--highlight-strong);
+  box-shadow: 0 0 0 1px var(--warning);
   border-radius: 2px;
 }
-.dark .find-current {
-  background-color: rgba(194, 100, 0, 0.6);
+
+/* ─── App chrome ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+  background-clip: padding-box;
 }
 
-/* ─── Ladysucker theme ──────────────────────────────────────────────────────
-   Palette:
-     #1D1210  Dark Coffee  — main background
-     #4D2C27  Espresso     — secondary background / panels
-     #9EA323  Lime Moss    — secondary text / muted accents
-     #D6DD33  Lemon Lime   — primary text / highlights
-     #7E544A  Clay Soil    — borders, muted elements
-   ─────────────────────────────────────────────────────────────────────────── */
-
-.ladysucker body {
-  background-color: #1D1210;
-  color: #D6DD33;
+.no-transition * {
+  transition: none !important;
 }
-
-/* Global border colour */
-.ladysucker * {
-  border-color: #7E544A !important;
-}
-
-/* ── Backgrounds ─────────────────────────────────────────────────────────── */
-.ladysucker .bg-white           { background-color: #1D1210 !important; }
-.ladysucker .bg-gray-50         { background-color: #3d2522 !important; }
-.ladysucker .bg-gray-100        { background-color: #4D2C27 !important; }
-.ladysucker .bg-gray-200        { background-color: #5a3630 !important; }
-.ladysucker .bg-gray-700        { background-color: #5a3630 !important; }
-.ladysucker .bg-gray-800        { background-color: #4D2C27 !important; }
-.ladysucker .bg-gray-900        { background-color: #1D1210 !important; }
-.ladysucker .bg-gray-950        { background-color: #2e1a18 !important; }
-
-/* Hover backgrounds */
-.ladysucker .hover\:bg-gray-50:hover   { background-color: #3d2522 !important; }
-.ladysucker .hover\:bg-gray-100:hover  { background-color: #4D2C27 !important; }
-.ladysucker .hover\:bg-gray-200:hover  { background-color: #5a3630 !important; }
-.ladysucker .hover\:bg-gray-700:hover  { background-color: #5a3630 !important; }
-.ladysucker .hover\:bg-gray-800:hover  { background-color: #4D2C27 !important; }
-
-/* Dark-variant overrides (Tailwind applies these when .dark is on html;
-   .ladysucker takes over instead, so we mirror the patterns) */
-.ladysucker .dark\:bg-gray-700  { background-color: #5a3630 !important; }
-.ladysucker .dark\:bg-gray-800  { background-color: #4D2C27 !important; }
-.ladysucker .dark\:bg-gray-900  { background-color: #1D1210 !important; }
-.ladysucker .dark\:bg-gray-950  { background-color: #2e1a18 !important; }
-
-.ladysucker .dark\:hover\:bg-gray-700:hover { background-color: #5a3630 !important; }
-.ladysucker .dark\:hover\:bg-gray-800:hover { background-color: #4D2C27 !important; }
-
-/* ── Text colours ────────────────────────────────────────────────────────── */
-.ladysucker .text-gray-900      { color: #D6DD33 !important; }
-.ladysucker .text-gray-800      { color: #D6DD33 !important; }
-.ladysucker .text-gray-700      { color: #c4cb2e !important; }
-.ladysucker .text-gray-600      { color: #9EA323 !important; }
-.ladysucker .text-gray-500      { color: #8a9020 !important; }
-.ladysucker .text-gray-400      { color: #7E544A !important; }
-.ladysucker .text-gray-300      { color: #9EA323 !important; }
-.ladysucker .text-gray-200      { color: #D6DD33 !important; }
-.ladysucker .text-gray-100      { color: #D6DD33 !important; }
-
-/* Dark-variant text overrides */
-.ladysucker .dark\:text-gray-100 { color: #D6DD33 !important; }
-.ladysucker .dark\:text-gray-200 { color: #D6DD33 !important; }
-.ladysucker .dark\:text-gray-300 { color: #c4cb2e !important; }
-.ladysucker .dark\:text-gray-400 { color: #9EA323 !important; }
-.ladysucker .dark\:text-gray-500 { color: #7E544A !important; }
-.ladysucker .dark\:text-gray-600 { color: #7E544A !important; }
-
-/* Hover text */
-.ladysucker .hover\:text-gray-600:hover  { color: #9EA323 !important; }
-.ladysucker .hover\:text-gray-700:hover  { color: #c4cb2e !important; }
-.ladysucker .hover\:text-gray-800:hover  { color: #D6DD33 !important; }
-.ladysucker .hover\:text-gray-900:hover  { color: #D6DD33 !important; }
-.ladysucker .dark\:hover\:text-gray-200:hover { color: #D6DD33 !important; }
-.ladysucker .dark\:hover\:text-gray-300:hover { color: #c4cb2e !important; }
-
-/* ── Borders ─────────────────────────────────────────────────────────────── */
-.ladysucker .border-gray-100    { border-color: #5a3630 !important; }
-.ladysucker .border-gray-200    { border-color: #7E544A !important; }
-.ladysucker .border-gray-300    { border-color: #7E544A !important; }
-.ladysucker .border-gray-600    { border-color: #7E544A !important; }
-.ladysucker .border-gray-700    { border-color: #7E544A !important; }
-.ladysucker .border-gray-800    { border-color: #5a3630 !important; }
-.ladysucker .dark\:border-gray-600 { border-color: #7E544A !important; }
-.ladysucker .dark\:border-gray-700 { border-color: #7E544A !important; }
-.ladysucker .dark\:border-gray-800 { border-color: #5a3630 !important; }
-
-/* ── Divide colours ──────────────────────────────────────────────────────── */
-.ladysucker .divide-gray-200 > * + * { border-color: #7E544A !important; }
-.ladysucker .divide-gray-700 > * + * { border-color: #7E544A !important; }
-.ladysucker .dark\:divide-gray-700 > * + * { border-color: #7E544A !important; }
-
-/* ── Ring / outline colours ──────────────────────────────────────────────── */
-.ladysucker .ring-gray-200  { --tw-ring-color: #7E544A !important; }
-.ladysucker .ring-gray-700  { --tw-ring-color: #7E544A !important; }
-.ladysucker .focus\:ring-gray-200:focus { --tw-ring-color: #7E544A !important; }
-.ladysucker .focus\:ring-2:focus { --tw-ring-color: #D6DD33 !important; }
-
-/* ── Scrollbar ───────────────────────────────────────────────────────────── */
-.ladysucker ::-webkit-scrollbar-thumb {
-  background-color: #7E544A !important;
-}
-.ladysucker ::-webkit-scrollbar-thumb:hover {
-  background-color: #9EA323 !important;
-}
-.ladysucker ::-webkit-scrollbar-track {
-  background-color: transparent !important;
-}
-
-/* ── TipTap editor ───────────────────────────────────────────────────────── */
-.ladysucker .tiptap h1 { color: #D6DD33 !important; }
-.ladysucker .tiptap h2 { color: #D6DD33 !important; }
-.ladysucker .tiptap h3 { color: #c4cb2e !important; }
-.ladysucker .tiptap blockquote {
-  border-left-color: #7E544A !important;
-  color: #9EA323 !important;
-}
-.ladysucker .tiptap code {
-  background-color: #4D2C27 !important;
-  color: #D6DD33 !important;
-}
-.ladysucker .tiptap pre {
-  background-color: #2e1a18 !important;
-  color: #D6DD33 !important;
-}
-.ladysucker .tiptap hr { border-top-color: #7E544A !important; }
-.ladysucker .tiptap mark {
-  background-color: #9EA323 !important;
-  color: #1D1210 !important;
-}
-.ladysucker .tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
-  color: #7E544A !important;
-}
-.ladysucker .tiptap p.is-editor-empty:first-child::before {
-  color: #7E544A !important;
-}
-.ladysucker .tiptap img {
-  border-color: #7E544A !important;
-}
-
-/* ── Input / form elements ───────────────────────────────────────────────── */
-.ladysucker input,
-.ladysucker textarea,
-.ladysucker select {
-  background-color: #4D2C27 !important;
-  color: #D6DD33 !important;
-  border-color: #7E544A !important;
-}
-.ladysucker input::placeholder,
-.ladysucker textarea::placeholder {
-  color: #7E544A !important;
-}
-.ladysucker input:focus,
-.ladysucker textarea:focus,
-.ladysucker select:focus {
-  outline-color: #D6DD33 !important;
-  border-color: #9EA323 !important;
-}
-
-/* ── New editor features ─────────────────────────────────────────────────── */
-.ladysucker .tiptap a.tiptap-link {
-  color: #9EA323 !important;
-}
-.ladysucker .tiptap a.tiptap-link:hover {
-  color: #D6DD33 !important;
-}
-.ladysucker .tiptap .mention {
-  background-color: #4D2C27 !important;
-  color: #D6DD33 !important;
-}
-.ladysucker .tiptap table th,
-.ladysucker .tiptap table td {
-  border-color: #7E544A !important;
-}
-.ladysucker .tiptap table th {
-  background-color: #4D2C27 !important;
-  color: #D6DD33 !important;
-}
-.ladysucker .tiptap table tr:nth-child(even) td {
-  background-color: rgba(77, 44, 39, 0.3) !important;
-}
-.ladysucker .tiptap .selectedCell {
-  background-color: rgba(158, 163, 35, 0.15) !important;
-}
-.ladysucker .find-match {
-  background-color: rgba(158, 163, 35, 0.35) !important;
-}
-.ladysucker .find-current {
-  background-color: rgba(214, 221, 51, 0.5) !important;
-}
-
-/* ── Accent / brand colours kept intact ─────────────────────────────────── */
-/* Blue, orange, amber, green accents are intentionally preserved so that
-   supplier colour chips, status badges, and action buttons retain contrast */

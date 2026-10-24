@@ -14,14 +14,14 @@ function CollapsibleView({ node, updateAttributes }: any) {
   const { title, open } = node.attrs as { title: string; open: boolean };
   return (
     <NodeViewWrapper className="my-2">
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-lg border">
         <div
           contentEditable={false}
-          className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-800 cursor-pointer select-none"
+          className="flex cursor-pointer items-center gap-2 bg-muted/60 px-3 py-2 select-none"
           onClick={() => updateAttributes({ open: !open })}
         >
           <ChevronRight
-            className={`w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
           />
           <input
             value={title}
@@ -31,7 +31,7 @@ function CollapsibleView({ node, updateAttributes }: any) {
             }}
             onClick={(e) => e.stopPropagation()}
             placeholder="Section title…"
-            className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-gray-700 dark:text-gray-300 placeholder-gray-400 cursor-text"
+            className="flex-1 cursor-text border-none bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground"
           />
         </div>
         {open && (

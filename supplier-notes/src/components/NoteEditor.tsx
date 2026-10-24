@@ -56,7 +56,30 @@ import {
   Mic,
   Paperclip,
   Search,
+  CalendarDays,
+  Users,
+  MoreHorizontal,
+  ChevronDown,
+  CornerUpRight,
+  Gavel,
+  Mail,
+  SquareCheck,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
+import { ColorDot, EntityChip } from './common';
 import type { Attachment } from '../types';
 import { exportNoteMarkdown, exportEmailSummary, downloadFile } from '../utils/export';
 import { CollapsibleExtension } from './editor/CollapsibleExtension';
@@ -71,23 +94,40 @@ const ToolbarBtn = ({
   onClick,
   children,
   title,
+  shortcut,
 }: {
   active?: boolean;
   onClick: () => void;
   children: React.ReactNode;
   title: string;
+  shortcut?: string;
 }) => (
-  <button
-    onMouseDown={(e) => {
-      e.preventDefault();
-      onClick();
-    }}
-    title={title}
-    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${active ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
-  >
-    {children}
-  </button>
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        aria-label={title}
+        aria-pressed={active}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClick();
+        }}
+        className={cn(
+          'flex size-7 items-center justify-center rounded-md text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4',
+          active && 'bg-accent text-foreground',
+        )}
+      >
+        {children}
+      </button>
+    </TooltipTrigger>
+    <TooltipContent className="flex items-center gap-2">
+      {title}
+      {shortcut && <Kbd>{shortcut}</Kbd>}
+    </TooltipContent>
+  </Tooltip>
 );
+
+const ToolbarSep = () => <span className="mx-1 h-4.5 w-px bg-border" />;
 
 const DateTimeEditor = ({ noteId, createdAt }: { noteId: string; createdAt: number }) => {
   const [editing, setEditing] = useState(false);
@@ -113,23 +153,21 @@ const DateTimeEditor = ({ noteId, createdAt }: { noteId: string; createdAt: numb
       <input
         ref={inputRef}
         type="datetime-local"
+        aria-label="Meeting date and time"
         defaultValue={toInputValue(createdAt)}
         onChange={handleChange}
         onBlur={handleBlur}
         autoFocus
-        className="flex-shrink-0 text-sm text-gray-500 border-none outline-none bg-transparent cursor-text"
+        className="h-7 shrink-0 rounded-md border bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       />
     );
   }
 
   return (
-    <button
-      onClick={handleClick}
-      title="Click to edit date & time"
-      className="flex-shrink-0 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 transition-colors cursor-pointer"
-    >
-      {format(new Date(createdAt), 'EEEE, MMM d yyyy · HH:mm')}
-    </button>
+    <Button variant="ghost" size="xs" onClick={handleClick} title="Click to edit date & time" className="text-subtle-foreground">
+      <CalendarDays />
+      {format(new Date(createdAt), 'EEE d MMM yyyy · HH:mm')}
+    </Button>
   );
 };
 
@@ -226,11 +264,7 @@ export function NoteEditor() {
   const selectionTextRef = useRef('');
 
   const [selectionText, setSelectionText] = useState('');
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
-  const [showSupplierPicker, setShowSupplierPicker] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
+    const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [findTerm, setFindTerm] = useState('');
@@ -405,6 +439,7 @@ export function NoteEditor() {
           text: selectionText.trim(),
           status: 'open',
         });
+        setRightPanelTab('followups');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -491,6 +526,7 @@ export function NoteEditor() {
       text: selectionText.trim(),
       status: 'open',
     });
+    setRightPanelTab('followups');
   };
 
   const applyTemplate = (key: string) => {
@@ -498,7 +534,6 @@ export function NoteEditor() {
     const content = TEMPLATES[key]?.content || '';
     editor.commands.setContent(content);
     updateNote(activeNoteId, { content });
-    setShowTemplateMenu(false);
   };
 
   const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
@@ -531,764 +566,580 @@ export function NoteEditor() {
 
   if (!note) return null;
 
+  const exportProjectNames = () =>
+    note.projectIds
+      .map((id) => allProjects.find((p) => p.id === id)?.name || '')
+      .filter(Boolean)
+      .join(', ');
+  const exportSupplierName = () => (activeTabId === INTERNAL_TAB_ID ? 'Internal' : supplier?.name || '');
+
+  const bubbleBtn = (active: boolean) =>
+    cn(
+      'flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-md px-1.5 text-xs font-medium whitespace-nowrap text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-3.5',
+      active && 'bg-accent text-foreground',
+    );
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-8 pt-6 pb-2 flex-shrink-0">
-        <input
-          ref={titleRef}
-          type="text"
-          placeholder="Meeting title…"
-          value={note.title}
-          onChange={handleTitleChange}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === 'ArrowDown') {
-              e.preventDefault();
-              editor?.commands.focus('start');
-            }
-          }}
-          className="w-full text-2xl font-bold text-gray-900 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600 border-none outline-none bg-transparent"
-        />
-        <div className="flex items-center gap-4 mt-2 text-sm text-gray-400 dark:text-gray-500 flex-wrap">
-          <DateTimeEditor noteId={note.id} createdAt={note.createdAt} />
-
-          {/* Project badges */}
-          <div className="flex items-center gap-1 flex-wrap">
-            {note.projectIds.map((pid) => {
-              const p = allProjects.find((x) => x.id === pid);
-              if (!p) return null;
-              return (
-                <span
-                  key={pid}
-                  className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded group"
-                  style={{ backgroundColor: p.color + '20', color: p.color }}
-                >
-                  {p.name}
-                  {note.projectIds.length > 1 && (
-                    <button
-                      className="opacity-0 group-hover:opacity-100 hover:opacity-100 ml-0.5"
-                      title={`Unlink from ${p.name}`}
-                      onClick={() =>
-                        updateNote(note.id, {
-                          projectIds: note.projectIds.filter((id) => id !== pid),
-                        })
-                      }
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowProjectPicker(!showProjectPicker);
-                  setShowSupplierPicker(false);
-                }}
-                className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
-                title="Link note to another project"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-              {showProjectPicker && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowProjectPicker(false)} />
-                  <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                    <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
-                      Link to project
-                    </p>
-                    {allProjects
-                      .filter((p) => !p.archived)
-                      .map((p) => {
-                        const linked = note.projectIds.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
-                            onClick={() => {
-                              updateNote(note.id, {
-                                projectIds: linked
-                                  ? note.projectIds.filter((id) => id !== p.id)
-                                  : [...note.projectIds, p.id],
-                              });
-                              setShowProjectPicker(false);
-                            }}
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: p.color }}
-                            />
-                            <span className="flex-1">{p.name}</span>
-                            {linked && <span className="text-xs text-blue-500">✓</span>}
-                          </button>
-                        );
-                      })}
-                  </div>
-                </>
-              )}
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-10 pt-9 pb-24">
+          {/* Header */}
+          <div className="flex flex-col gap-3">
+            <input
+              ref={titleRef}
+              type="text"
+              aria-label="Meeting title"
+              placeholder="Meeting title…"
+              value={note.title}
+              onChange={handleTitleChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  editor?.commands.focus('start');
+                }
+              }}
+              className="w-full border-none bg-transparent text-display font-semibold tracking-tight outline-none placeholder:text-border-strong"
+            />
+            <div className="-ml-2 flex flex-wrap items-center gap-1.5 text-ui text-muted-foreground">
+              <DateTimeEditor noteId={note.id} createdAt={note.createdAt} />
+              <label className="flex h-6 min-w-40 flex-1 items-center gap-1.5 rounded-md px-2 text-subtle-foreground focus-within:bg-accent/60 [&_svg]:size-3.5">
+                <Users className="shrink-0 text-muted-foreground" />
+                <input
+                  type="text"
+                  aria-label="Attendees"
+                  placeholder="Attendees…"
+                  value={note.attendees}
+                  onChange={handleAttendeesChange}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      editor?.commands.focus('start');
+                    }
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                />
+              </label>
             </div>
-          </div>
-
-          {/* Supplier badges */}
-          {note.supplierIds.length > 1 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              {note.supplierIds.map((sid) => {
-                const s = allSuppliers.find((x) => x.id === sid);
-                if (!s) return null;
+            <div className="flex flex-wrap items-center gap-1.5">
+              {note.projectIds.map((pid) => {
+                const p = allProjects.find((x) => x.id === pid);
+                if (!p) return null;
                 return (
-                  <span
-                    key={sid}
-                    className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded border group"
-                    style={{ borderColor: s.color + '60', color: s.color }}
-                  >
-                    {s.name}
-                    <button
-                      className="opacity-0 group-hover:opacity-100 ml-0.5"
-                      title={`Unlink from ${s.name}`}
-                      onClick={() =>
-                        updateNote(note.id, {
-                          supplierIds: note.supplierIds.filter((id) => id !== sid),
-                        })
-                      }
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
+                  <EntityChip key={pid} color={p.color} className="group/chip h-6">
+                    {p.name}
+                    {note.projectIds.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label={`Unlink from ${p.name}`}
+                        className="-mr-1 hidden text-muted-foreground group-hover/chip:inline hover:text-foreground"
+                        onClick={() => updateNote(note.id, { projectIds: note.projectIds.filter((id) => id !== pid) })}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </EntityChip>
                 );
               })}
-            </div>
-          )}
-
-          {/* Link to more suppliers */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowSupplierPicker(!showSupplierPicker);
-                setShowProjectPicker(false);
-              }}
-              className="text-xs text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors"
-              title="Link note to another supplier"
-            >
-              + supplier
-            </button>
-            {showSupplierPicker && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSupplierPicker(false)} />
-                <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px] max-h-[220px] overflow-y-auto">
-                  <p className="px-3 pt-1 pb-0.5 text-xs text-gray-400 dark:text-gray-500 font-medium">
-                    Link to supplier
-                  </p>
+              {note.supplierIds.length > 1 &&
+                note.supplierIds.map((sid) => {
+                  const s = allSuppliers.find((x) => x.id === sid);
+                  if (!s) return null;
+                  return (
+                    <EntityChip key={sid} color={s.color} className="group/chip h-6">
+                      {s.name}
+                      <button
+                        type="button"
+                        aria-label={`Unlink from ${s.name}`}
+                        className="-mr-1 hidden text-muted-foreground group-hover/chip:inline hover:text-foreground"
+                        onClick={() => updateNote(note.id, { supplierIds: note.supplierIds.filter((id) => id !== sid) })}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </EntityChip>
+                  );
+                })}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Plus className="size-3" />
+                    Project
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Link to project</DropdownMenuLabel>
+                  {allProjects
+                    .filter((p) => !p.archived)
+                    .map((p) => {
+                      const linked = note.projectIds.includes(p.id);
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={p.id}
+                          checked={linked}
+                          onCheckedChange={() =>
+                            updateNote(note.id, {
+                              projectIds: linked ? note.projectIds.filter((id) => id !== p.id) : [...note.projectIds, p.id],
+                            })
+                          }
+                        >
+                          <ColorDot color={p.color} />
+                          {p.name}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Plus className="size-3" />
+                    Supplier
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 w-52">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Link to supplier</DropdownMenuLabel>
                   {allSuppliers.map((s) => {
                     const linked = note.supplierIds.includes(s.id);
                     return (
-                      <button
+                      <DropdownMenuCheckboxItem
                         key={s.id}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300"
-                        onClick={() => {
+                        checked={linked}
+                        onCheckedChange={() =>
                           updateNote(note.id, {
-                            supplierIds: linked
-                              ? note.supplierIds.filter((id) => id !== s.id)
-                              : [...note.supplierIds, s.id],
-                          });
-                          setShowSupplierPicker(false);
-                        }}
+                            supplierIds: linked ? note.supplierIds.filter((id) => id !== s.id) : [...note.supplierIds, s.id],
+                          })
+                        }
                       >
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: s.color }}
-                        />
-                        <span className="flex-1">{s.name}</span>
-                        {linked && <span className="text-xs text-blue-500">✓</span>}
-                      </button>
+                        <ColorDot color={s.color} />
+                        {s.name}
+                      </DropdownMenuCheckboxItem>
                     );
                   })}
-                </div>
-              </>
-            )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
-          <input
-            type="text"
-            placeholder="Attendees…"
-            value={note.attendees}
-            onChange={handleAttendeesChange}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                editor?.commands.focus('start');
-              }
-            }}
-            className="flex-1 border-none outline-none bg-transparent text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600 min-w-[120px]"
-          />
-        </div>
-      </div>
+          {/* Toolbar */}
+          {editor && (
+            <div className="sticky top-0 z-10 -mx-2 bg-background/95 px-2 py-2 backdrop-blur-sm">
+              <div role="toolbar" aria-label="Formatting" className="flex flex-wrap items-center gap-0.5 rounded-lg border bg-card p-1 shadow-xs">
+                <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold" shortcut="Ctrl B">
+                  <Bold />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic" shortcut="Ctrl I">
+                  <Italic />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline" shortcut="Ctrl U">
+                  <UnderlineIcon />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+                  <Strikethrough />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('highlight')} onClick={() => editor.chain().focus().toggleHighlight().run()} title="Highlight">
+                  <Highlighter />
+                </ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">
+                  <Heading1 />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">
+                  <Heading2 />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} title="Heading 3">
+                  <Heading3 />
+                </ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet list">
+                  <List />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list">
+                  <ListOrdered />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()} title="Task list">
+                  <CheckSquare />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote">
+                  <Quote />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="Code block">
+                  <Code2 />
+                </ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn active={editor.isActive('link')} onClick={handleLinkClick} title={editor.isActive('link') ? 'Remove link' : 'Add link'}>
+                  {editor.isActive('link') ? <Unlink2 /> : <Link2 />}
+                </ToolbarBtn>
+                <ToolbarBtn
+                  active={isInTable}
+                  onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                  title="Insert table"
+                >
+                  <TableIcon />
+                </ToolbarBtn>
+                {isInTable && (
+                  <>
+                    <ToolbarBtn onClick={() => (editor.chain().focus() as any).addRowAfter().run()} title="Add row below">
+                      <Rows3 />
+                    </ToolbarBtn>
+                    <ToolbarBtn onClick={() => (editor.chain().focus() as any).deleteRow().run()} title="Delete row">
+                      <Rows3 className="opacity-50" />
+                    </ToolbarBtn>
+                    <ToolbarBtn onClick={() => (editor.chain().focus() as any).addColumnAfter().run()} title="Add column right">
+                      <Columns3 />
+                    </ToolbarBtn>
+                    <ToolbarBtn onClick={() => (editor.chain().focus() as any).deleteColumn().run()} title="Delete column">
+                      <Columns3 className="opacity-50" />
+                    </ToolbarBtn>
+                    <ToolbarBtn onClick={() => (editor.chain().focus() as any).deleteTable().run()} title="Delete table">
+                      <Trash2 />
+                    </ToolbarBtn>
+                  </>
+                )}
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="More formatting"
+                          className="flex size-7 items-center justify-center rounded-md text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent [&_svg]:size-4"
+                        >
+                          <MoreHorizontal />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>More formatting</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="start" className="w-48" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    <DropdownMenuCheckboxItem checked={editor.isActive('code')} onCheckedChange={() => editor.chain().focus().toggleCode().run()}>
+                      <Code />
+                      Inline code
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={editor.isActive('superscript')} onCheckedChange={() => editor.chain().focus().toggleSuperscript().run()}>
+                      <SuperscriptIcon />
+                      Superscript
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={editor.isActive('subscript')} onCheckedChange={() => editor.chain().focus().toggleSubscript().run()}>
+                      <SubscriptIcon />
+                      Subscript
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => editor.chain().focus().setHorizontalRule().run()}>
+                      <Minus />
+                      Divider
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => editor.chain().focus().undo().run()}>
+                      <Undo2 />
+                      Undo
+                      <DropdownMenuShortcut>Ctrl Z</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => editor.chain().focus().redo().run()}>
+                      <Redo2 />
+                      Redo
+                      <DropdownMenuShortcut>Ctrl Shift Z</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-      {/* Toolbar */}
-      {editor && (
-        <div className="px-8 py-1 flex items-center gap-0.5 border-b border-gray-100 dark:border-gray-800 flex-shrink-0 flex-wrap">
-          {/* Text formatting */}
-          <ToolbarBtn
-            active={editor.isActive('bold')}
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            title="Bold (Ctrl+B)"
-          >
-            <Bold className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('italic')}
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            title="Italic (Ctrl+I)"
-          >
-            <Italic className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('underline')}
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            title="Underline (Ctrl+U)"
-          >
-            <UnderlineIcon className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('strike')}
-            onClick={() => editor.chain().focus().toggleStrike().run()}
-            title="Strikethrough"
-          >
-            <Strikethrough className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('highlight')}
-            onClick={() => editor.chain().focus().toggleHighlight().run()}
-            title="Highlight"
-          >
-            <Highlighter className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('superscript')}
-            onClick={() => editor.chain().focus().toggleSuperscript().run()}
-            title="Superscript"
-          >
-            <SuperscriptIcon className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('subscript')}
-            onClick={() => editor.chain().focus().toggleSubscript().run()}
-            title="Subscript"
-          >
-            <SubscriptIcon className="w-4 h-4" />
-          </ToolbarBtn>
+                <span className="flex-1" />
 
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+                {editor.isEmpty && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="xs" className="text-subtle-foreground">
+                        <ClipboardList />
+                        Template
+                        <ChevronDown />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">Insert template</DropdownMenuLabel>
+                      {Object.entries(TEMPLATES).map(([key, t]) => (
+                        <DropdownMenuItem key={key} onSelect={() => applyTemplate(key)}>
+                          {t.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <ToolbarBtn active={showFindReplace} onClick={() => setShowFindReplace((v) => !v)} title="Find & replace" shortcut="Ctrl F">
+                  <Search />
+                </ToolbarBtn>
+                <ToolbarBtn onClick={handlePickFiles} title="Attach file">
+                  <Paperclip />
+                </ToolbarBtn>
+                <ToolbarBtn
+                  onClick={() => {
+                    if (!rightPanelOpen) toggleRightPanel();
+                    setRightPanelTab('transcript');
+                  }}
+                  title={isRecording ? 'Recording in progress — open transcript' : 'Record meeting transcript'}
+                >
+                  <span className="relative flex">
+                    <Mic className={isRecording ? 'text-recording' : undefined} />
+                    {isRecording && <span className="absolute -top-0.5 -right-0.5 size-1.5 animate-pulse rounded-full bg-recording" />}
+                  </span>
+                </ToolbarBtn>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="xs" className="text-subtle-foreground">
+                      <Download />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const md = exportNoteMarkdown(note, exportSupplierName(), exportProjectNames());
+                        downloadFile(md, `${note.title || 'note'}.md`);
+                      }}
+                    >
+                      <FileDown />
+                      Markdown
+                      <DropdownMenuShortcut>.md</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const email = exportEmailSummary(note, exportSupplierName(), exportProjectNames(), tasks, decisions);
+                        downloadFile(email, `${note.title || 'note'}-summary.txt`);
+                      }}
+                    >
+                      <Mail />
+                      Email summary
+                      <DropdownMenuShortcut>.txt</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-          {/* Headings */}
-          <ToolbarBtn
-            active={editor.isActive('heading', { level: 1 })}
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            title="Heading 1"
-          >
-            <Heading1 className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('heading', { level: 2 })}
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            title="Heading 2"
-          >
-            <Heading2 className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('heading', { level: 3 })}
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-            title="Heading 3"
-          >
-            <Heading3 className="w-4 h-4" />
-          </ToolbarBtn>
+              {/* Link input row */}
+              {showLinkInput && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 shadow-xs">
+                  <Link2 className="size-3.5 shrink-0 text-primary" />
+                  <input
+                    ref={linkInputRef}
+                    value={linkUrl}
+                    aria-label="Link URL"
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyLink();
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowLinkInput(false);
+                        setLinkUrl('');
+                        editor.commands.focus();
+                      }
+                    }}
+                    placeholder="https://…"
+                    className="flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+                  />
+                  <Button
+                    size="xs"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      applyLink();
+                    }}
+                  >
+                    Set link
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Cancel"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setShowLinkInput(false);
+                      setLinkUrl('');
+                      editor.commands.focus();
+                    }}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              )}
 
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-          {/* Lists & blocks */}
-          <ToolbarBtn
-            active={editor.isActive('bulletList')}
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            title="Bullet list"
-          >
-            <List className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('orderedList')}
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            title="Numbered list"
-          >
-            <ListOrdered className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('taskList')}
-            onClick={() => editor.chain().focus().toggleTaskList().run()}
-            title="Task list"
-          >
-            <CheckSquare className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('blockquote')}
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            title="Quote"
-          >
-            <Quote className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('code')}
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            title="Inline code"
-          >
-            <Code className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={editor.isActive('codeBlock')}
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            title="Code block"
-          >
-            <Code2 className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={false}
-            onClick={() => editor.chain().focus().setHorizontalRule().run()}
-            title="Divider"
-          >
-            <Minus className="w-4 h-4" />
-          </ToolbarBtn>
-
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-          {/* Link */}
-          <ToolbarBtn
-            active={editor.isActive('link')}
-            onClick={handleLinkClick}
-            title={editor.isActive('link') ? 'Remove link' : 'Add link'}
-          >
-            {editor.isActive('link') ? (
-              <Unlink2 className="w-4 h-4" />
-            ) : (
-              <Link2 className="w-4 h-4" />
-            )}
-          </ToolbarBtn>
-
-          {/* Table */}
-          <ToolbarBtn
-            active={isInTable}
-            onClick={() =>
-              editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-            }
-            title="Insert table"
-          >
-            <TableIcon className="w-4 h-4" />
-          </ToolbarBtn>
-
-          {/* Table operations — visible only when cursor is inside a table */}
-          {isInTable && (
-            <>
-              <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-              <ToolbarBtn
-                active={false}
-                onClick={() => (editor.chain().focus() as any).addRowAfter().run()}
-                title="Add row below"
-              >
-                <Rows3 className="w-4 h-4" />
-              </ToolbarBtn>
-              <ToolbarBtn
-                active={false}
-                onClick={() => (editor.chain().focus() as any).deleteRow().run()}
-                title="Delete row"
-              >
-                <Rows3 className="w-4 h-4 opacity-50" />
-              </ToolbarBtn>
-              <ToolbarBtn
-                active={false}
-                onClick={() => (editor.chain().focus() as any).addColumnAfter().run()}
-                title="Add column right"
-              >
-                <Columns3 className="w-4 h-4" />
-              </ToolbarBtn>
-              <ToolbarBtn
-                active={false}
-                onClick={() => (editor.chain().focus() as any).deleteColumn().run()}
-                title="Delete column"
-              >
-                <Columns3 className="w-4 h-4 opacity-50" />
-              </ToolbarBtn>
-              <ToolbarBtn
-                active={false}
-                onClick={() => (editor.chain().focus() as any).deleteTable().run()}
-                title="Delete table"
-              >
-                <Trash2 className="w-4 h-4" />
-              </ToolbarBtn>
-            </>
-          )}
-
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-          {/* History */}
-          <ToolbarBtn
-            active={false}
-            onClick={() => editor.chain().focus().undo().run()}
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo2 className="w-4 h-4" />
-          </ToolbarBtn>
-          <ToolbarBtn
-            active={false}
-            onClick={() => editor.chain().focus().redo().run()}
-            title="Redo (Ctrl+Shift+Z)"
-          >
-            <Redo2 className="w-4 h-4" />
-          </ToolbarBtn>
-
-          <div className="flex-1" />
-
-          {/* Find */}
-          <button
-            onClick={() => setShowFindReplace((v) => !v)}
-            title="Find & Replace (Ctrl+F)"
-            className={`p-1.5 rounded transition-colors ${
-              showFindReplace
-                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400'
-            }`}
-          >
-            <Search className="w-4 h-4" />
-          </button>
-
-          {/* Attach file */}
-          <button
-            onClick={handlePickFiles}
-            title="Attach file"
-            className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
-
-          {/* Transcript / Record */}
-          <button
-            onClick={() => {
-              if (!rightPanelOpen) toggleRightPanel();
-              setRightPanelTab('transcript');
-            }}
-            title={
-              isRecording
-                ? 'Recording in progress — click to open transcript'
-                : 'Record meeting transcript'
-            }
-            className={`p-1.5 rounded transition-colors relative ${
-              isRecording
-                ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-            }`}
-          >
-            <Mic className="w-4 h-4" />
-            {isRecording && (
-              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            )}
-          </button>
-
-          {/* Template — only when editor is empty */}
-          {editor.isEmpty && (
-            <div className="relative">
-              <button
-                onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-                className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-                title="Apply template"
-              >
-                <ClipboardList className="w-4 h-4" />
-              </button>
-              {showTemplateMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowTemplateMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                    {Object.entries(TEMPLATES).map(([key, t]) => (
-                      <button
-                        key={key}
-                        className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"
-                        onClick={() => applyTemplate(key)}
-                      >
-                        {t.name}
-                      </button>
-                    ))}
-                  </div>
-                </>
+              {/* Find & Replace panel */}
+              {showFindReplace && (
+                <FindReplacePanel
+                  editor={editor}
+                  onClose={() => setShowFindReplace(false)}
+                  findTerm={findTerm}
+                  setFindTerm={setFindTerm}
+                  replaceTerm={replaceTerm}
+                  setReplaceTerm={setReplaceTerm}
+                />
               )}
             </div>
           )}
 
-          {/* Export */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-              title="Export note"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            {showExportMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-50 min-w-[180px]">
-                  <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
-                    onClick={() => {
-                      const projectNames = note.projectIds
-                        .map((id) => allProjects.find((p) => p.id === id)?.name || '')
-                        .filter(Boolean)
-                        .join(', ');
-                      const supplierName =
-                        activeTabId === INTERNAL_TAB_ID ? 'Internal' : supplier?.name || '';
-                      const md = exportNoteMarkdown(note, supplierName, projectNames);
-                      downloadFile(md, `${note.title || 'note'}.md`);
-                      setShowExportMenu(false);
-                    }}
-                  >
-                    <FileDown className="w-3.5 h-3.5" /> Markdown
+          {/* Attachments */}
+          {note.attachments && note.attachments.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+              {note.attachments.map((att) => (
+                <span key={att.id} className="group/att inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-ui">
+                  <button type="button" onClick={() => handleOpenAttachment(att)} className="max-w-56 truncate hover:underline" title={`Open ${att.fileName}`}>
+                    {att.fileName}
                   </button>
                   <button
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 flex items-center gap-2"
-                    onClick={() => {
-                      const projectNames = note.projectIds
-                        .map((id) => allProjects.find((p) => p.id === id)?.name || '')
-                        .filter(Boolean)
-                        .join(', ');
-                      const supplierName =
-                        activeTabId === INTERNAL_TAB_ID ? 'Internal' : supplier?.name || '';
-                      const email = exportEmailSummary(
-                        note,
-                        supplierName,
-                        projectNames,
-                        tasks,
-                        decisions,
-                      );
-                      downloadFile(email, `${note.title || 'note'}-summary.txt`);
-                      setShowExportMenu(false);
+                    type="button"
+                    onClick={() => handleRemoveAttachment(att)}
+                    aria-label="Remove attachment"
+                    className="hidden text-muted-foreground group-hover/att:inline hover:text-destructive"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Editor */}
+          <div className="relative">
+            {editor && (
+              <BubbleMenu
+                editor={editor}
+                tippyOptions={{ duration: 100, placement: 'top-start', maxWidth: 'none' }}
+                shouldShow={({ state }) => {
+                  const { selection } = state;
+                  if (selection.empty) return false;
+                  if ((selection as any).node) return false;
+                  return true;
+                }}
+              >
+                <div role="toolbar" aria-label="Selection actions" className="flex items-center gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
+                  <button
+                    type="button"
+                    className={bubbleBtn(false)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      createTaskFromSelection();
                     }}
                   >
-                    <FileDown className="w-3.5 h-3.5" /> Email summary
+                    <SquareCheck />
+                    Task <Kbd className="h-4 bg-transparent px-0 text-2xs">Alt T</Kbd>
+                  </button>
+                  <button
+                    type="button"
+                    className={bubbleBtn(false)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      createDecisionFromSelection();
+                    }}
+                  >
+                    <Gavel />
+                    Decision <Kbd className="h-4 bg-transparent px-0 text-2xs">Alt D</Kbd>
+                  </button>
+                  <button
+                    type="button"
+                    className={bubbleBtn(false)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      createFollowUpFromSelection();
+                    }}
+                  >
+                    <CornerUpRight />
+                    Follow-up <Kbd className="h-4 bg-transparent px-0 text-2xs">Alt F</Kbd>
+                  </button>
+                  <span className="mx-0.5 h-4 w-px bg-border" />
+                  <button
+                    type="button"
+                    aria-label="Bold"
+                    className={bubbleBtn(editor.isActive('bold'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleBold().run();
+                    }}
+                  >
+                    <Bold />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Italic"
+                    className={bubbleBtn(editor.isActive('italic'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleItalic().run();
+                    }}
+                  >
+                    <Italic />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Underline"
+                    className={bubbleBtn(editor.isActive('underline'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleUnderline().run();
+                    }}
+                  >
+                    <UnderlineIcon />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Strikethrough"
+                    className={bubbleBtn(editor.isActive('strike'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleStrike().run();
+                    }}
+                  >
+                    <Strikethrough />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Highlight"
+                    className={bubbleBtn(editor.isActive('highlight'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleHighlight().run();
+                    }}
+                  >
+                    <Highlighter />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Inline code"
+                    className={bubbleBtn(editor.isActive('code'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editor.chain().focus().toggleCode().run();
+                    }}
+                  >
+                    <Code />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={editor.isActive('link') ? 'Remove link' : 'Add link'}
+                    className={bubbleBtn(editor.isActive('link'))}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleLinkClick();
+                    }}
+                  >
+                    <Link2 />
                   </button>
                 </div>
-              </>
+              </BubbleMenu>
             )}
+
+            <EditorContent editor={editor} />
           </div>
         </div>
-      )}
-
-      {/* Link input row */}
-      {editor && showLinkInput && (
-        <div className="px-8 py-1.5 flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 bg-blue-50 dark:bg-blue-900/20 flex-shrink-0">
-          <Link2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-          <input
-            ref={linkInputRef}
-            value={linkUrl}
-            onChange={(e) => setLinkUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                applyLink();
-              }
-              if (e.key === 'Escape') {
-                setShowLinkInput(false);
-                setLinkUrl('');
-                editor.commands.focus();
-              }
-            }}
-            placeholder="https://..."
-            className="flex-1 text-sm bg-transparent border-none outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
-          />
-          <button
-            onMouseDown={(e) => {
-              e.preventDefault();
-              applyLink();
-            }}
-            className="text-xs px-2.5 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-          >
-            Set link
-          </button>
-          <button
-            onMouseDown={(e) => {
-              e.preventDefault();
-              setShowLinkInput(false);
-              setLinkUrl('');
-              editor.commands.focus();
-            }}
-            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-400 transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Find & Replace panel */}
-      {editor && showFindReplace && (
-        <FindReplacePanel
-          editor={editor}
-          onClose={() => setShowFindReplace(false)}
-          findTerm={findTerm}
-          setFindTerm={setFindTerm}
-          replaceTerm={replaceTerm}
-          setReplaceTerm={setReplaceTerm}
-        />
-      )}
-
-      {/* Selection actions row */}
-      {editor && (
-        <div className="px-8 h-8 flex items-center gap-1 flex-shrink-0 border-b border-gray-100 dark:border-gray-800">
-          <div
-            className={selectionText ? 'flex items-center gap-1' : 'invisible flex items-center gap-1'}
-          >
-            <button
-              onClick={createTaskFromSelection}
-              className="text-xs px-2 py-1 bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
-              title="Alt+T"
-            >
-              + Task
-            </button>
-            <button
-              onClick={createDecisionFromSelection}
-              className="text-xs px-2 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
-              title="Alt+D"
-            >
-              + Decision
-            </button>
-            <button
-              onClick={createFollowUpFromSelection}
-              className="text-xs px-2 py-1 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 rounded hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors"
-              title="Alt+F"
-            >
-              + Follow-up
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Attachments strip */}
-      {note.attachments && note.attachments.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 px-8 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-          <Paperclip className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-          {note.attachments.map((att) => (
-            <div
-              key={att.id}
-              className="group flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-white/10 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
-            >
-              <button
-                onClick={() => handleOpenAttachment(att)}
-                className="max-w-[220px] truncate text-left hover:underline"
-                title={`Open ${att.fileName}`}
-              >
-                {att.fileName}
-              </button>
-              <button
-                onClick={() => handleRemoveAttachment(att)}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-0.5 flex-shrink-0"
-                title="Remove attachment"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Editor area */}
-      <div className="flex-1 overflow-y-auto px-8 pb-16 relative">
-        {/* Bubble menu — floating toolbar on text selection */}
-        {editor && (
-          <BubbleMenu
-            editor={editor}
-            tippyOptions={{ duration: 100, placement: 'top-start' }}
-            shouldShow={({ state }) => {
-              const { selection } = state;
-              if (selection.empty) return false;
-              if ((selection as any).node) return false;
-              return true;
-            }}
-          >
-            <div className="flex items-center gap-0.5 px-1.5 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleBold().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs font-bold ${editor.isActive('bold') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Bold"
-              >
-                B
-              </button>
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleItalic().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs italic ${editor.isActive('italic') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Italic"
-              >
-                I
-              </button>
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleUnderline().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs underline ${editor.isActive('underline') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Underline"
-              >
-                U
-              </button>
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleStrike().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs line-through ${editor.isActive('strike') ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Strikethrough"
-              >
-                S
-              </button>
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleHighlight().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs font-mono ${editor.isActive('highlight') ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Highlight"
-              >
-                H
-              </button>
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  editor.chain().focus().toggleCode().run();
-                }}
-                className={`p-1.5 rounded transition-colors text-xs font-mono ${editor.isActive('code') ? 'bg-gray-200 dark:bg-gray-600 text-pink-600 dark:text-pink-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title="Code"
-              >
-                {'<>'}
-              </button>
-              <div className="w-px h-4 bg-gray-200 dark:bg-gray-600 mx-0.5" />
-              <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleLinkClick();
-                }}
-                className={`p-1.5 rounded transition-colors ${editor.isActive('link') ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title={editor.isActive('link') ? 'Remove link' : 'Add link'}
-              >
-                <Link2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </BubbleMenu>
-        )}
-
-        <EditorContent editor={editor} />
       </div>
 
-      {/* Footer: autosave + word count */}
-      <div className="absolute bottom-2 right-2 text-xs text-gray-300 dark:text-gray-600 select-none pointer-events-none flex items-center gap-2">
+      {/* Footer: word count + autosave */}
+      <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-t px-4 text-2xs text-muted-foreground tabular-nums select-none">
         {wordCount > 0 && <span>{wordCount} words</span>}
-        <span>Auto-saved · {format(new Date(note.updatedAt), 'HH:mm:ss')}</span>
+        <span>Saved · {format(new Date(note.updatedAt), 'HH:mm:ss')}</span>
       </div>
     </div>
   );
