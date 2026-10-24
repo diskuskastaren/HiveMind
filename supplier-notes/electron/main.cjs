@@ -6,11 +6,11 @@ const { WebSocket } = require('ws');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
-// Used by the packaged-app smoke test to keep its data outside the real profile.
-if (process.env.HIVEMIND_TEST_USER_DATA) {
-  fs.mkdirSync(process.env.HIVEMIND_TEST_USER_DATA, { recursive: true });
-  app.setPath('userData', process.env.HIVEMIND_TEST_USER_DATA);
-}
+// Keep the existing profile when the visible product name changes to HiveMind.
+// Electron otherwise derives a new userData path from the application name.
+const USER_DATA_DIR = process.env.HIVEMIND_TEST_USER_DATA || path.join(app.getPath('appData'), 'supplier-notes');
+fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+app.setPath('userData', USER_DATA_DIR);
 
 // #region agent log — native crash reporter (captures GPU/C++ crashes JS handlers miss)
 crashReporter.start({ uploadToServer: false });
@@ -30,13 +30,13 @@ function _dbgWrite(obj) {
 // Global crash handlers — catch the exact error before the process dies.
 process.on('uncaughtException', (err) => {
   _dbgWrite({sessionId:'6cf3ea',type:'uncaughtException',error:err?.message,stack:err?.stack,timestamp:Date.now()});
-  try { dialog.showErrorBox('[Combobulator debug] Uncaught exception — please screenshot', String(err?.stack || err)); } catch {}
+  try { dialog.showErrorBox('[HiveMind debug] Uncaught exception — please screenshot', String(err?.stack || err)); } catch {}
 });
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : '';
   _dbgWrite({sessionId:'6cf3ea',type:'unhandledRejection',error:msg,stack,timestamp:Date.now()});
-  try { dialog.showErrorBox('[Combobulator debug] Unhandled rejection — please screenshot', String(stack || msg)); } catch {}
+  try { dialog.showErrorBox('[HiveMind debug] Unhandled rejection — please screenshot', String(stack || msg)); } catch {}
 });
 
 // IPC debug log forwarding (renderer → file)
@@ -560,7 +560,7 @@ function connectToTeams(mainWindow) {
   if (teamsConnected) return;
 
   const token = loadTeamsToken();
-  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=Combobulator&app=Combobulator&app-version=1.0`;
+  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=HiveMind&app=HiveMind&app-version=1.0`;
 
   try {
     teamsWs = new WebSocket(url);
@@ -631,7 +631,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 500,
-    title: 'Combobulator',
+    title: 'HiveMind',
     icon: path.join(__dirname, 'icon.png'),
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -667,7 +667,7 @@ function createWindow() {
   // #region agent log — renderer crash handler
   win.webContents.on('render-process-gone', (_e, details) => {
     _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:render-process-gone',message:'Renderer process gone',data:{reason:details.reason,exitCode:details.exitCode,msAfterOverlayClick:_overlayClickedAt ? Date.now()-_overlayClickedAt : null},timestamp:Date.now(),hypothesisId:'H-RENDERER'});
-    try { dialog.showErrorBox('[Combobulator debug] Renderer crashed — please screenshot', `Reason: ${details.reason}  ExitCode: ${details.exitCode}`); } catch {}
+    try { dialog.showErrorBox('[HiveMind debug] Renderer crashed — please screenshot', `Reason: ${details.reason}  ExitCode: ${details.exitCode}`); } catch {}
   });
   // #endregion
 

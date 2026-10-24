@@ -11,7 +11,7 @@ export function importBackupFile(file: File, importData: (data: ExportData) => v
       importData(data);
       toast.success('Backup restored', { description: file.name });
     } catch {
-      toast.error('Invalid backup file', { description: 'Please select a valid Combobulator backup JSON.' });
+      toast.error('Invalid backup file', { description: 'Please select a valid HiveMind backup JSON.' });
     }
   };
   reader.readAsText(file);

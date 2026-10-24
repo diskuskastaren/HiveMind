@@ -1,7 +1,7 @@
 {
   "name": "supplier-notes",
   "private": true,
-  "version": "1.5.6",
+  "version": "1.6.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -17,7 +17,8 @@
   },
   "build": {
     "appId": "com.fractal.supplier-notes",
-    "productName": "Combobulator",
+    "productName": "HiveMind",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -43,7 +44,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Combobulator"
+      "shortcutName": "HiveMind"
     },
     "publish": {
       "provider": "github",

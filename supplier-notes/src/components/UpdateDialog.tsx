@@ -25,7 +25,7 @@ export function UpdateDialog() {
       announced = true;
       toast.success(`v${info.version} ready to install`, {
         id: TOAST_ID,
-        description: 'Combobulator will restart to apply the update.',
+        description: 'HiveMind will restart to apply the update.',
         duration: Infinity,
         action: { label: 'Restart & install', onClick: () => (window as any).electronUpdater?.install() },
         cancel: { label: 'Later', onClick: () => {} },

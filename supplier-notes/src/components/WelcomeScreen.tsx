@@ -31,7 +31,7 @@ export function WelcomeScreen() {
         <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
           <FileText className="size-6" />
         </span>
-        <h1 className="text-display font-semibold tracking-tight">Welcome to Combobulator</h1>
+        <h1 className="text-display font-semibold tracking-tight">Welcome to HiveMind</h1>
         <p className="text-base text-subtle-foreground">
           Capture everything from supplier meetings — tasks, decisions, follow-ups and transcripts — organised by project and supplier.
         </p>

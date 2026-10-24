@@ -7,9 +7,9 @@ const PE = require('pe-library');
 const ResEdit = require('resedit');
 
 const root = path.resolve(__dirname, '..');
-const executable = path.join(root, 'release', 'win-unpacked', 'Combobulator.exe');
+const executable = path.join(root, 'release', 'win-unpacked', 'HiveMind.exe');
 const port = 20000 + Math.floor(Math.random() * 30000);
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'combobulator-smoke-'));
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hivemind-smoke-'));
 const environment = { ...process.env, HIVEMIND_TEST_USER_DATA: path.join(profile, 'userData') };
 let child;
 
@@ -56,8 +56,9 @@ async function main() {
       if (!target) continue;
       const state = await evaluate(target, `Promise.all([window.electronStore.status(), window.electronStore.getPath()]).then(([status, dataPath]) => ({ title: document.title, body: document.body.innerText.slice(0, 1000), status, dataPath }))`);
       lastObservation = JSON.stringify(state);
+      if (state.title !== 'HiveMind') throw new Error(`Unexpected app title: ${state.title}`);
       if (!state.dataPath.startsWith(profile)) throw new Error(`Unexpected data path: ${state.dataPath}`);
-      if (!state.body.includes('Welcome to Combobulator') && !state.body.includes('Today / My Work')) continue;
+      if (!state.body.includes('Welcome to HiveMind') && !state.body.includes('Today / My Work')) continue;
       if (state.status.error) throw new Error(`Storage error: ${state.status.error}`);
       const persisted = await evaluate(target, `window.electronStore.write(JSON.stringify({version:11,state:{suppliers:[],notes:[],tasks:[],decisions:[],projects:[],followUps:[],settings:{}}})).then(() => window.electronStore.read()).then(JSON.parse).then(data => data.version === 11 && Array.isArray(data.state.projects))`);
       if (!persisted) throw new Error('Electron IPC persistence failed');
@@ -66,7 +67,7 @@ async function main() {
       return;
     } catch (error) {
       lastObservation = error.message;
-      if (/^(Storage error:|Unexpected data path:|Electron IPC persistence failed)/.test(error.message)) throw error;
+      if (/^(Storage error:|Unexpected app title:|Unexpected data path:|Electron IPC persistence failed)/.test(error.message)) throw error;
     }
   }
   throw new Error(`Electron window did not render in time: ${lastObservation}`);
@@ -75,7 +76,7 @@ async function main() {
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (child && child.exitCode === null) child.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
-  if (profile.startsWith(path.join(os.tmpdir(), 'combobulator-smoke-'))) {
+  if (profile.startsWith(path.join(os.tmpdir(), 'hivemind-smoke-'))) {
     fs.rmSync(profile, { recursive: true, force: true });
   }
 });

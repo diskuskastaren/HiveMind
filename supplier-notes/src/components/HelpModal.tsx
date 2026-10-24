@@ -82,9 +82,9 @@ function Ul({ items }: { items: string[] }) {
 function OverviewSection() {
   return (
     <div className="space-y-3">
-      <Heading>Welcome to Combobulator</Heading>
+      <Heading>Welcome to HiveMind</Heading>
       <P>
-        Combobulator is a desktop meeting-notes app built for teams that work closely with
+        HiveMind is a desktop meeting-notes app built for teams that work closely with
         external suppliers and partners. It keeps your notes, tasks, decisions, and follow-ups
         organised by project and supplier, so nothing falls through the cracks between meetings.
       </P>
@@ -242,7 +242,7 @@ function TranscriptionSection() {
     <div className="space-y-3">
       <Heading>Transcription & Recording</Heading>
       <P>
-        Combobulator can transcribe meetings in real time using your microphone or system audio.
+        HiveMind can transcribe meetings in real time using your microphone or system audio.
         Transcripts are saved inside the note they were started from and can be reviewed or
         exported at any time.
       </P>
@@ -290,9 +290,9 @@ function AiSection() {
     <div className="space-y-3">
       <Heading>AI & Summarization</Heading>
       <P>
-        Combobulator integrates with OpenAI (GPT models) and Groq (Whisper transcription) to
+        HiveMind integrates with OpenAI (GPT models) and Groq (Whisper transcription) to
         generate note summaries and transcribe audio. You bring your own API keys — no usage
-        is proxied through Combobulator's servers.
+        is proxied through HiveMind's servers.
       </P>
 
       <SubHeading>Setting up API keys</SubHeading>
@@ -339,12 +339,12 @@ function TeamsSection() {
     <div className="space-y-3">
       <Heading>Teams Integration</Heading>
       <P>
-        Combobulator can detect when a Microsoft Teams meeting starts and prompt you to begin
+        HiveMind can detect when a Microsoft Teams meeting starts and prompt you to begin
         recording, keeping your notes and transcripts in sync with your calendar.
       </P>
 
       <SubHeading>Enabling Teams integration</SubHeading>
-      <P>Go to <strong className="text-foreground">Settings → Teams</strong> and toggle Teams integration on. Combobulator will monitor for Teams activity in the background.</P>
+      <P>Go to <strong className="text-foreground">Settings → Teams</strong> and toggle Teams integration on. HiveMind will monitor for Teams activity in the background.</P>
 
       <SubHeading>How it works</SubHeading>
       <Ul items={[
@@ -437,40 +437,40 @@ function SettingsSection() {
 
       <SubHeading>Data storage</SubHeading>
       <P>
-        All data is stored locally on your machine in a single JSON file
-        (<code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">Combobulator-data.json</code>).
-        No data is sent to external servers except when you use the AI features (which go
-        directly to OpenAI / Groq using your own API keys).
+        Notes and decisions are stored locally in
+        <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">Combobulator-data.json</code>.
+        The existing filename is retained so older data remains available. Images, attachments,
+        and encrypted API keys are stored separately. AI features send the selected content
+        directly to OpenAI or Groq using your own API keys.
       </P>
 
       <SubHeading>Custom data directory</SubHeading>
       <P>
-        By default data is saved in your system's app-data folder. You can point Combobulator
+        By default data is saved in your system's app-data folder. You can point HiveMind
         at a custom directory under <strong className="text-foreground">Settings → Data & Storage</strong>
         — useful if you want to store data on a synced drive (e.g. OneDrive or Dropbox).
       </P>
 
       <SubHeading>Export & backup</SubHeading>
       <Ul items={[
-        'Export all data to a JSON file from Settings → Data & Storage.',
-        'Import a previously exported file to restore or migrate data.',
-        'Exports include all projects, suppliers, notes, tasks, decisions, and follow-ups.',
-        'Image attachments are stored separately in an "images" folder next to the data file.',
+        'Automatic backups include notes, images, and linked attachments.',
+        'Restore a backup from Settings → Data & Storage.',
+        'JSON export includes projects, suppliers, notes, tasks, decisions, and follow-ups, but not separate files or API keys.',
       ]} />
 
       <SubHeading>Clearing data</SubHeading>
       <P>
-        The "Clear all data" option in Settings → Data & Storage permanently deletes
-        everything. This cannot be undone. Export a backup first if you might need the data.
+        The "Clear all data" option in Settings → Data & Storage creates a backup before
+        clearing projects, notes, tasks, decisions, and follow-ups.
       </P>
 
       <SubHeading>Auto-updates</SubHeading>
       <P>
-        Combobulator checks for updates automatically. When an update is available you'll see
+        HiveMind checks for updates automatically. When an update is available you'll see
         a prompt to install it. You can also check manually from Settings → Data & Storage.
       </P>
 
-      <Tip>Keep a regular export backup, especially before major updates or if you're moving your data to a new machine.</Tip>
+      <Tip>Use the full backups when moving your data to another machine; JSON exports omit separate files.</Tip>
     </div>
   );
 }
@@ -496,7 +496,7 @@ export function HelpModal() {
   return (
     <Dialog open onOpenChange={(open) => !open && toggleHelp()}>
       <DialogContent showCloseButton={false} className="flex h-[85vh] max-h-[760px] gap-0 overflow-hidden p-0 sm:max-w-4xl">
-        <DialogDescription className="sr-only">How to use Combobulator</DialogDescription>
+        <DialogDescription className="sr-only">How to use HiveMind</DialogDescription>
         <nav aria-label="Help sections" className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r bg-sidebar px-2.5 py-4">
           <DialogTitle className="flex items-center gap-2 px-2 pb-3 text-base font-semibold">
             <BookOpen className="size-4.5 text-primary" />

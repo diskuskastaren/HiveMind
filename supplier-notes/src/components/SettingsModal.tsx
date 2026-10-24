@@ -330,7 +330,7 @@ export function SettingsModal() {
         importData(data);
         toast.success('Data imported successfully');
       } catch {
-        toast.error('Invalid backup file', { description: 'Please select a valid Combobulator backup JSON.' });
+        toast.error('Invalid backup file', { description: 'Please select a valid HiveMind backup JSON.' });
       }
     };
     reader.readAsText(file);
@@ -505,7 +505,7 @@ export function SettingsModal() {
               {tab.label}
             </button>
           ))}
-          <span className="mt-auto px-2 font-mono text-2xs text-muted-foreground">Combobulator v{version}</span>
+          <span className="mt-auto px-2 font-mono text-2xs text-muted-foreground">HiveMind v{version}</span>
         </nav>
 
         {/* Content area */}
