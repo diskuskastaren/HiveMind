@@ -114,7 +114,7 @@ export function Overview() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-5xl flex-col gap-7 px-10 pt-9 pb-12">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 px-5 pt-9 pb-12 sm:px-8 xl:px-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-display font-semibold tracking-tight">{activeProject?.name ?? 'All projects'}</h1>
