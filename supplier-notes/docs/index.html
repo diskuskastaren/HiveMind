@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#090b12" />
+  <link rel="icon" type="image/png" href="./demo/hivemind-tour/assets/icon.png" />
+  <title>HiveMind · Interactive demo</title>
+  <meta name="description" content="Explore a fictional HiveMind workspace and play a real HyperFrames composition." />
+  <script src="https://cdn.jsdelivr.net/npm/@hyperframes/player@0.8.193/dist/hyperframes-player.global.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #f7f8fc; background: radial-gradient(circle at 80% 0%, #1b2140 0, #0b0e17 37%, #080a10 74%); }
+    a { color: inherit; }
+    button, select { font: inherit; }
+    .shell { width: min(1500px, calc(100% - 48px)); margin: auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 28px 0 18px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; font-size: 21px; font-weight: 750; letter-spacing: -.03em; }
+    .brand img { width: 34px; height: 34px; object-fit: contain; }
+    .header-links { display: flex; gap: 22px; align-items: center; color: #bbc3d9; font-size: 14px; }
+    .header-links a:hover { color: #fff; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 9px; margin-top: 44px; color: #aeb8fc; text-transform: uppercase; letter-spacing: .17em; font-size: 12px; font-weight: 800; }
+    .eyebrow::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #7d84ff; box-shadow: 0 0 22px #7d84ff; }
+    h1 { max-width: 1000px; margin: 16px 0 14px; font-size: clamp(42px, 5vw, 74px); line-height: 1.04; letter-spacing: -.065em; }
+    .intro { max-width: 730px; margin: 0 0 30px; color: #b7bfd3; font-size: 17px; line-height: 1.65; }
+    .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .tabs { display: inline-flex; gap: 4px; padding: 5px; border: 1px solid #313850; border-radius: 14px; background: #151923; }
+    .tab { border: 0; padding: 11px 18px; border-radius: 10px; background: transparent; color: #aeb7cd; cursor: pointer; font-size: 14px; font-weight: 700; }
+    .tab[aria-selected="true"] { background: #383e72; color: #fff; box-shadow: inset 0 0 0 1px #676eaa; }
+    .tab:hover:not([aria-selected="true"]) { color: #fff; background: #242a39; }
+    .hint { color: #9ca7bf; font-size: 13px; }
+    .surface { border: 1px solid #343b50; border-radius: 22px; overflow: hidden; background: #11151f; box-shadow: 0 28px 100px rgba(0,0,0,.42); }
+    .surface-top { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #2c3345; }
+    .surface-title { display: flex; align-items: center; gap: 10px; color: #e7eafa; font-size: 14px; font-weight: 700; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #42d1ad; box-shadow: 0 0 12px #42d1ad; }
+    .surface-meta { color: #919cb5; font-size: 12px; }
+    hyperframes-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #090b12; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 20px; }
+    .chapters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chapter, .action, select { border: 1px solid #434b64; border-radius: 10px; background: #202638; color: #e9ecfa; cursor: pointer; }
+    .chapter { padding: 9px 13px; font-size: 13px; font-weight: 650; }
+    .chapter[aria-current="true"] { border-color: #8c91ff; background: #3e447d; }
+    .chapter:hover, .action:hover, select:hover { border-color: #9298d4; }
+    .control-right { display: flex; align-items: center; gap: 10px; }
+    .control-right label { color: #aeb7cd; font-size: 13px; }
+    select { padding: 9px 12px; }
+    .action { display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 11px 15px; text-decoration: none; font-size: 13px; font-weight: 700; }
+    .action.primary { background: #6267e8; border-color: #8d91ff; color: #fff; }
+    .explore-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; border-bottom: 1px solid #2c3345; }
+    .explore-head p { margin: 4px 0 0; color: #aeb7cd; font-size: 13px; }
+    .explore-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+    iframe { display: block; width: 100%; height: min(78vh, 870px); min-height: 600px; border: 0; background: #090a0d; }
+    .below { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin: 22px 0 60px; }
+    .below article { padding: 20px; border: 1px solid #30374b; border-radius: 16px; background: #151a27; }
+    .below strong { display: block; margin-bottom: 7px; font-size: 14px; }
+    .below p { margin: 0; color: #aeb7cd; line-height: 1.5; font-size: 13px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 740px) { .shell { width: min(100% - 24px, 1500px); } header { padding-top: 18px; } .header-links { gap: 12px; font-size: 12px; } .eyebrow { margin-top: 22px; } .intro { font-size: 15px; } .surface-top { align-items: flex-start; flex-direction: column; } .below { grid-template-columns: 1fr; } iframe { min-height: 560px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <a class="brand" href="./" aria-label="HiveMind demo home"><img src="./demo/hivemind-tour/assets/icon.png" alt="" />HiveMind</a>
+      <nav class="header-links" aria-label="External links"><a href="https://github.com/diskuskastaren/HiveMind">GitHub</a><a href="https://github.com/diskuskastaren/HiveMind/releases/latest">Download app ↗</a></nav>
+    </header>
+    <span class="eyebrow">Interactive product demo</span>
+    <h1>One meeting. A clearer next step.</h1>
+    <p class="intro">Explore a fictional supplier project. Play a guided tour built and rendered with HyperFrames, then try the real HiveMind interface yourself. Your changes stay in this browser.</p>
+    <div class="toolbar">
+      <div class="tabs" role="tablist" aria-label="Demo mode">
+        <button id="tour-tab" class="tab" type="button" role="tab" aria-selected="true" aria-controls="tour-panel">Guided tour</button>
+        <button id="explore-tab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="explore-panel">Explore live workspace</button>
+      </div>
+      <span class="hint">Fictional data · no account needed</span>
+    </div>
+    <section id="tour-panel" class="surface" role="tabpanel" aria-labelledby="tour-tab">
+      <div class="surface-top"><span class="surface-title"><span class="live-dot"></span>HyperFrames composition</span><span class="surface-meta">12 seconds · seekable timeline · real app screens</span></div>
+      <hyperframes-player id="tour" src="./demo/hivemind-tour/index.html" controls interactive width="1920" height="1080"></hyperframes-player>
+      <div class="controls">
+        <div class="chapters" aria-label="Jump to a scene">
+          <button class="chapter" type="button" data-time="0" aria-current="true">01 · Overview</button>
+          <button class="chapter" type="button" data-time="3">02 · Meeting note</button>
+          <button class="chapter" type="button" data-time="6">03 · Follow-up</button>
+          <button class="chapter" type="button" data-time="9">04 · HiveMind</button>
+        </div>
+        <div class="control-right"><label for="speed">Speed</label><select id="speed" aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select></div>
+      </div>
+    </section>
+    <section id="explore-panel" class="surface" role="tabpanel" aria-labelledby="explore-tab" hidden>
+      <div class="explore-head"><div><span class="surface-title"><span class="live-dot"></span>Live HiveMind sandbox</span><p>Create notes, edit tasks and review fictional meeting suggestions.</p></div><div class="explore-actions"><button id="reset-data" class="action" type="button">Reset sample data</button><a class="action primary" href="./try/" target="_blank" rel="noopener">Open full screen ↗</a></div></div>
+      <iframe id="workspace" title="Interactive HiveMind workspace with fictional data" loading="lazy"></iframe>
+    </section>
+    <div class="below">
+      <article><strong>Real product UI</strong><p>The tour uses captures from HiveMind; the sandbox runs the browser build of the app.</p></article>
+      <article><strong>Made with HyperFrames</strong><p>The film is a seekable HTML composition rendered to MP4 by the HyperFrames CLI and played by @hyperframes/player.</p></article>
+      <article><strong>Safe to experiment</strong><p>Every project, supplier, person and meeting in this demo is invented. Reset whenever you want a fresh workspace.</p></article>
+    </div>
+  </div>
+  <script>
+    const tour = document.getElementById('tour');
+    const tourTab = document.getElementById('tour-tab');
+    const exploreTab = document.getElementById('explore-tab');
+    const tourPanel = document.getElementById('tour-panel');
+    const explorePanel = document.getElementById('explore-panel');
+    const workspace = document.getElementById('workspace');
+    async function seekWhenReady(time, play = false) {
+      for (let i = 0; i < 200 && !tour.duration; i++) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!tour.duration) return;
+      await tour.seek(time);
+      if (play) tour.play();
+    }
+    function show(mode) {
+      const explore = mode === 'explore';
+      tourTab.setAttribute('aria-selected', String(!explore));
+      exploreTab.setAttribute('aria-selected', String(explore));
+      tourPanel.hidden = explore;
+      explorePanel.hidden = !explore;
+      if (explore) { tour.pause(); if (!workspace.src) workspace.src = './try/'; }
+      else { seekWhenReady(0); }
+      history.replaceState(null, '', explore ? '#explore' : '#tour');
+    }
+    tourTab.addEventListener('click', () => show('tour'));
+    exploreTab.addEventListener('click', () => show('explore'));
+    for (const button of document.querySelectorAll('.chapter')) button.addEventListener('click', () => seekWhenReady(Number(button.dataset.time), true));
+    tour.addEventListener('timeupdate', () => { const index = Math.min(3, Math.floor(tour.currentTime / 3)); document.querySelectorAll('.chapter').forEach((button, i) => button.setAttribute('aria-current', String(i === index))); });
+    document.getElementById('speed').addEventListener('change', (event) => { tour.playbackRate = Number(event.target.value); });
+    document.getElementById('reset-data').addEventListener('click', () => { workspace.src = './try/?reset=1'; });
+    if (location.hash === '#explore') show('explore');
+  </script>
+</body>
+</html>

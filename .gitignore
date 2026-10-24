@@ -28,3 +28,10 @@ Thumbs.db
 
 # Electron build artifacts
 release/
+
+# HyperFrames local preview and render state
+.hyperframes/
+.thumbnails/
+renders/
+site/
+.playwright-cli/

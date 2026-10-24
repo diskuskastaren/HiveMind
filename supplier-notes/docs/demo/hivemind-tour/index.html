@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #090b12; }
+    #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+    .clip { position: absolute; inset: 0; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="main" data-start="0" data-duration="12" data-width="1920" data-height="1080" data-fps="30">
+    <div id="overview-scene" class="clip" data-composition-id="overview-scene" data-composition-src="compositions/overview.html" data-start="0" data-duration="3" data-track-index="0" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+    <div id="notes-scene" class="clip" data-composition-id="notes-scene" data-composition-src="compositions/notes.html" data-start="3" data-duration="3" data-track-index="0" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+    <div id="followup-scene" class="clip" data-composition-id="followup-scene" data-composition-src="compositions/followup.html" data-start="6" data-duration="3" data-track-index="0" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+    <div id="outro-scene" class="clip" data-composition-id="outro-scene" data-composition-src="compositions/outro.html" data-start="9" data-duration="3" data-track-index="0" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+  </div>
+  <script>
+    window.__timelines = window.__timelines || {};
+    window.__timelines.main = gsap.timeline({ paused: true });
+  </script>
+</body>
+</html>
