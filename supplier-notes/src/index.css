@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/inter";
+@import "@fontsource-variable/google-sans/wght.css";
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 
@@ -106,7 +106,7 @@
 }
 
 @theme inline {
-  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Google Sans Variable", "Google Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* Fixed type scale: 11 / 12 / 13 / 14 / 16 / 20 / 24 / 28 */
@@ -182,7 +182,6 @@
   body {
     @apply bg-background text-foreground text-sm antialiased;
     font-family: var(--font-sans);
-    font-feature-settings: "cv11", "ss01";
   }
   strong {
     font-weight: 600;
