@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore, INTERNAL_TAB_ID } from './store/store';
 import { Sidebar } from './components/Sidebar';
 import { TabBar } from './components/TabBar';
@@ -15,6 +15,7 @@ import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpdateDialog } from './components/UpdateDialog';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { RecoveryScreen } from './components/RecoveryScreen';
 import { FileText, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -79,6 +80,7 @@ function EmptyState() {
 }
 
 export default function App() {
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const projects = useStore((s) => s.projects);
   const activeNoteId = useStore((s) => s.activeNoteId);
   const rightPanelOpen = useStore((s) => s.rightPanelOpen);
@@ -169,14 +171,38 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handler = () => {
-      toast.error('Storage limit reached', {
-        description: 'Export a backup (Ctrl K → Backup) to avoid data loss.',
+    const handler = (event: Event) => {
+      toast.error('Could not save data', {
+        description: (event as CustomEvent<string>).detail || 'Open Settings → Data to restore a backup.',
         duration: Infinity,
       });
+      (window as any).electronStore?.status?.().then((status: { error?: string }) => {
+        if (status.error) setRecoveryError(status.error);
+      }).catch(() => {});
+    };
+    let lastBackupError = '';
+    let lastAttachmentWarning = '';
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ backupError?: string; attachmentWarning?: string }>).detail;
+      const error = detail?.backupError;
+      if (error && error !== lastBackupError) toast.error('Automatic backup failed', { description: error, duration: Infinity });
+      lastBackupError = error || '';
+      const warning = detail?.attachmentWarning;
+      if (warning && warning !== lastAttachmentWarning) toast.warning('Some attachments are not in the backup', { description: warning, duration: Infinity });
+      lastAttachmentWarning = warning || '';
     };
     window.addEventListener('storage-error', handler);
-    return () => window.removeEventListener('storage-error', handler);
+    window.addEventListener('storage-status', onStatus);
+    const checkRecovery = () => (window as any).electronStore?.status?.().then((status: { error?: string }) => {
+      if (status.error) setRecoveryError(status.error);
+    }).catch(() => {});
+    checkRecovery();
+    const offHydration = useStore.persist.onFinishHydration(checkRecovery);
+    return () => {
+      window.removeEventListener('storage-error', handler);
+      window.removeEventListener('storage-status', onStatus);
+      offHydration();
+    };
   }, []);
 
   // When the overlay's "Start Recording" is clicked, show the recording
@@ -211,6 +237,8 @@ export default function App() {
       <Toaster position="bottom-right" />
     </>
   );
+
+  if (recoveryError) return <RecoveryScreen error={recoveryError} />;
 
   // First run: no sidebar until there is a project to put things in
   if (projects.length === 0) {

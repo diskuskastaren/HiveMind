@@ -28,6 +28,7 @@ import { summarizeMeetingTranscript, MAX_SUMMARY_TOKENS } from '../utils/summari
 import { getMailtoUrl, summaryToPlainTextForEmail, summaryToHtmlForEmail } from '../utils/export';
 import { AudioVisualizer } from './AudioVisualizer';
 import type { Transcript } from '../types';
+import { MeetingReview } from './MeetingReview';
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -239,6 +240,8 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
           ))}
       </div>
 
+      {!isRecording && note && <div className="px-3 pb-4"><MeetingReview note={note} transcript={transcript} /></div>}
+
       <div className="flex flex-col gap-2 border-t px-3 py-3">
         {subTab === 'summary' && transcript.summary && (
           <div className="flex gap-1.5">
@@ -322,8 +325,6 @@ export function TranscriptTab() {
   const toggleSettings = useStore((s) => s.toggleSettings);
   const summarySettings = useStore(useShallow((s) => ({
     model: s.settings.gptModel,
-    maxTokens: s.settings.maxTokens,
-    autoMaxTokens: s.settings.autoMaxTokens,
     temperature: s.settings.temperature,
     customInstructions: s.settings.customSummaryInstructions,
   })));
@@ -546,7 +547,7 @@ export function TranscriptTab() {
     ? transcripts.find((t) => t.id === selectedId)
     : null;
 
-  if (selectedTranscript) {
+  if (selectedTranscript && note) {
     return (
       <TranscriptDetail
         transcript={selectedTranscript}

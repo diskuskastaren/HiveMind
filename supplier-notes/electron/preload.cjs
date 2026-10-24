@@ -3,6 +3,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronStore', {
   read: () => ipcRenderer.invoke('store:read'),
   write: (data) => ipcRenderer.invoke('store:write', data),
+  status: () => ipcRenderer.invoke('store:status'),
+  backups: () => ipcRenderer.invoke('store:backups'),
+  backup: () => ipcRenderer.invoke('store:backup'),
+  restore: (id) => ipcRenderer.invoke('store:restore', id),
   getPath: () => ipcRenderer.invoke('store:path'),
   openFolder: () => ipcRenderer.invoke('store:openFolder'),
   getDataDir: () => ipcRenderer.invoke('store:getDataDir'),

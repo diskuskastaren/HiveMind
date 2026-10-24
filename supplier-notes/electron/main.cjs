@@ -1,9 +1,16 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen, dialog, crashReporter } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen, dialog, crashReporter, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { StorageService, validateData, atomicWrite, rebaseManagedAttachments } = require('./storage.cjs');
 const { WebSocket } = require('ws');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
+
+// Used by the packaged-app smoke test to keep its data outside the real profile.
+if (process.env.HIVEMIND_TEST_USER_DATA) {
+  fs.mkdirSync(process.env.HIVEMIND_TEST_USER_DATA, { recursive: true });
+  app.setPath('userData', process.env.HIVEMIND_TEST_USER_DATA);
+}
 
 // #region agent log — native crash reporter (captures GPU/C++ crashes JS handlers miss)
 crashReporter.start({ uploadToServer: false });
@@ -54,11 +61,13 @@ function loadAppConfig() {
   return {};
 }
 
-function saveAppConfig(cfg) {
+async function saveAppConfig(cfg) {
   try {
-    fs.writeFileSync(APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+    await atomicWrite(APP_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+    return true;
   } catch (e) {
     console.error('Failed to save app config:', e);
+    return false;
   }
 }
 
@@ -69,6 +78,20 @@ function getDataDir() {
 
 let DATA_FILE = path.join(getDataDir(), 'Combobulator-data.json');
 let IMAGES_DIR = path.join(getDataDir(), 'images');
+const SECRET_FILE = path.join(app.getPath('userData'), 'api-keys.bin');
+function readSecrets() {
+  if (!fs.existsSync(SECRET_FILE) || !safeStorage.isEncryptionAvailable()) return {};
+  try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(SECRET_FILE))); }
+  catch (error) { console.error('Unable to read API keys:', error); return {}; }
+}
+async function writeSecrets(keys) {
+  if (!keys.openaiApiKey && !keys.groqApiKey && !fs.existsSync(SECRET_FILE)) return;
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure API key storage is unavailable');
+  const current = readSecrets();
+  if (current.openaiApiKey === keys.openaiApiKey && current.groqApiKey === keys.groqApiKey) return;
+  await atomicWrite(SECRET_FILE, safeStorage.encryptString(JSON.stringify(keys)));
+}
+const storage = new StorageService(getDataDir(), { readSecret: readSecrets, writeSecret: writeSecrets });
 // Ensure images directory exists
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
@@ -77,25 +100,16 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app-image', privileges: { secure: true, standard: true, supportFetchAPI: true } },
 ]);
 
-ipcMain.handle('store:read', () => {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      return fs.readFileSync(DATA_FILE, 'utf-8');
-    }
-  } catch (e) {
-    console.error('Failed to read data file:', e);
-  }
-  return null;
-});
-
-ipcMain.handle('store:write', (_event, data) => {
-  try {
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(DATA_FILE, data, 'utf-8');
-  } catch (e) {
-    console.error('Failed to write data file:', e);
-  }
+ipcMain.handle('store:read', () => storage.read());
+ipcMain.handle('store:write', (_event, data) => storage.write(data));
+ipcMain.handle('store:status', () => storage.status());
+ipcMain.handle('store:backups', () => storage.listBackups());
+ipcMain.handle('store:backup', () => storage.backup());
+ipcMain.handle('store:restore', async (_event, id) => {
+  const result = await storage.restore(id);
+  app.relaunch();
+  app.exit(0);
+  return result;
 });
 
 ipcMain.handle('store:path', () => DATA_FILE);
@@ -117,42 +131,28 @@ ipcMain.handle('store:changeDataDir', async () => {
   if (result.canceled || !result.filePaths[0]) return { changed: false };
 
   const newDir = result.filePaths[0];
+  if (path.resolve(newDir) === path.resolve(path.dirname(DATA_FILE))) return { changed: false };
   const oldDataFile = DATA_FILE;
-  const oldImagesDir = IMAGES_DIR;
   const newDataFile = path.join(newDir, 'Combobulator-data.json');
-  const newImagesDir = path.join(newDir, 'images');
-
-  // Copy existing data file if present and new location doesn't already have one
   try {
-    if (fs.existsSync(oldDataFile) && !fs.existsSync(newDataFile)) {
-      fs.copyFileSync(oldDataFile, newDataFile);
+    await storage.queue;
+    if (fs.existsSync(newDataFile)) return { changed: false, error: 'The selected folder already contains data. Choose an empty folder to avoid replacing it.' };
+    const migrated = fs.existsSync(oldDataFile)
+      ? rebaseManagedAttachments(fs.readFileSync(oldDataFile, 'utf8'), path.dirname(oldDataFile), newDir) : null;
+    for (const folder of ['images', 'attachments', 'backups']) {
+      const source = path.join(path.dirname(oldDataFile), folder);
+      if (fs.existsSync(source)) fs.cpSync(source, path.join(newDir, folder), { recursive: true, force: false });
     }
+    if (migrated) await atomicWrite(newDataFile, migrated);
   } catch (e) {
-    console.error('Failed to copy data file:', e);
-    return { changed: false, error: 'Could not copy data file to new location.' };
-  }
-
-  // Copy images directory contents if present
-  try {
-    if (fs.existsSync(oldImagesDir)) {
-      if (!fs.existsSync(newImagesDir)) fs.mkdirSync(newImagesDir, { recursive: true });
-      const files = fs.readdirSync(oldImagesDir);
-      for (const file of files) {
-        const dest = path.join(newImagesDir, file);
-        if (!fs.existsSync(dest)) {
-          fs.copyFileSync(path.join(oldImagesDir, file), dest);
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Failed to copy images:', e);
-    // Non-fatal — data file already copied, continue
+    console.error('Failed to move data folder:', e);
+    return { changed: false, error: 'Could not copy or validate data in the new location.' };
   }
 
   // Persist the choice
   const cfg = loadAppConfig();
   cfg.customDataDir = newDir;
-  saveAppConfig(cfg);
+  if (!await saveAppConfig(cfg)) return { changed: false, error: 'Could not save the new data folder setting.' };
 
   // Relaunch so all paths are re-resolved from the new location
   app.relaunch();
@@ -161,9 +161,29 @@ ipcMain.handle('store:changeDataDir', async () => {
 });
 
 ipcMain.handle('store:resetDataDir', async () => {
+  const defaultDir = app.getPath('userData');
+  const defaultFile = path.join(defaultDir, 'Combobulator-data.json');
+  if (path.resolve(defaultDir) !== path.resolve(path.dirname(DATA_FILE))) {
+    try {
+      await storage.queue;
+      if (fs.existsSync(defaultFile)) {
+        validateData(fs.readFileSync(defaultFile, 'utf8'));
+        return { changed: false, error: 'The default folder already contains data. Open it and choose which copy to keep before resetting.' };
+      }
+      const migrated = fs.existsSync(DATA_FILE)
+        ? rebaseManagedAttachments(fs.readFileSync(DATA_FILE, 'utf8'), path.dirname(DATA_FILE), defaultDir) : null;
+      for (const folder of ['images', 'attachments', 'backups']) {
+        const source = path.join(path.dirname(DATA_FILE), folder);
+        if (fs.existsSync(source)) fs.cpSync(source, path.join(defaultDir, folder), { recursive: true, force: false });
+      }
+      if (migrated) await atomicWrite(defaultFile, migrated);
+    } catch (error) {
+      return { changed: false, error: `Could not copy data to the default folder: ${error.message}` };
+    }
+  }
   const cfg = loadAppConfig();
   delete cfg.customDataDir;
-  saveAppConfig(cfg);
+  if (!await saveAppConfig(cfg)) return { changed: false, error: 'Could not reset the data folder setting.' };
   app.relaunch();
   app.exit(0);
   return { changed: true };
@@ -190,7 +210,10 @@ ipcMain.handle('updater:check', () =>
     autoUpdater.checkForUpdates().catch((err) => { cleanup(); reject(err); });
   })
 );
-ipcMain.handle('updater:install', () => { autoUpdater.quitAndInstall(); });
+ipcMain.handle('updater:install', async () => {
+  if (fs.existsSync(DATA_FILE)) await storage.backup();
+  autoUpdater.quitAndInstall();
+});
 
 // Return screen source IDs so the renderer can capture system audio
 ipcMain.handle('desktop:getSources', async () => {
@@ -206,7 +229,8 @@ ipcMain.handle('desktop:getSources', async () => {
 // Save an image buffer to the images folder, return the filename
 ipcMain.handle('image:save', (_event, buffer, ext) => {
   try {
-    const filename = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'png'}`;
+    const safeExt = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) ? ext : 'png';
+    const filename = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
     const filepath = path.join(IMAGES_DIR, filename);
     fs.writeFileSync(filepath, Buffer.from(buffer));
     return filename;
@@ -219,6 +243,7 @@ ipcMain.handle('image:save', (_event, buffer, ext) => {
 // Delete an image file from the images folder
 ipcMain.handle('image:delete', (_event, filename) => {
   try {
+    if (typeof filename !== 'string' || filename !== path.basename(filename)) throw new Error('Invalid image filename');
     const filepath = path.join(IMAGES_DIR, filename);
     if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
   } catch (e) {
@@ -232,7 +257,15 @@ ipcMain.handle('dialog:openFiles', async (_event) => {
   const result = await dialog.showOpenDialog(win || BrowserWindow.getAllWindows()[0], {
     properties: ['openFile', 'multiSelections'],
   });
-  return result.canceled ? [] : result.filePaths;
+  if (result.canceled) return [];
+  await fs.promises.mkdir(storage.attachmentsDir, { recursive: true });
+  const managed = [];
+  for (const source of result.filePaths) {
+    const destination = path.join(storage.attachmentsDir, `${require('crypto').randomUUID()}-${path.basename(source)}`);
+    await fs.promises.copyFile(source, destination);
+    managed.push(destination);
+  }
+  return managed;
 });
 
 // Open a referenced attachment from its original location
@@ -648,6 +681,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId('com.fractal.supplier-notes');
   // #region agent log — write startup entry immediately so we can confirm build version + log path
   _dbgWrite({sessionId:'6cf3ea',type:'startup',version:'1.2.2',userData:app.getPath('userData'),crashDumps:app.getPath('crashDumps'),timestamp:Date.now()});
   // #endregion
@@ -665,6 +699,7 @@ app.whenReady().then(() => {
   // Serve local image files via app-image:// protocol
   protocol.handle('app-image', (request) => {
     const filename = decodeURIComponent(new URL(request.url).hostname);
+    if (!filename || filename !== path.basename(filename)) return new Response('Invalid image', { status: 400 });
     const filepath = path.join(IMAGES_DIR, filename);
     return net.fetch(`file://${filepath}`);
   });

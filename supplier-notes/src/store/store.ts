@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { TEMPLATES } from '../utils/templates';
+import { upgradeDecision } from '../utils/decisionMigration';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
@@ -48,14 +49,21 @@ const electronAPI = typeof window !== 'undefined' && (window as any).electronSto
 
 const appStorage = {
   getItem: (name: string): string | null | Promise<string | null> => {
-    if (electronAPI) return electronAPI.read();
+    if (electronAPI) return electronAPI.read().catch((error: Error) => {
+      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
+      return null;
+    });
     try { return localStorage.getItem(name); }
     catch { return null; }
   },
   setItem: (name: string, value: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write(value);
+    if (electronAPI) return electronAPI.write(value).then((status: unknown) => {
+      window.dispatchEvent(new CustomEvent('storage-status', { detail: status }));
+    }).catch((error: Error) => {
+      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
+    });
     try { localStorage.setItem(name, value); }
-    catch { window.dispatchEvent(new CustomEvent('storage-error')); }
+    catch (error) { window.dispatchEvent(new CustomEvent('storage-error', { detail: String(error) })); }
   },
   removeItem: (name: string): void | Promise<void> => {
     if (electronAPI) return electronAPI.write('');
@@ -104,6 +112,7 @@ interface AppState {
   kanbanOpen: boolean;
   editingTaskId: string | null;
   editingDecisionId: string | null;
+  focusedFollowUpId: string | null;
   activeView: ActiveView;
   previousView: ActiveView | null;
   dashboardSection: DashboardSection;
@@ -153,6 +162,7 @@ interface AppState {
   updateDecision: (id: string, updates: Partial<Decision>) => void;
   deleteDecision: (id: string) => void;
   setEditingDecision: (id: string | null) => void;
+  setFocusedFollowUp: (id: string | null) => void;
 
   transcriptRecording: boolean;
   recordingNoteId: string | null;
@@ -219,6 +229,7 @@ export const useStore = create<AppState>()(
       kanbanOpen: false,
       editingTaskId: null,
       editingDecisionId: null,
+      focusedFollowUpId: null,
       activeView: 'notes' as ActiveView,
       previousView: null,
       dashboardSection: 'tasks' as DashboardSection,
@@ -252,6 +263,9 @@ export const useStore = create<AppState>()(
 
       deleteProject: (id) =>
         set((s) => {
+          const removedProject = s.projects.find((p) => p.id === id);
+          const remainingTaskIds = new Set(s.tasks.filter((task) => task.projectId !== id).map((task) => task.id));
+          const remainingNoteIds = new Set(s.notes.filter((note) => note.projectIds.some((projectId) => projectId !== id)).map((note) => note.id));
           const remainingProjects = s.projects.filter((p) => p.id !== id);
           const nextProjectId = s.activeProjectId === id
             ? remainingProjects[0]?.id || null
@@ -267,9 +281,22 @@ export const useStore = create<AppState>()(
             notes: s.notes
               .map((n) => ({ ...n, projectIds: n.projectIds.filter((pid) => pid !== id) }))
               .filter((n) => n.projectIds.length > 0),
-            tasks: s.tasks.filter((t) => t.projectId !== id),
-            decisions: s.decisions.filter((d) => d.projectId !== id),
-            followUps: s.followUps.filter((f) => f.projectId !== id),
+            tasks: s.tasks.filter((t) => t.projectId !== id)
+              .map((t) => t.noteId && !remainingNoteIds.has(t.noteId) ? { ...t, noteId: null } : t),
+            decisions: s.decisions.map((d) => {
+              const sourceNote = s.notes.find((n) => n.id === d.noteId);
+              const noteSurvives = sourceNote?.projectIds.some((projectId) => projectId !== id);
+              return d.projectId === id
+                ? { ...d, projectId: '', projectName: d.projectName || removedProject?.name,
+                    noteId: noteSurvives ? d.noteId : null,
+                    sourceNoteTitle: d.sourceNoteTitle || sourceNote?.title,
+                    relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) }
+                : { ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) };
+            }),
+            followUps: s.followUps.filter((f) => f.projectId !== id)
+              .map((f) => ({ ...f,
+                linkedTaskId: f.linkedTaskId && remainingTaskIds.has(f.linkedTaskId) ? f.linkedTaskId : undefined,
+                noteId: f.noteId && remainingNoteIds.has(f.noteId) ? f.noteId : null })),
             openTabs: [],
             activeTabId: null,
             activeNoteId: null,
@@ -308,17 +335,33 @@ export const useStore = create<AppState>()(
 
       deleteSupplier: (id) =>
         set((s) => {
+          const removedSupplier = s.suppliers.find((supplier) => supplier.id === id);
+          const remainingTaskIds = new Set(s.tasks.filter((task) => task.supplierId !== id).map((task) => task.id));
           const remaining = s.openTabs.filter((t) => t !== id);
           const updatedNotes = s.notes
             .map((n) => ({ ...n, supplierIds: n.supplierIds.filter((sid) => sid !== id) }))
             .filter((n) => n.supplierIds.length > 0 || n.internal);
+          const remainingNoteIds = new Set(updatedNotes.map((note) => note.id));
           const activeNoteStillExists = updatedNotes.some((n) => n.id === s.activeNoteId);
           return {
             suppliers: s.suppliers.filter((x) => x.id !== id),
             notes: updatedNotes,
-            tasks: s.tasks.filter((t) => t.supplierId !== id),
-            decisions: s.decisions.filter((d) => d.supplierId !== id),
-            followUps: s.followUps.filter((f) => f.supplierId !== id),
+            tasks: s.tasks.filter((t) => t.supplierId !== id)
+              .map((t) => t.noteId && !remainingNoteIds.has(t.noteId) ? { ...t, noteId: null } : t),
+            decisions: s.decisions.map((d) => {
+              const sourceNote = s.notes.find((n) => n.id === d.noteId);
+              const noteSurvives = sourceNote && (sourceNote.internal || sourceNote.supplierIds.some((supplierId) => supplierId !== id));
+              return d.supplierId === id
+                ? { ...d, supplierId: null, supplierName: d.supplierName || removedSupplier?.name,
+                    noteId: noteSurvives ? d.noteId : null,
+                    sourceNoteTitle: d.sourceNoteTitle || sourceNote?.title,
+                    relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) }
+                : { ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) };
+            }),
+            followUps: s.followUps.filter((f) => f.supplierId !== id)
+              .map((f) => ({ ...f,
+                linkedTaskId: f.linkedTaskId && remainingTaskIds.has(f.linkedTaskId) ? f.linkedTaskId : undefined,
+                noteId: f.noteId && remainingNoteIds.has(f.noteId) ? f.noteId : null })),
             openTabs: remaining,
             activeTabId: s.activeTabId === id ? remaining[0] || null : s.activeTabId,
             activeNoteId: activeNoteStillExists ? s.activeNoteId : null,
@@ -355,6 +398,8 @@ export const useStore = create<AppState>()(
             )
             .filter((n) => n.projectIds.length > 0);
           const activeNoteStillExists = updatedNotes.some((n) => n.id === s.activeNoteId);
+          const remainingNoteIds = new Set(updatedNotes.map((note) => note.id));
+          const remainingTaskIds = new Set(s.tasks.filter((task) => !(task.supplierId === supplierId && task.projectId === projectId)).map((task) => task.id));
           return {
             suppliers: s.suppliers.map((sup) =>
               sup.id === supplierId
@@ -363,8 +408,21 @@ export const useStore = create<AppState>()(
             ),
             notes: updatedNotes,
             tasks: s.tasks.filter((t) => !(t.supplierId === supplierId && t.projectId === projectId)),
-            decisions: s.decisions.filter((d) => !(d.supplierId === supplierId && d.projectId === projectId)),
-            followUps: s.followUps.filter((f) => !(f.supplierId === supplierId && f.projectId === projectId)),
+            decisions: s.decisions.map((decision) => {
+              const sourceNote = s.notes.find((note) => note.id === decision.noteId);
+              return {
+                ...decision,
+                noteId: decision.noteId && !remainingNoteIds.has(decision.noteId) ? null : decision.noteId,
+                sourceNoteTitle: decision.sourceNoteTitle || sourceNote?.title,
+                relatedTaskIds: decision.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)),
+              };
+            }),
+            followUps: s.followUps.filter((f) => !(f.supplierId === supplierId && f.projectId === projectId))
+              .map((followUp) => ({
+                ...followUp,
+                linkedTaskId: followUp.linkedTaskId && remainingTaskIds.has(followUp.linkedTaskId) ? followUp.linkedTaskId : undefined,
+                noteId: followUp.noteId && remainingNoteIds.has(followUp.noteId) ? followUp.noteId : null,
+              })),
             openTabs: s.openTabs.filter((t) => t !== supplierId),
             activeTabId: s.activeTabId === supplierId ? null : s.activeTabId,
             activeNoteId: activeNoteStillExists ? s.activeNoteId : null,
@@ -470,6 +528,8 @@ export const useStore = create<AppState>()(
 
       deleteNote: (id) =>
         set((s) => {
+          const removedNote = s.notes.find((n) => n.id === id);
+          const remainingTaskIds = new Set(s.tasks.filter((task) => task.noteId !== id).map((task) => task.id));
           const remaining = s.notes.filter((n) => n.id !== id);
           let nextNote = s.activeNoteId;
           if (s.activeNoteId === id) {
@@ -484,7 +544,13 @@ export const useStore = create<AppState>()(
           return {
             notes: remaining,
             tasks: s.tasks.filter((t) => t.noteId !== id),
-            decisions: s.decisions.filter((d) => d.noteId !== id),
+            followUps: s.followUps.map((f) => ({ ...f,
+              linkedTaskId: f.linkedTaskId && remainingTaskIds.has(f.linkedTaskId) ? f.linkedTaskId : undefined,
+              noteId: f.noteId === id ? null : f.noteId })),
+            decisions: s.decisions.map((d) => d.noteId === id
+              ? { ...d, noteId: null, sourceNoteTitle: d.sourceNoteTitle || removedNote?.title,
+                  relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) }
+              : { ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => remainingTaskIds.has(taskId)) }),
             activeNoteId: nextNote,
           };
         }),
@@ -580,6 +646,7 @@ export const useStore = create<AppState>()(
       deleteTask: (id) => set((s) => ({
         tasks: s.tasks.filter((t) => t.id !== id),
         followUps: s.followUps.map((f) => f.linkedTaskId === id ? { ...f, linkedTaskId: undefined } : f),
+        decisions: s.decisions.map((d) => ({ ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => taskId !== id) })),
       })),
 
       setEditingTask: (id) => set({ editingTaskId: id }),
@@ -623,16 +690,44 @@ export const useStore = create<AppState>()(
 
       addDecision: (decision) => {
         const id = uid();
-        set((s) => ({ decisions: [...s.decisions, { ...decision, id, createdAt: Date.now() }] }));
+        const now = Date.now();
+        set((s) => {
+          const previous = decision.supersedesId ? s.decisions.find((d) => d.id === decision.supersedesId) : null;
+          const next: Decision = {
+            ...decision, id, createdAt: now, updatedAt: now, status: 'active',
+            projectName: decision.projectName || s.projects.find((p) => p.id === decision.projectId)?.name,
+            supplierName: decision.supplierName || s.suppliers.find((p) => p.id === decision.supplierId)?.name,
+            sourceNoteTitle: decision.sourceNoteTitle || s.notes.find((n) => n.id === decision.noteId)?.title,
+            history: [{ id: uid(), timestamp: now, action: 'created', text: decision.text, status: 'active' }],
+          };
+          return { decisions: [...s.decisions.map((d) => d.id === previous?.id
+            ? { ...d, status: 'superseded' as const, updatedAt: now,
+                history: [...(d.history || []), { id: uid(), timestamp: now, action: 'superseded' as const, text: d.text, status: 'superseded' as const }] }
+            : d), next] };
+        });
         return id;
       },
 
       updateDecision: (id, updates) =>
-        set((s) => ({ decisions: s.decisions.map((d) => (d.id === id ? { ...d, ...updates } : d)) })),
+        set((s) => ({ decisions: s.decisions.map((d) => {
+          if (d.id !== id) return d;
+          const now = Date.now();
+          const next = { ...d, ...updates, updatedAt: now };
+          const changed = next.text !== d.text || next.status !== d.status || next.rationale !== d.rationale ||
+            next.comments !== d.comments || next.supersedesId !== d.supersedesId ||
+            JSON.stringify(next.relatedTaskIds) !== JSON.stringify(d.relatedTaskIds);
+          return changed ? {
+            ...next,
+            history: [...(d.history || []), { id: uid(), timestamp: now,
+              action: next.status === 'revoked' ? 'revoked' as const : 'edited' as const,
+              text: next.text, status: next.status || 'active', comment: next.rationale }],
+          } : d;
+        }) })),
 
-      deleteDecision: (id) => set((s) => ({ decisions: s.decisions.filter((d) => d.id !== id) })),
+      deleteDecision: (id) => get().updateDecision(id, { status: 'revoked' }),
 
       setEditingDecision: (id) => set({ editingDecisionId: id }),
+      setFocusedFollowUp: (id) => set({ focusedFollowUpId: id }),
 
       // --- UI ---
 
@@ -688,14 +783,14 @@ export const useStore = create<AppState>()(
           supplierIds: n.supplierIds ?? (n.supplierId ? [n.supplierId] : []),
         });
 
-        const hasProjects = (data.version === 2 || data.version === 3 || data.version === 4) && data.projects;
+        const hasProjects = data.version >= 2 && !!data.projects;
         if (hasProjects) {
           set({
             projects: data.projects!,
             suppliers: data.suppliers,
             notes: data.notes.map((n: any) => normaliseNote(n)),
             tasks: data.tasks,
-            decisions: data.decisions,
+            decisions: data.decisions.map(upgradeDecision),
             followUps: data.followUps || [],
           });
         } else {
@@ -718,7 +813,7 @@ export const useStore = create<AppState>()(
               ...t,
               projectId: t.projectId || defaultProject.id,
             })),
-            decisions: data.decisions.map((d: any) => ({
+            decisions: data.decisions.map((d: any) => upgradeDecision({
               ...d,
               projectId: d.projectId || defaultProject.id,
             })),
@@ -746,7 +841,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'Combobulator-data',
-      version: 10,
+      version: 11,
       storage: createJSONStorage(() => appStorage),
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
@@ -863,6 +958,12 @@ export const useStore = create<AppState>()(
           if (state.settings?.theme !== 'dark') {
             state = { ...state, settings: { ...state.settings, theme: 'light' } };
           }
+        }
+        if (version < 11) {
+          state = {
+            ...state,
+            decisions: (state.decisions || []).map(upgradeDecision),
+          };
         }
         return state;
       },

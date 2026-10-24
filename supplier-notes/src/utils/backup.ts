@@ -1,12 +1,13 @@
 import { toast } from 'sonner';
 import type { ExportData } from '../store/store';
+import { validateExport } from './validateExport';
 
 /** Read a JSON backup file and hand it to the store's importData. */
 export function importBackupFile(file: File, importData: (data: ExportData) => void) {
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
-      const data = JSON.parse(ev.target?.result as string);
+      const data = validateExport(JSON.parse(ev.target?.result as string));
       importData(data);
       toast.success('Backup restored', { description: file.name });
     } catch {

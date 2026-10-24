@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
+import { validateExport } from '../utils/validateExport';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -171,6 +172,9 @@ export function SettingsModal() {
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
   const [dataDirChanging, setDataDirChanging] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<{ lastSavedAt: number | null; lastBackupAt: number | null; backupError: string | null; attachmentWarning?: string | null; error: string | null } | null>(null);
+  const [backups, setBackups] = useState<Array<{ id: string; createdAt: number }>>([]);
+  const [backupBusy, setBackupBusy] = useState(false);
   const [githubReleases, setGithubReleases] = useState<Array<{ tag_name: string; body: string | null; published_at: string | null }>>([]);
   const [githubReleasesLoading, setGithubReleasesLoading] = useState(false);
   const [githubReleasesError, setGithubReleasesError] = useState<string | null>(null);
@@ -217,6 +221,44 @@ export function SettingsModal() {
   useEffect(() => {
     if (activeTab === 'releases') fetchGithubReleases();
   }, [activeTab]);
+
+  const refreshStorage = async () => {
+    const api = (window as any).electronStore;
+    if (!api?.status) return;
+    const [status, items] = await Promise.all([api.status(), api.backups()]);
+    setStorageStatus(status);
+    setBackups(items.sort((a: { createdAt: number }, b: { createdAt: number }) => b.createdAt - a.createdAt));
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'data') return;
+    refreshStorage().catch((error) => toast.error(`Could not read backups: ${error.message}`));
+    const onStatus = (event: Event) => setStorageStatus((event as CustomEvent<typeof storageStatus>).detail);
+    window.addEventListener('storage-status', onStatus);
+    return () => window.removeEventListener('storage-status', onStatus);
+  }, [activeTab]);
+
+  const handleAutomaticBackup = async () => {
+    setBackupBusy(true);
+    try {
+      await (window as any).electronStore.backup();
+      await refreshStorage();
+      toast.success('Backup created');
+    } catch (error) { toast.error(`Backup failed: ${String(error)}`); }
+    finally { setBackupBusy(false); }
+  };
+
+  const handleRestore = (id: string) => {
+    openConfirmDialog({
+      title: 'Restore backup?',
+      message: 'Current data will be saved separately before restoring. The app will restart.',
+      confirmLabel: 'Restore',
+      onConfirm: async () => {
+        try { await (window as any).electronStore.restore(id); }
+        catch (error) { toast.error(`Restore failed: ${String(error)}`); }
+      },
+    });
+  };
 
   const saveApiKey = () => {
     updateSettings({ openaiApiKey: apiKeyDraft.trim() });
@@ -284,7 +326,7 @@ export function SettingsModal() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const data = JSON.parse(ev.target?.result as string);
+        const data = validateExport(JSON.parse(ev.target?.result as string));
         importData(data);
         toast.success('Data imported successfully');
       } catch {
@@ -312,8 +354,11 @@ export function SettingsModal() {
     if (!electronStore?.changeDataDir) return;
     setDataDirChanging(true);
     try {
-      await electronStore.changeDataDir();
+      const result = await electronStore.changeDataDir();
+      if (result?.error) toast.error(result.error);
       // App will relaunch — no further action needed
+    } catch (error) {
+      toast.error(`Could not change data folder: ${String(error)}`);
     } finally {
       setDataDirChanging(false);
     }
@@ -329,7 +374,10 @@ export function SettingsModal() {
       onConfirm: async () => {
         setDataDirChanging(true);
         try {
-          await electronStore.resetDataDir();
+          const result = await electronStore.resetDataDir();
+          if (result?.error) toast.error(result.error);
+        } catch (error) {
+          toast.error(`Could not reset data folder: ${String(error)}`);
         } finally {
           setDataDirChanging(false);
         }
@@ -349,8 +397,21 @@ export function SettingsModal() {
     }
   };
 
-  const handleClearData = () => {
+  const handleClearData = async () => {
     if (clearConfirm !== 'DELETE') return;
+    const current = useStore.getState();
+    const hasData = current.projects.length + current.suppliers.length + current.notes.length +
+      current.tasks.length + current.decisions.length + current.followUps.length > 0;
+    if (hasData && (window as any).electronStore?.backup) {
+      setBackupBusy(true);
+      try { await (window as any).electronStore.backup(); }
+      catch (error) {
+        toast.error(`Could not create a backup before clearing data: ${String(error)}`);
+        setBackupBusy(false);
+        return;
+      }
+      setBackupBusy(false);
+    }
     useStore.setState({
       projects: [],
       suppliers: [],
@@ -758,18 +819,38 @@ export function SettingsModal() {
               <>
                 <div className="flex flex-col gap-3">
                   <SectionHeading>Backup &amp; restore</SectionHeading>
+                  {(window as any).electronStore?.status && (
+                    <div className="rounded-lg border bg-card px-4 py-3 text-xs text-muted-foreground">
+                      <p>Last saved: {storageStatus?.lastSavedAt ? new Date(storageStatus.lastSavedAt).toLocaleString() : 'Not yet recorded'}</p>
+                      <p>Last backup: {storageStatus?.lastBackupAt ? new Date(storageStatus.lastBackupAt).toLocaleString() : backups[0] ? new Date(backups[0].createdAt).toLocaleString() : 'None yet'}</p>
+                      {storageStatus?.error && <p className="text-destructive">Storage error: {storageStatus.error}</p>}
+                      {storageStatus?.backupError && <p className="text-destructive">Backup error: {storageStatus.backupError}</p>}
+                      {storageStatus?.attachmentWarning && <p className="text-warning">{storageStatus.attachmentWarning}</p>}
+                    </div>
+                  )}
                   <p className="text-ui text-muted-foreground">
-                    Exports all projects, suppliers, notes, tasks, decisions, and follow-ups as a JSON file. Settings (including your API keys) are not included.
+                    Automatic backups include notes, linked files, and images. JSON export contains projects, suppliers, notes, tasks, decisions, and follow-ups; it does not include files, images, settings, or API keys.
                   </p>
                   <div className="flex flex-wrap gap-2">
+                    {(window as any).electronStore?.backup && <Button variant="outline" onClick={handleAutomaticBackup} disabled={backupBusy}>Create backup now</Button>}
                     <Button onClick={handleExport}>
-                      <Download /> Export backup
+                      <Download /> Export data (JSON)
                     </Button>
                     <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-                      <Upload /> Import backup
+                      <Upload /> Import data (JSON)
                     </Button>
                     <input ref={fileInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImport} />
                   </div>
+                  {backups.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto rounded-lg border">
+                      {backups.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-3 border-b px-3 py-2 last:border-0">
+                          <span className="text-xs">{new Date(item.createdAt).toLocaleString()}</span>
+                          <Button variant="ghost" size="xs" onClick={() => handleRestore(item.id)}>Restore</Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <Divider />
@@ -829,7 +910,7 @@ export function SettingsModal() {
                     <p className="text-sm font-semibold text-destructive">Danger zone</p>
                   </div>
                   <p className="text-ui leading-relaxed text-subtle-foreground">
-                    Permanently deletes all projects, suppliers, notes, tasks, decisions, and follow-ups. <strong>This cannot be undone.</strong> Export a backup first.
+                    Clears all projects, suppliers, notes, tasks, decisions, and follow-ups. A full backup is created first so you can restore them if needed.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Input
@@ -839,7 +920,7 @@ export function SettingsModal() {
                       placeholder="Type DELETE to confirm"
                       className="max-w-60 bg-background"
                     />
-                    <Button variant="destructive" onClick={handleClearData} disabled={clearConfirm !== 'DELETE'}>
+                    <Button variant="destructive" onClick={handleClearData} disabled={clearConfirm !== 'DELETE' || backupBusy}>
                       Clear all data
                     </Button>
                   </div>

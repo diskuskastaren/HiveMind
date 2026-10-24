@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { OwnerDropdown } from './TaskModal';
 import { format } from 'date-fns';
 import type { TaskStatus, Priority, DashboardSection } from '../types';
+import { DecisionDetailDialog } from './DecisionDetailDialog';
 import {
   ArrowUpRight,
   Bookmark,
@@ -640,9 +641,14 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
   const [editText, setEditText] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [decisionQuery, setDecisionQuery] = useState('');
+  const [decisionScope, setDecisionScope] = useState<'current' | 'history' | 'all'>('current');
+  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
   const visibleProjects = projects.filter((p) => !p.archived);
 
   const filtered = decisions
+    .filter((d) => decisionScope === 'all' || (decisionScope === 'current' ? (d.status || 'active') === 'active' : (d.status || 'active') !== 'active'))
+    .filter((d) => !decisionQuery.trim() || `${d.text} ${d.rationale || ''} ${d.comments || ''}`.toLowerCase().includes(decisionQuery.toLowerCase()))
     .filter((d) => filterProject === 'all' || d.projectId === filterProject)
     .filter((d) => {
       if (filterSupplier === 'all') return true;
@@ -664,6 +670,10 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <SectionToolbar actionLabel="New decision" onAction={() => setShowAddForm(true)}>
         <FilterBar filterProject={filterProject} filterSupplier={filterSupplier} onProjectChange={setFilterProject} onSupplierChange={setFilterSupplier} />
+        <Input className="h-8 max-w-40 text-xs" aria-label="Search decisions" placeholder="Search decisions" value={decisionQuery} onChange={(event) => setDecisionQuery(event.target.value)} />
+        <div className="flex gap-1">
+          {(['current', 'history', 'all'] as const).map((scope) => <Button key={scope} size="xs" variant={decisionScope === scope ? 'default' : 'outline'} onClick={() => setDecisionScope(scope)}>{scope === 'current' ? 'Current' : scope === 'history' ? 'History' : 'All'}</Button>)}
+        </div>
         {filtered.length > 0 && (
           <span className="text-xs text-muted-foreground">
             {filtered.length} decision{filtered.length !== 1 ? 's' : ''}
@@ -749,7 +759,9 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
                           </button>
                         )}
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="rounded border px-1.5 py-0.5 text-2xs">{d.status || 'active'}</span>
                           {project && <EntityChip color={project.color}>{project.name}</EntityChip>}
+                          {!project && d.projectName && <span>{d.projectName}</span>}
                           <span className="tabular-nums">{format(new Date(d.createdAt), 'MMM d, HH:mm')}</span>
                           {note && (
                             <button
@@ -765,11 +777,12 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
                         </div>
                       </div>
                       {!isEditing && (
-                        <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/dec:opacity-100">
+                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/dec:opacity-100">
+                          <Button variant="outline" size="xs" onClick={() => setSelectedDecisionId(d.id)}>History</Button>
                           <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
                             <Pencil />
                           </IconButton>
-                          <IconButton label="Delete decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
+                          <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
                             <Trash2 />
                           </IconButton>
                         </div>
@@ -782,6 +795,7 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
           })}
         </div>
       </div>
+      {selectedDecisionId && <DecisionDetailDialog id={selectedDecisionId} onClose={() => setSelectedDecisionId(null)} />}
     </div>
   );
 }
@@ -796,6 +810,7 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
   const addFollowUp = useStore((s) => s.addFollowUp);
   const deleteFollowUp = useStore((s) => s.deleteFollowUp);
   const setEditingTask = useStore((s) => s.setEditingTask);
+  const focusedFollowUpId = useStore((s) => s.focusedFollowUpId);
 
   const [filterProject, setFilterProject] = useState(defaultProjectId || 'all');
   const [filterSupplier, setFilterSupplier] = useState('all');
@@ -803,6 +818,12 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string | null>(null);
   const [editingFollowUpText, setEditingFollowUpText] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  useEffect(() => {
+    if (!focusedFollowUpId) return;
+    const target = followUps.find((item) => item.id === focusedFollowUpId);
+    if (target?.status === 'resolved') setShowResolved(true);
+    requestAnimationFrame(() => document.getElementById(`followup-${focusedFollowUpId}`)?.scrollIntoView({ block: 'center' }));
+  }, [focusedFollowUpId, followUps]);
   const visibleProjects = projects.filter((p) => !p.archived);
 
   const filteredTasks = tasks
@@ -866,7 +887,7 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
     const linkableFollowUps = followUps.filter((f) => f.projectId === projectId && !f.linkedTaskId);
 
     return (
-      <div key={`${type}-${item.id}`} className="group/fu flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-xs">
+      <div key={`${type}-${item.id}`} id={type === 'followup' ? `followup-${item.id}` : undefined} className={cn('group/fu flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-xs', type === 'followup' && focusedFollowUpId === item.id && 'border-primary')}>
         <button
           type="button"
           className="mt-0.5 shrink-0"

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
-import { format } from 'date-fns';
-import { BookOpen, Building2, ChevronDown, ChevronRight, CornerUpRight, Keyboard, Pin, Plus, SquareCheck } from 'lucide-react';
+import { BookOpen, Building2, ChevronDown, ChevronRight, Keyboard, Pin, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Kbd } from '@/components/ui/kbd';
-import { ColorDot, Monogram, PriorityBadge, StatusBadge, formatRelativeTime } from './common';
+import { ColorDot, Monogram, formatRelativeTime } from './common';
+import { MyWork } from './MyWork';
 
 const SHORTCUTS: [string, string][] = [
   ['Ctrl K', 'Command palette'],
@@ -32,7 +32,6 @@ export function Overview() {
   const openTab = useStore((s) => s.openTab);
   const navigateToNote = useStore((s) => s.navigateToNote);
   const setActiveView = useStore((s) => s.setActiveView);
-  const setEditingTask = useStore((s) => s.setEditingTask);
   const addNote = useStore((s) => s.addNote);
   const addInternalNote = useStore((s) => s.addInternalNote);
   const toggleHelp = useStore((s) => s.toggleHelp);
@@ -81,15 +80,14 @@ export function Overview() {
     .filter((n) => n.supplierIds.length > 0 || n.internal)
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 6);
+  const projectLastTouched = new Map<string, number>();
+  for (const note of notes) for (const projectId of note.projectIds) {
+    projectLastTouched.set(projectId, Math.max(projectLastTouched.get(projectId) || 0, note.updatedAt));
+  }
+  const recentProjects = projects.map((project) => ({ project, lastTouched: projectLastTouched.get(project.id) || 0 }))
+    .filter((item) => item.lastTouched > 0)
+    .sort((a, b) => b.lastTouched - a.lastTouched).slice(0, 5);
 
-  // High-priority or in-progress tasks first, then open follow-ups
-  const attentionTasks = projectTasks
-    .filter((t) => t.priority === 'high' || t.status === 'doing')
-    .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
-    .slice(0, 4);
-  const attentionFollowUps = projectFollowUps.slice(0, 5 - attentionTasks.length);
-
-  const supplierById = (id: string | null) => (id ? suppliers.find((s) => s.id === id) : undefined);
   const lastEdited = projectNotes.length > 0 ? Math.max(...projectNotes.map((n) => n.updatedAt)) : null;
 
   const openSupplier = (id: string) => {
@@ -171,63 +169,11 @@ export function Overview() {
               </section>
             )}
 
-            {(attentionTasks.length > 0 || attentionFollowUps.length > 0) && (
-              <section className="flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Needs attention</h2>
-                  <Button variant="link" size="xs" className="px-0 text-muted-foreground" onClick={() => setActiveView('tasks')}>
-                    Open follow-up
-                  </Button>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {attentionTasks.map((t) => {
-                    const sup = supplierById(t.supplierId);
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setEditingTask(t.id)}
-                        className="flex items-center gap-3 rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:bg-accent/60"
-                      >
-                        <SquareCheck className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate text-ui font-medium">{t.title}</span>
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            {sup ? <ColorDot color={sup.color} className="size-1.5" /> : null}
-                            {sup?.name ?? 'Internal'} · Task{t.dueDate && !isNaN(new Date(t.dueDate).getTime()) ? ` · due ${format(new Date(t.dueDate), 'MMM d')}` : ''}
-                          </span>
-                        </span>
-                        {t.status === 'doing' ? <StatusBadge status="doing" /> : <PriorityBadge priority={t.priority} />}
-                      </button>
-                    );
-                  })}
-                  {attentionFollowUps.map((f) => {
-                    const sup = supplierById(f.supplierId);
-                    return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setActiveView('tasks')}
-                        className="flex items-center gap-3 rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:bg-accent/60"
-                      >
-                        <CornerUpRight className="size-4 shrink-0 text-primary" />
-                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate text-ui font-medium">{f.text}</span>
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            {sup ? <ColorDot color={sup.color} className="size-1.5" /> : null}
-                            {sup?.name ?? 'Internal'} · Follow-up
-                          </span>
-                        </span>
-                        <StatusBadge status="open" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+            <MyWork key={activeProjectId || 'all'} />
           </div>
 
           <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-6">
+            {recentProjects.length > 1 && <section className="flex flex-col gap-2.5"><h2 className="text-sm font-semibold">Recently updated projects</h2><div className="flex flex-col gap-1">{recentProjects.map(({ project, lastTouched }) => <div key={project.id} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-xs"><span className="font-medium">{project.name}</span><span className="text-muted-foreground">{formatRelativeTime(lastTouched)}</span></div>)}</div></section>}
             {recentItems.length > 0 && (
               <section className="flex flex-col gap-2.5">
                 <h2 className="text-sm font-semibold">Recently active</h2>

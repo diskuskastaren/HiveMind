@@ -22,6 +22,31 @@ export interface Transcript {
   summary?: string;
   duration: number;
   recordedAt: number;
+  analysis?: MeetingAnalysis;
+}
+
+export type MeetingSuggestionKind = 'task' | 'decision' | 'question' | 'commitment' | 'followup' | 'change';
+export interface MeetingSuggestion {
+  id: string;
+  kind: MeetingSuggestionKind;
+  text: string;
+  owner: string;
+  dueDate: string;
+  priority: Priority;
+  sourceQuote: string;
+  timestampSeconds: number | null;
+  status: 'pending' | 'accepted' | 'rejected';
+  linkedEntityId?: string;
+  projectId?: string;
+  saveAs?: 'task' | 'decision' | 'followup';
+}
+export interface MeetingAnalysis {
+  sourceHash: string;
+  analyzedAt: number;
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  suggestions: MeetingSuggestion[];
 }
 
 export interface Attachment {
@@ -68,6 +93,9 @@ export interface Task {
   linkedFollowUpId?: string;
   attachments?: Attachment[];
   updates?: TaskUpdate[];
+  sourceTranscriptId?: string;
+  sourceSuggestionId?: string;
+  sourceQuote?: string;
 }
 
 export interface FollowUp {
@@ -78,6 +106,10 @@ export interface FollowUp {
   status: 'open' | 'resolved';
   createdAt: number;
   linkedTaskId?: string;
+  sourceTranscriptId?: string;
+  sourceSuggestionId?: string;
+  sourceQuote?: string;
+  noteId?: string | null;
 }
 
 export interface Decision {
@@ -87,6 +119,26 @@ export interface Decision {
   noteId: string | null;
   text: string;
   createdAt: number;
+  updatedAt?: number;
+  status?: 'active' | 'superseded' | 'revoked';
+  supersedesId?: string | null;
+  rationale?: string;
+  comments?: string;
+  relatedTaskIds?: string[];
+  projectName?: string;
+  supplierName?: string;
+  sourceNoteTitle?: string;
+  history?: Array<{
+    id: string;
+    timestamp: number;
+    action: 'created' | 'edited' | 'superseded' | 'revoked';
+    text: string;
+    status: 'active' | 'superseded' | 'revoked';
+    comment?: string;
+  }>;
+  sourceTranscriptId?: string;
+  sourceSuggestionId?: string;
+  sourceQuote?: string;
 }
 
 export type RightPanelTab = 'tasks' | 'decisions' | 'followups' | 'transcript';

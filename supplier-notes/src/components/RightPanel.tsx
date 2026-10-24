@@ -335,7 +335,7 @@ export function RightPanel() {
             <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
               <Pencil />
             </IconButton>
-            <IconButton label="Delete decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
+          <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
               <Trash2 />
             </IconButton>
           </div>
