@@ -20,10 +20,10 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useStore } from '../store/store';
+import { persistStorage, useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
-import { validateExport } from '../utils/validateExport';
+import { importBackupFile } from '../utils/backup';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,11 +46,11 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'data', label: 'Data & Storage', icon: <Database className="size-4" /> },
 ];
 
+// o1-mini was removed: it rejects the system prompt and parameters summaries use.
 const GPT_MODELS = [
   { value: 'gpt-4o-mini', label: 'GPT-4o mini (fast, cheap)' },
   { value: 'gpt-4o', label: 'GPT-4o (best quality)' },
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'o1-mini', label: 'o1-mini (reasoning)' },
 ];
 
 // Prices per 1M tokens (source: openai.com/api/pricing)
@@ -58,7 +58,6 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-4o-mini':  { input: 0.15,  output: 0.60  },
   'gpt-4o':       { input: 2.50,  output: 10.00 },
   'gpt-4-turbo':  { input: 10.00, output: 30.00 },
-  'o1-mini':      { input: 3.00,  output: 12.00 },
 };
 const WHISPER_COST_PER_MIN = 0.000667; // $0.04/hr — Groq whisper-large-v3-turbo (~4.5x cheaper than gpt-4o-mini-transcribe)
 
@@ -101,7 +100,7 @@ function CostEstimatePanel({ activeModel }: { activeModel: string }) {
         })}
       </div>
       <p className="text-2xs leading-relaxed text-muted-foreground">
-        Transcription cost is the same regardless of model. Mic mode uses browser speech recognition — no transcription charge. Transcription via Groq Whisper Large V3 Turbo ($0.04/hr). Summary prices from openai.com/api/pricing, ~100 wpm assumed.
+        Transcription cost is the same regardless of model: Groq Whisper Large V3 Turbo ($0.04/hr). In the desktop app the microphone is also transcribed with Groq Whisper, because built-in speech recognition is not available there. Summary prices from openai.com/api/pricing, ~100 wpm assumed.
       </p>
     </div>
   );
@@ -154,7 +153,6 @@ export function SettingsModal() {
   const updateSettings = useStore((s) => s.updateSettings);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const getExportData = useStore((s) => s.getExportData);
-  const importData = useStore((s) => s.importData);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -168,7 +166,8 @@ export function SettingsModal() {
   const [groqTestError, setGroqTestError] = useState('');
   const [clearConfirm, setClearConfirm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'unavailable' | 'error'>('idle');
+  const [updateCheckMessage, setUpdateCheckMessage] = useState('');
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
   const [dataDirChanging, setDataDirChanging] = useState(false);
@@ -241,6 +240,7 @@ export function SettingsModal() {
   const handleAutomaticBackup = async () => {
     setBackupBusy(true);
     try {
+      await persistStorage.flush();
       await (window as any).electronStore.backup();
       await refreshStorage();
       toast.success('Backup created');
@@ -322,19 +322,8 @@ export function SettingsModal() {
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = validateExport(JSON.parse(ev.target?.result as string));
-        importData(data);
-        toast.success('Data imported successfully');
-      } catch {
-        toast.error('Invalid backup file', { description: 'Please select a valid HiveMind backup JSON.' });
-      }
-    };
-    reader.readAsText(file);
     e.target.value = '';
+    if (file) void importBackupFile(file);
   };
 
   const handleOpenFolder = async () => {
@@ -389,11 +378,14 @@ export function SettingsModal() {
     const updater = (window as any).electronUpdater;
     if (!updater) return;
     setUpdateCheckStatus('checking');
+    setUpdateCheckMessage('');
     try {
       const result = await updater.check();
       setUpdateCheckStatus(result?.status ?? 'up-to-date');
-    } catch {
+      setUpdateCheckMessage(result?.message ?? '');
+    } catch (error) {
       setUpdateCheckStatus('error');
+      setUpdateCheckMessage(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -404,7 +396,10 @@ export function SettingsModal() {
       current.tasks.length + current.decisions.length + current.followUps.length > 0;
     if (hasData && (window as any).electronStore?.backup) {
       setBackupBusy(true);
-      try { await (window as any).electronStore.backup(); }
+      try {
+        await persistStorage.flush(); // the backup must include the latest edits
+        await (window as any).electronStore.backup();
+      }
       catch (error) {
         toast.error(`Could not create a backup before clearing data: ${String(error)}`);
         setBackupBusy(false);
@@ -592,7 +587,7 @@ export function SettingsModal() {
                 <SettingRow
                   label="Groq API key"
                   htmlFor="groq-key"
-                  hint="Used for system audio transcription via Groq Whisper. Stored locally — never sent anywhere except Groq."
+                  hint="Used for transcription with Groq Whisper (system audio, and the microphone in the desktop app). Stored encrypted on this computer and only sent to Groq."
                 >
                   {keyInput('groq-key', groqKeyDraft, setGroqKeyDraft, saveGroqKey, showGroqKey, setShowGroqKey, 'gsk_…', groqTestStatus, handleTestGroqKey)}
                   <KeyStatus status={groqTestStatus} error={groqTestError} saved={!!settings.groqApiKey} savedLabel="Groq key saved" />
@@ -603,7 +598,7 @@ export function SettingsModal() {
                 <SettingRow
                   label="OpenAI API key"
                   htmlFor="openai-key"
-                  hint="Used for generating meeting summaries. Stored locally — never sent anywhere except OpenAI."
+                  hint="Used for meeting summaries and meeting analysis. Stored encrypted on this computer and only sent to OpenAI."
                 >
                   {keyInput('openai-key', apiKeyDraft, setApiKeyDraft, saveApiKey, showApiKey, setShowApiKey, 'sk-…', testStatus, handleTestApiKey)}
                   <KeyStatus status={testStatus} error={testError} saved={!!settings.openaiApiKey} savedLabel="API key saved" />
@@ -611,12 +606,26 @@ export function SettingsModal() {
 
                 <Divider />
                 <SectionHeading>Summarization</SectionHeading>
+                <div className="flex items-start gap-4 rounded-lg border p-4">
+                  <Label htmlFor="auto-summarize" className="flex flex-1 flex-col items-start gap-1">
+                    <span className="text-sm font-medium">Summarize recordings automatically</span>
+                    <span className="text-ui leading-relaxed font-normal text-muted-foreground">
+                      When a recording stops, its transcript is sent to OpenAI for a summary. Turn off to summarize only when you click “Generate summary”
+                      — useful for confidential meetings.
+                    </span>
+                  </Label>
+                  <Switch id="auto-summarize" checked={settings.autoSummarize} onCheckedChange={(v) => updateSettings({ autoSummarize: v })} />
+                </div>
+
                 <SettingRow label="GPT model" htmlFor="gpt-model" hint="gpt-4o-mini is recommended — fast and cheap. Use gpt-4o for higher-quality summaries.">
                   <Select value={settings.gptModel} onValueChange={(v) => updateSettings({ gptModel: v })}>
                     <SelectTrigger id="gpt-model" className="w-full max-w-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {!GPT_MODELS.some((m) => m.value === settings.gptModel) && (
+                        <SelectItem value={settings.gptModel}>{settings.gptModel} (no longer listed)</SelectItem>
+                      )}
                       {GPT_MODELS.map((m) => (
                         <SelectItem key={m.value} value={m.value}>
                           {m.label}
@@ -746,9 +755,9 @@ export function SettingsModal() {
                   </Label>
                   <Switch id="teams-enabled" checked={settings.teamsEnabled} onCheckedChange={(v) => updateSettings({ teamsEnabled: v })} />
                 </div>
-                <div role="note" className="flex gap-2.5 rounded-lg bg-warning-soft px-3.5 py-3 text-ui text-warning">
+                <div role="note" className="flex gap-2.5 rounded-lg bg-muted px-3.5 py-3 text-ui text-subtle-foreground">
                   <Info className="mt-0.5 size-4 shrink-0" />
-                  <span>Changes to Teams integration take effect after restarting the app.</span>
+                  <span>Detection connects only to the Teams app on this computer (its local third-party app API). When it is off, HiveMind does not connect to Teams.</span>
                 </div>
                 <Divider />
                 <div className="flex flex-col gap-3">
@@ -894,7 +903,16 @@ export function SettingsModal() {
                           {updateCheckStatus === 'up-to-date' && <span className="text-success">· You’re up to date</span>}
                           {updateCheckStatus === 'available' && <span className="text-primary">· Update available — downloading…</span>}
                           {updateCheckStatus === 'error' && <span className="text-destructive">· Could not check for updates</span>}
+                          {updateCheckStatus === 'unavailable' && <span>· {updateCheckMessage}</span>}
                         </span>
+                        {updateCheckStatus === 'error' && (
+                          <span className="text-xs text-muted-foreground">
+                            {updateCheckMessage && `${updateCheckMessage} · `}
+                            <button type="button" className="text-primary underline underline-offset-2" onClick={() => (window as any).electronUpdater?.openReleases?.()}>
+                              Download the latest version manually
+                            </button>
+                          </span>
+                        )}
                       </div>
                       <Button variant="outline" size="sm" onClick={handleCheckForUpdates} disabled={updateCheckStatus === 'checking'}>
                         <RefreshCw className={updateCheckStatus === 'checking' ? 'animate-spin' : undefined} />

@@ -1,4 +1,5 @@
 import type { Note, Task, Decision, FollowUp } from '../types';
+import { htmlToText } from './html.ts';
 
 export type SearchKind = 'note' | 'task' | 'decision' | 'followup' | 'transcript';
 export interface SearchItem {
@@ -15,14 +16,7 @@ export interface SearchItem {
   normalizedBody: string;
 }
 
-function plain(html: string) {
-  if (typeof document !== 'undefined') {
-    const element = document.createElement('div');
-    element.innerHTML = html;
-    return element.textContent || '';
-  }
-  return html.replace(/<[^>]*>/g, ' ');
-}
+const plain = (html: string) => htmlToText(html, { separateBlocks: true });
 const normalize = (value: string) => value.toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
 function item(data: Omit<SearchItem, 'normalizedTitle' | 'normalizedBody'>): SearchItem {
   return { ...data, normalizedTitle: normalize(data.title), normalizedBody: normalize(data.body) };

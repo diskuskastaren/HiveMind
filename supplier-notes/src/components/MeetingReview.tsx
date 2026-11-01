@@ -24,6 +24,7 @@ export function MeetingReview({ note, transcript }: { note: Note; transcript: Tr
   const updateFollowUp = useStore((s) => s.updateFollowUp);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [duplicateChoices, setDuplicateChoices] = useState<Record<string, string>>({});
   const analysis = transcript.analysis;
   const stale = analysis && analysis.sourceHash !== sourceHash(transcript.rawText);
@@ -31,7 +32,7 @@ export function MeetingReview({ note, transcript }: { note: Note; transcript: Tr
   const run = async (force = false) => {
     if (!transcript.rawText || !settings.openaiApiKey) return;
     if (!force && analysis && !stale) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setNotice('');
     try {
       const priorNotes = notes.filter((item) => item.id !== note.id && item.projectIds.some((id) => note.projectIds.includes(id)))
         .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 3)
@@ -40,6 +41,7 @@ export function MeetingReview({ note, transcript }: { note: Note; transcript: Tr
         .slice(-10).map((item) => `Current decision: ${item.text}`).join('\n');
       const prior = `${priorNotes}\n${priorDecisions}`;
       const response = await analyzeMeeting(transcript.rawText, settings.openaiApiKey, settings.gptModel, prior);
+      if (response.dropped) setNotice(`${response.dropped} suggestion${response.dropped === 1 ? ' was' : 's were'} left out because ${response.dropped === 1 ? 'its quote' : 'their quotes'} could not be found in the transcript.`);
       const previous = new Map((analysis?.suggestions || []).map((item) => [item.id, item]));
       const previousByQuote = new Map((analysis?.suggestions || []).map((item) => [`${item.kind}:${item.sourceQuote.toLocaleLowerCase()}`, item]));
       updateTranscript(note.id, transcript.id, { analysis: {
@@ -107,6 +109,7 @@ export function MeetingReview({ note, transcript }: { note: Note; transcript: Tr
     <p className="text-xs text-muted-foreground">Analysis sends this transcript, brief excerpts from recent project notes, and current decisions to OpenAI. API charges may apply.</p>
     {!settings.openaiApiKey && <p className="text-xs text-muted-foreground">Add an OpenAI API key in Settings to analyze this meeting.</p>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+    {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
     {analysis && <p className="text-xs text-muted-foreground">{analysis.suggestions.length} suggestions · {analysis.model}{analysis.promptTokens != null ? ` · ${analysis.promptTokens + (analysis.completionTokens || 0)} tokens` : ''}{stale ? ' · Transcript changed since analysis' : ''}</p>}
     {analysis?.suggestions.map((item) => {
       const duplicate = candidateFor(item);
@@ -117,7 +120,7 @@ export function MeetingReview({ note, transcript }: { note: Note; transcript: Tr
           <Input aria-label="Due date" type="date" value={item.dueDate} onChange={(event) => change(item.id, { dueDate: event.target.value })} disabled={item.status !== 'pending'} /></div>
         <div className="flex flex-wrap gap-2"><Select value={item.saveAs || 'task'} onValueChange={(value) => change(item.id, { saveAs: value as MeetingSuggestion['saveAs'] })} disabled={item.status !== 'pending'}><SelectTrigger size="sm" aria-label="Save as"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="task">Task</SelectItem><SelectItem value="decision">Decision</SelectItem><SelectItem value="followup">Follow-up</SelectItem></SelectContent></Select>
           <Select value={item.priority} onValueChange={(value) => change(item.id, { priority: value as MeetingSuggestion['priority'] })} disabled={item.status !== 'pending'}><SelectTrigger size="sm" aria-label="Priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select>
-          <Select value={item.projectId || note.projectIds[0] || ''} onValueChange={(value) => change(item.id, { projectId: value })} disabled={item.status !== 'pending'}><SelectTrigger size="sm" aria-label="Project"><SelectValue /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
+          <Select value={item.projectId || note.projectIds[0] || ''} onValueChange={(value) => change(item.id, { projectId: value })} disabled={item.status !== 'pending'}><SelectTrigger size="sm" aria-label="Project"><SelectValue placeholder="Project" /></SelectTrigger><SelectContent position="popper">{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
         <blockquote className="border-l-2 pl-2 text-xs text-muted-foreground">“{item.sourceQuote}”{item.timestampSeconds != null ? ` · ${Math.floor(item.timestampSeconds / 60)}:${String(Math.floor(item.timestampSeconds % 60)).padStart(2, '0')}` : ''}</blockquote>
         {duplicate && item.status === 'pending' && <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={duplicateChoices[item.id] === duplicate.id} onChange={(event) => setDuplicateChoices((current) => ({ ...current, [item.id]: event.target.checked ? duplicate.id : '' }))} />Possible duplicate: update “{'title' in duplicate ? duplicate.title : duplicate.text}”</label>}
         {item.status === 'pending' && <div className="flex gap-2"><Button size="sm" onClick={() => accept(item)} disabled={!item.text.trim()}>Accept</Button><Button size="sm" variant="outline" onClick={() => change(item.id, { status: 'rejected' })}>Reject</Button></div>}

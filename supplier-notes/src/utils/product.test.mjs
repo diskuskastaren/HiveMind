@@ -4,6 +4,8 @@ import { buildSearchIndex, searchLocal } from './search.ts';
 import { validateSuggestions, sourceHash, analyzeMeeting } from './meetingIntelligence.ts';
 import { validateExport } from './validateExport.ts';
 import { upgradeDecision } from './decisionMigration.ts';
+import { createRequire } from 'node:module';
+const { validateData } = createRequire(import.meta.url)('../../electron/storage.cjs');
 
 test('searches all information types and ranks a title match first', () => {
   const notes = [{ id: 'n', projectIds: ['p'], supplierIds: ['s'], title: 'Pump review', content: '<p>Flow target</p>', attendees: '', createdAt: 1, updatedAt: 2,
@@ -26,8 +28,32 @@ test('validates AI source quotes and rejects incomplete analysis', () => {
   assert.equal(validateSuggestions(valid, transcript)[0].status, 'pending');
   assert.equal(validateSuggestions({ suggestions: [valid.suggestions[0], valid.suggestions[0]] }, transcript).length, 1);
   assert.equal(sourceHash(transcript), sourceHash(transcript));
-  assert.throws(() => validateSuggestions({ suggestions: [{ ...valid.suggestions[0], sourceQuote: 'Not in the source' }] }, transcript), /untraceable/);
   assert.throws(() => validateSuggestions({}, transcript), /incomplete/);
+});
+
+test('an untraceable suggestion is left out without discarding the rest of the analysis', () => {
+  const transcript = 'Alex: We will send the revised\nplan tomorrow, okay?  Maria: Agreed — ship on Friday.';
+  const good = { kind: 'task', text: 'Send revised plan', owner: 'Alex', dueDate: 'tomorrow', priority: 'medium',
+    sourceQuote: 'send the revised plan tomorrow', timestampSeconds: null };
+  const result = validateSuggestions({ suggestions: [
+    good,
+    { ...good, kind: 'decision', text: 'Ship Friday', sourceQuote: 'Agreed - ship on Friday' },   // punctuation differs
+    { ...good, text: 'Invented', sourceQuote: 'Not in the source' },                            // untraceable
+    { ...good, kind: 'nonsense', text: 'Bad kind' },                                            // malformed
+    null,
+  ] }, transcript);
+  assert.deepEqual(result.map((item) => item.text), ['Send revised plan', 'Ship Friday']);
+  assert.equal(result.dropped, 3);
+  assert.equal(result[0].dueDate, '', 'non-ISO due dates are not passed to date fields');
+});
+
+test('reasoning models get max_completion_tokens and no temperature', async () => {
+  const { chatCompletionBody, isReasoningModel } = await import('./summarize.ts');
+  assert.deepEqual(chatCompletionBody({ model: 'gpt-4o-mini', messages: [], maxTokens: 10, temperature: 0.2 }),
+    { model: 'gpt-4o-mini', messages: [], max_completion_tokens: 10, temperature: 0.2 });
+  assert.equal('temperature' in chatCompletionBody({ model: 'o3-mini', messages: [], maxTokens: 10, temperature: 0.2 }), false);
+  assert.equal(isReasoningModel('gpt-5-mini'), true);
+  assert.equal(isReasoningModel('gpt-4.1'), false);
 });
 
 test('search stays bounded with a large local collection', () => {
@@ -48,9 +74,26 @@ test('AI service failure is reported without creating data', async () => {
 });
 
 test('accepts version 5 exports with projects and rejects malformed collections', () => {
-  const value = { version: 5, exportedAt: 1, projects: [{ id: 'p' }], suppliers: [], notes: [], tasks: [], decisions: [], followUps: [] };
+  const value = { version: 5, exportedAt: 1, projects: [{ id: 'p', name: 'Project' }], suppliers: [], notes: [], tasks: [], decisions: [], followUps: [] };
   assert.equal(validateExport(value).version, 5);
   assert.throws(() => validateExport({ ...value, notes: {} }), /notes/);
+});
+
+test('imports are rejected up front when the storage layer would refuse to save them', () => {
+  const base = { version: 5, exportedAt: 1, projects: [{ id: 'p', name: 'Project' }], suppliers: [{ id: 's', name: 'S', projectIds: ['p'] }],
+    notes: [{ id: 'n', title: 'Meeting', projectIds: ['p'], supplierIds: ['s'], transcripts: [] }],
+    tasks: [{ id: 't', title: 'Task' }], decisions: [{ id: 'd', text: 'Decision' }], followUps: [{ id: 'f', text: 'Ask' }] };
+  const storageAccepts = (data) => { validateData(JSON.stringify({ version: 11, state: data })); return true; };
+  assert.ok(validateExport(base) && storageAccepts(base));
+  for (const broken of [
+    { ...base, projects: [{ id: 'p' }] },
+    { ...base, notes: [{ id: 'n', projectIds: ['p'], supplierIds: [] }] },
+    { ...base, followUps: [{ id: 'f', text: 7 }] },
+    { ...base, notes: [{ ...base.notes[0], transcripts: 'oops' }] },
+    { ...base, followUps: [{ id: 'f', text: 'a' }, { id: 'f', text: 'b' }] },
+  ]) {
+    assert.throws(() => validateExport(broken));
+  }
 });
 
 test('migrates legacy decisions without losing identity or source references', () => {

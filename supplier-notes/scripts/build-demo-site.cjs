@@ -30,14 +30,15 @@ const scriptTag = /<script type="module" crossorigin src="([^"]+)"><\/script>/;
 const match = appIndex.match(scriptTag);
 if (!match) throw new Error('Could not find the Vite entry script in the built app');
 const entry = match[1];
-const boot = `<script type="module">
-import { createDemoState } from '../demo/fixture.mjs';
+// External (not inline) so the app's Content-Security-Policy (script-src 'self') allows it.
+const bootScript = `import { createDemoState } from '../demo/fixture.mjs';
 const key = 'Combobulator-data';
 const params = new URLSearchParams(location.search);
 if (params.has('reset') || !localStorage.getItem(key)) {
   localStorage.setItem(key, JSON.stringify({ version: 11, state: createDemoState() }));
 }
 await import(${JSON.stringify(entry)});
-</script>`;
-fs.writeFileSync(appIndexPath, appIndex.replace(scriptTag, boot));
+`;
+fs.writeFileSync(path.join(site, 'try', 'demo-boot.js'), bootScript);
+fs.writeFileSync(appIndexPath, appIndex.replace(scriptTag, '<script type="module" src="./demo-boot.js"></script>'));
 console.log(`Built interactive demo site in ${site}`);

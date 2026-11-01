@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 import {
   Mic,
   Square,
@@ -22,13 +21,71 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { useStore } from '../store/store';
 import { useTranscription, type TranscriptionMode } from '../hooks/useTranscription';
-import { summarizeMeetingTranscript, MAX_SUMMARY_TOKENS } from '../utils/summarize';
-import { getMailtoUrl, summaryToPlainTextForEmail, summaryToHtmlForEmail } from '../utils/export';
+import { getMailtoUrl } from '../utils/export';
+import { escapeHtml } from '../utils/html';
+import { summaryToEmailHtml, summaryToHtml, summaryToNoteHtml, summaryToPlainText } from '../utils/markdown';
+import { hasSummaryError, requestSummary, useSummaryStatus } from '../utils/summaryService';
 import { AudioVisualizer } from './AudioVisualizer';
 import type { Transcript } from '../types';
 import { MeetingReview } from './MeetingReview';
+import { parseTranscriptFile } from '../utils/transcriptImport';
+
+/**
+ * Add a transcript that was produced elsewhere (e.g. a Microsoft Teams .vtt export or pasted
+ * text). Useful when recording is not allowed: no audio is sent anywhere.
+ */
+function TranscriptImport({ noteId, meetingTime, onImported }: { noteId: string; meetingTime: number; onImported: (id: string) => void }) {
+  const addTranscript = useStore((s) => s.addTranscript);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [duration, setDuration] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const readFile = async (file: File) => {
+    try {
+      const parsed = parseTranscriptFile(await file.text());
+      setText(parsed.text);
+      setDuration(parsed.duration);
+      if (!parsed.text) toast.error('No transcript text found in that file');
+    } catch (error) {
+      toast.error('Could not read the file', { description: String(error) });
+    }
+  };
+  const save = () => {
+    const parsed = parseTranscriptFile(text);
+    if (!parsed.text) return;
+    const id = crypto.randomUUID();
+    addTranscript(noteId, { id, rawText: parsed.text, duration: duration || parsed.duration, recordedAt: meetingTime });
+    setText(''); setDuration(0); setOpen(false);
+    toast.success('Transcript added');
+    onImported(id);
+  };
+
+  if (!open) {
+    return (
+      <Button variant="ghost" size="xs" className="self-start text-muted-foreground" onClick={() => setOpen(true)}>
+        <FileText /> Paste or import a transcript instead
+      </Button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-card p-3">
+      <p className="text-xs text-muted-foreground">Paste a transcript, or open a .txt, .vtt (Microsoft Teams) or .srt file. Nothing is sent anywhere until you ask for a summary or analysis.</p>
+      <Textarea aria-label="Transcript text" className="min-h-28 text-ui" value={text} onChange={(e) => { setText(e.target.value); setDuration(0); }} placeholder="Paste transcript text…" />
+      <input ref={fileRef} type="file" accept=".txt,.vtt,.srt,text/plain,text/vtt" className="hidden"
+        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void readFile(file); }} />
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="xs" onClick={() => fileRef.current?.click()}>Open file…</Button>
+        <span className="flex-1" />
+        <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setText(''); }}>Cancel</Button>
+        <Button size="xs" onClick={save} disabled={!text.trim()}>Add transcript</Button>
+      </div>
+    </div>
+  );
+}
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -38,24 +95,13 @@ function formatDuration(seconds: number) {
   return `${m}m ${s}s`;
 }
 
-/** Very simple markdown → HTML for the AI summary output */
-function renderSummary(md: string) {
-  const html = md
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/^## (.+)$/gm, '<p class="font-semibold mt-3 mb-1 first:mt-0">$1</p>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc leading-snug text-subtle-foreground">$1</li>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  return { __html: html };
-}
-
 function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => toast.error('Could not copy to the clipboard'));
   };
   return (
     <Button variant="outline" size="xs" onClick={handleCopy}>
@@ -82,15 +128,10 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   const deleteTranscript = useStore((s) => s.deleteTranscript);
   const updateNote = useStore((s) => s.updateNote);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
-  const summarySettings = useStore(useShallow((s) => ({
-    model: s.settings.gptModel,
-    temperature: s.settings.temperature,
-    customInstructions: s.settings.customSummaryInstructions,
-  })));
+  const autoSummarize = useStore((s) => s.settings.autoSummarize);
 
   const [subTab, setSubTab] = useState<'summary' | 'raw'>('summary');
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summarizeError, setSummarizeError] = useState('');
+  const { summarizing: isSummarizing, error: summarizeError } = useSummaryStatus(transcript.id);
   const [isEditingRaw, setIsEditingRaw] = useState(false);
   const [editedRawText, setEditedRawText] = useState('');
 
@@ -100,33 +141,23 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
     setEditedRawText('');
   }, [transcript.id]);
 
-  const handleRegenerateSummary = useCallback(async () => {
+  const handleRegenerateSummary = useCallback(() => {
     if (!transcript.rawText || !apiKey) return;
-    setIsSummarizing(true);
-    setSummarizeError('');
-    try {
-      const summary = await summarizeMeetingTranscript(transcript.rawText, apiKey, {
-        ...summarySettings,
-        maxTokens: MAX_SUMMARY_TOKENS,
-      });
-      updateTranscript(noteId, transcript.id, { summary });
-    } catch (e: any) {
-      setSummarizeError(e?.message ?? 'Summarization failed');
-    }
-    setIsSummarizing(false);
-  }, [transcript, apiKey, summarySettings, noteId, updateTranscript]);
+    requestSummary(noteId, transcript.id).catch(() => { /* shown inline via useSummaryStatus */ });
+  }, [transcript, apiKey, noteId]);
 
   const handleInsertIntoNote = useCallback(() => {
     if (!transcript.rawText || !note) return;
-    const section = `<h2>Meeting Transcript</h2><p style="white-space:pre-wrap">${transcript.rawText.trim()}</p>`;
-    updateNote(noteId, { content: (note.content || '') + section });
+    // Escaped: the transcript is plain text and must never be interpreted as HTML.
+    const paragraphs = transcript.rawText.trim().split(/\n+/).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+    updateNote(noteId, { content: `${note.content || ''}<h2>Meeting Transcript</h2>${paragraphs}` });
+    toast.success('Transcript added to the note');
   }, [transcript, note, noteId, updateNote]);
 
   const handleAddSummaryToNote = useCallback(() => {
     if (!transcript.summary || !note) return;
-    const html = renderSummary(transcript.summary).__html;
-    const section = `<h2>Meeting Summary</h2>${html}`;
-    updateNote(noteId, { content: (note.content || '') + section });
+    updateNote(noteId, { content: `${note.content || ''}<h2>Meeting Summary</h2>${summaryToNoteHtml(transcript.summary)}` });
+    toast.success('Summary added to the note');
   }, [transcript, note, noteId, updateNote]);
 
   const handleEmailSummary = useCallback(() => {
@@ -138,9 +169,11 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
     const subject = projectNames.length > 0 ? `[${projectNames.join(', ')}] - ${baseSubject}` : baseSubject;
     const outlookOpen = (window as any).electronOutlookMail?.open;
     if (typeof outlookOpen === 'function') {
-      outlookOpen(subject, summaryToHtmlForEmail(transcript.summary));
+      Promise.resolve(outlookOpen(subject, summaryToEmailHtml(transcript.summary))).then((opened: boolean) => {
+        if (opened === false) toast.error('Could not open your mail app', { description: 'Copy the summary and paste it into an email instead.' });
+      });
     } else {
-      const url = getMailtoUrl(subject, summaryToPlainTextForEmail(transcript.summary));
+      const url = getMailtoUrl(subject, summaryToPlainText(transcript.summary));
       const openExternal = (window as any).electronOpenExternal?.open;
       if (typeof openExternal === 'function') openExternal(url);
       else window.location.href = url;
@@ -159,9 +192,10 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
     });
   }, [transcript.id, noteId, deleteTranscript, onBack, openConfirmDialog]);
 
-  // Auto-trigger summary generation when arriving at a transcript that has text but no summary
+  // With automatic summaries on, opening a transcript without one starts it (once; a request
+  // already running for this transcript — e.g. from stopping the recording — is reused).
   useEffect(() => {
-    if (transcript.rawText && !transcript.summary && !isSummarizing && apiKey) {
+    if (autoSummarize && transcript.rawText && !transcript.summary && apiKey && !hasSummaryError(transcript.id)) {
       handleRegenerateSummary();
     }
   // Only run when the transcript id changes (i.e. user selects a different one)
@@ -208,12 +242,15 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
                 Generating summary…
               </div>
             )}
-            {!isSummarizing && transcript.summary && <div dangerouslySetInnerHTML={renderSummary(transcript.summary)} />}
+            {!isSummarizing && transcript.summary && summarizeError && (
+              <p role="alert" className="mb-2 text-xs text-destructive">Regenerating failed: {summarizeError}</p>
+            )}
+            {!isSummarizing && transcript.summary && <div dangerouslySetInnerHTML={{ __html: summaryToHtml(transcript.summary) }} />}
             {!isSummarizing && !transcript.summary && (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 {summarizeError && <p className="text-xs text-destructive">{summarizeError}</p>}
                 <p className="text-xs text-muted-foreground">
-                  {apiKey ? 'No summary generated yet.' : 'Add an OpenAI API key to generate summaries.'}
+                  {apiKey ? 'No summary yet. Generating one sends this transcript to OpenAI.' : 'Add an OpenAI API key to generate summaries.'}
                 </p>
                 {apiKey ? (
                   <Button variant="outline" size="xs" onClick={handleRegenerateSummary}>
@@ -256,7 +293,7 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
         <div className="flex flex-wrap items-center gap-1.5">
           {subTab === 'summary' && (transcript.summary || isSummarizing) && (
             <>
-              {transcript.summary && <CopyButton text={transcript.summary} />}
+              {transcript.summary && <CopyButton text={summaryToPlainText(transcript.summary)} />}
               <Button variant="ghost" size="xs" onClick={handleRegenerateSummary} disabled={isSummarizing || !apiKey}>
                 <RefreshCw /> Regenerate
               </Button>
@@ -319,20 +356,17 @@ export function TranscriptTab() {
   const note = useStore((s) => s.notes.find((n) => n.id === s.activeNoteId));
   const allNotes = useStore((s) => s.notes);
   const isRecording = useStore((s) => s.transcriptRecording);
-  const updateTranscript = useStore((s) => s.updateTranscript);
   const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const toggleSettings = useStore((s) => s.toggleSettings);
-  const summarySettings = useStore(useShallow((s) => ({
-    model: s.settings.gptModel,
-    temperature: s.settings.temperature,
-    customInstructions: s.settings.customSummaryInstructions,
-  })));
+  const autoSummarize = useStore((s) => s.settings.autoSummarize);
+  const chunkSeconds = useStore((s) => s.settings.chunkIntervalSeconds);
 
   const [mode, setMode] = useState<TranscriptionMode>(
     () => useStore.getState().settings.defaultAudioMode,
   );
   const [showStartScreen, setShowStartScreen] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [liveText, setLiveText] = useState('');
   // Which transcript is open in detail view (null = list view)
@@ -344,7 +378,7 @@ export function TranscriptTab() {
   // Captures wall-clock start time so the elapsed timer never resets when switching notes
   const recordingStartTimeRef = useRef<number>(0);
 
-  const { start, stop, visualizerStream, visualizerLevels, debugStatus, transcriptIdRef } = useTranscription({
+  const { start, stop, visualizerStream, subscribeLevels, status, engine, transcriptIdRef } = useTranscription({
     noteId: note?.id ?? '',
     apiKey: groqApiKey,
     mode,
@@ -396,10 +430,8 @@ export function TranscriptTab() {
     setLiveText('');
     recordingNoteIdRef.current = note?.id ?? '';
     recordingStartTimeRef.current = Date.now();
-    // #region agent log
-    try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'TranscriptTab.tsx:handleStart',message:'handleStart called',data:{noteId:note?.id,isRecording,mode},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
-    // #endregion
-    const ok = await start(setLiveText);
+    setStarting(true);
+    const ok = await start(setLiveText).finally(() => setStarting(false));
     if (ok && transcriptIdRef.current) {
       setSelectedId(transcriptIdRef.current);
     }
@@ -417,18 +449,13 @@ export function TranscriptTab() {
     const rawText = await stop();
     setLiveText('');
     const tid = transcriptIdRef.current;
-    if (rawText && openaiApiKey && noteIdForSummary && tid) {
-      try {
-        const summary = await summarizeMeetingTranscript(rawText, openaiApiKey, {
-          ...summarySettings,
-          maxTokens: MAX_SUMMARY_TOKENS,
-        });
-        updateTranscript(noteIdForSummary, tid, { summary });
-      } catch {
-        // Summary generation is best-effort; the raw text is already saved
-      }
+    if (rawText && autoSummarize && openaiApiKey && noteIdForSummary && tid) {
+      // The raw transcript is already saved; the summary is best-effort and shared with the
+      // detail view (one request per transcript).
+      requestSummary(noteIdForSummary, tid).catch((error: Error) =>
+        toast.error('Summary could not be generated', { description: `${error.message} The transcript is saved.` }));
     }
-  }, [stop, openaiApiKey, summarySettings, updateTranscript, transcriptIdRef]);
+  }, [stop, autoSummarize, openaiApiKey, transcriptIdRef]);
 
   // Show recording UI even when the active note has changed (user navigated away mid-recording)
   if (!note && !isRecording) return null;
@@ -445,10 +472,10 @@ export function TranscriptTab() {
             <span className="flex-1" />
             <span className="font-mono text-ui text-subtle-foreground tabular-nums">{formatDuration(elapsed)}</span>
           </div>
-          <AudioVisualizer stream={visualizerStream} levels={visualizerLevels} />
+          <AudioVisualizer stream={visualizerStream} subscribeLevels={subscribeLevels} />
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {mode === 'system' ? <Volume2 className="size-3.5" /> : <Mic className="size-3.5" />}
-            {mode === 'system' ? 'All audio (system) · Groq Whisper' : 'Microphone · built-in speech recognition'}
+            {mode === 'system' ? 'All audio (system)' : 'Microphone'} · {engine === 'whisper' ? 'Groq Whisper' : 'online speech recognition'}
           </div>
           <Button variant="destructive" size="sm" onClick={handleStop}>
             <Square className="size-3 fill-current" /> Stop recording
@@ -466,10 +493,12 @@ export function TranscriptTab() {
             ) : (
               <p className="text-ui text-muted-foreground italic">Listening…</p>
             )}
-            {debugStatus ? (
-              <p className="mt-3 font-mono text-2xs text-warning">{debugStatus}</p>
+            {status ? (
+              <p role="status" className={cn('mt-3 text-2xs', status.tone === 'error' ? 'text-destructive' : status.tone === 'warning' ? 'text-warning' : 'text-muted-foreground')}>
+                {status.message}
+              </p>
             ) : (
-              mode === 'system' && <p className="mt-3 text-2xs text-muted-foreground">Transcribing in batches via Groq Whisper…</p>
+              engine === 'whisper' && <p className="mt-3 text-2xs text-muted-foreground">Transcribing in batches via Groq Whisper every {chunkSeconds} s…</p>
             )}
           </div>
         </div>
@@ -516,7 +545,8 @@ export function TranscriptTab() {
 
         {mode === 'system' && (
           <div className={cn('flex flex-col gap-1 rounded-lg border p-3 text-xs', groqApiKey ? 'bg-card' : 'bg-warning-soft border-transparent')}>
-            <p className="font-medium">Captures remote participants too. Transcribed via Groq Whisper.</p>
+            <p className="font-medium">Captures all computer audio, including remote participants.</p>
+            <p className="text-muted-foreground">Audio is sent to Groq for transcription every {chunkSeconds} s. No audio is stored by HiveMind.</p>
             {!groqApiKey && (
               <Button variant="link" size="xs" onClick={toggleSettings} className="h-auto self-start p-0 text-warning">
                 Add Groq API key in Settings →
@@ -532,13 +562,29 @@ export function TranscriptTab() {
 
         {mode === 'mic' && (
           <p className="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
-            Transcribes your microphone in real time with built-in speech recognition. Free — no API key needed.
+            Microphone only. Uses the browser’s online speech recognition where available (in Chromium this sends audio to Google);
+            in the desktop app that service is usually unavailable, so audio is sent to Groq Whisper with your Groq key.
           </p>
         )}
 
-        <Button variant="destructive" onClick={handleStart} disabled={mode === 'system' && !groqApiKey}>
-          <span className="size-2 rounded-full bg-white" /> Start recording
+        <p className="px-0.5 text-2xs leading-relaxed text-muted-foreground">
+          {openaiApiKey && autoSummarize
+            ? 'When you stop, the transcript is sent to OpenAI for a summary (change in Settings). '
+            : 'Summaries are generated only when you ask. '}
+          Make sure participants agree to being recorded and that your agreements (e.g. NDAs) allow sharing the content with these services.
+        </p>
+
+        <Button variant="destructive" onClick={handleStart} disabled={starting || (mode === 'system' && !groqApiKey)}>
+          <span className="size-2 rounded-full bg-white" /> {starting ? 'Starting…' : 'Start recording'}
         </Button>
+
+        {note && (
+          <TranscriptImport
+            noteId={note.id}
+            meetingTime={note.createdAt}
+            onImported={(id) => { setShowStartScreen(false); setSelectedId(id); }}
+          />
+        )}
       </div>
     );
   }

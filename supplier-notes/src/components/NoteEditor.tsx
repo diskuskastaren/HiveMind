@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
-import { Plugin } from '@tiptap/pm/state';
+import { EditorState, Plugin } from '@tiptap/pm/state';
+import { toast } from 'sonner';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -194,10 +195,14 @@ const ImagePaste = Extension.create({
                   const filename = await electronImages.save(buf, ext);
                   src = filename ? `app-image://${filename}` : '';
                 } else {
-                  const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-                  src = `data:${item.type};base64,${b64}`;
+                  src = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+                    reader.onerror = () => resolve('');
+                    reader.readAsDataURL(file);
+                  });
                 }
-                if (!src) return;
+                if (!src) { toast.error('Could not paste the image'); return; }
                 const { state, dispatch } = _view;
                 const node = state.schema.nodes.image.create({ src });
                 dispatch(state.tr.replaceSelectionWith(node));
@@ -361,17 +366,26 @@ export function NoteEditor() {
     },
   });
 
+  // The editor instance is shared by all notes. Load the active note's content when it changes
+  // (another note opened, or text added from the transcript panel).
+  const loadedNoteIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (editor && note && !editor.isDestroyed) {
-      const storeContent = note.content || '';
-      if (editor.getHTML() !== storeContent) {
-        switchingRef.current = true;
-        editor.commands.setContent(storeContent);
-        requestAnimationFrame(() => {
-          switchingRef.current = false;
-        });
-      }
+    if (!editor || !note || editor.isDestroyed) return;
+    const storeContent = note.content || '';
+    const switchedNote = loadedNoteIdRef.current !== note.id;
+    if (!switchedNote && editor.getHTML() === storeContent) return;
+    switchingRef.current = true;
+    editor.commands.setContent(storeContent, false);
+    if (switchedNote) {
+      // Undo history belongs to one note. Without a fresh history, Ctrl+Z right after
+      // opening a note restored the previous note's text — and saved it into this note.
+      const { state } = editor;
+      editor.view.updateState(EditorState.create({ schema: state.schema, doc: state.doc, plugins: state.plugins }));
+      loadedNoteIdRef.current = note.id;
     }
+    requestAnimationFrame(() => {
+      switchingRef.current = false;
+    });
   }, [activeNoteId, editor, note?.content]);
 
   useEffect(() => {
@@ -403,6 +417,8 @@ export function NoteEditor() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      // Only for a selection in the editor itself (not while typing in a dialog or side panel).
+      if (!editor?.isFocused) return;
       if (!selectionText || !activeNoteId || !activeTabId || !activeProjectId) return;
       const supplierId = activeTabId === INTERNAL_TAB_ID ? null : activeTabId;
 
@@ -436,6 +452,7 @@ export function NoteEditor() {
         addFollowUp({
           projectId: activeProjectId,
           supplierId,
+          noteId: activeNoteId,
           text: selectionText.trim(),
           status: 'open',
         });
@@ -444,7 +461,7 @@ export function NoteEditor() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectionText, activeNoteId, activeTabId, activeProjectId, addTask, addDecision, addFollowUp, setRightPanelTab]);
+  }, [editor, selectionText, activeNoteId, activeTabId, activeProjectId, addTask, addDecision, addFollowUp, setRightPanelTab]);
 
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -523,6 +540,7 @@ export function NoteEditor() {
     addFollowUp({
       projectId: activeProjectId,
       supplierId,
+      noteId: activeNoteId,
       text: selectionText.trim(),
       status: 'open',
     });
@@ -552,8 +570,10 @@ export function NoteEditor() {
     }
   };
 
-  const handleOpenAttachment = (att: Attachment) => {
-    if (electronAttachments) electronAttachments.open(att.filePath);
+  const handleOpenAttachment = async (att: Attachment) => {
+    if (!electronAttachments) return;
+    const problem: string = await electronAttachments.open(att.filePath);
+    if (problem) toast.error(`Could not open ${att.fileName}`, { description: problem });
   };
 
   const handleRemoveAttachment = (att: Attachment) => {

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import { TEMPLATES } from '../utils/templates';
 import { upgradeDecision } from '../utils/decisionMigration';
+import { linkFollowUp, normalizeFollowUpLinks, unlinkFollowUp } from '../utils/followUpLinks';
+import { createWriteBehindStorage, type PersistBackend } from './persistence';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
@@ -10,6 +12,8 @@ export interface AppSettings {
   gptModel: string;
   temperature: number;
   customSummaryInstructions: string;
+  /** Send the transcript to OpenAI for a summary automatically when a recording stops. */
+  autoSummarize: boolean;
   defaultAudioMode: 'mic' | 'system';
   chunkIntervalSeconds: number;
   autoStopHours: number;
@@ -31,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gptModel: 'gpt-4o-mini',
   temperature: 0.3,
   customSummaryInstructions: '',
+  autoSummarize: true,
   defaultAudioMode: 'system',
   chunkIntervalSeconds: 60,
   autoStopHours: 4,
@@ -47,30 +52,69 @@ const uid = () => crypto.randomUUID();
 
 const electronAPI = typeof window !== 'undefined' && (window as any).electronStore;
 
-const appStorage = {
-  getItem: (name: string): string | null | Promise<string | null> => {
-    if (electronAPI) return electronAPI.read().catch((error: Error) => {
-      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
-      return null;
-    });
-    try { return localStorage.getItem(name); }
-    catch { return null; }
-  },
-  setItem: (name: string, value: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write(value).then((status: unknown) => {
-      window.dispatchEvent(new CustomEvent('storage-status', { detail: status }));
-    }).catch((error: Error) => {
-      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
-    });
-    try { localStorage.setItem(name, value); }
-    catch (error) { window.dispatchEvent(new CustomEvent('storage-error', { detail: String(error) })); }
-  },
-  removeItem: (name: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write('');
-    try { localStorage.removeItem(name); }
-    catch { /* ignore */ }
-  },
+const electronBackend: PersistBackend = {
+  read: () => electronAPI.read(),
+  write: (_name, raw) => electronAPI.write(raw),
 };
+const browserBackend: PersistBackend = {
+  read: (name) => localStorage.getItem(name),
+  write: (name, raw) => localStorage.setItem(name, raw),
+};
+const emit = (type: string, detail: unknown) => {
+  if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent(type, { detail }));
+};
+
+type PersistedState = Pick<AppState,
+  'projects' | 'suppliers' | 'notes' | 'tasks' | 'decisions' | 'followUps' | 'activeProjectId' |
+  'openTabs' | 'activeTabId' | 'activeNoteId' | 'rightPanelOpen' | 'settings'>;
+
+export const persistStorage = createWriteBehindStorage<PersistedState>(() => (electronAPI ? electronBackend : browserBackend), {
+  onStatus: (status) => { if (status) emit('storage-status', status); },
+  onError: (message) => emit('storage-error', message),
+});
+
+// The desktop app asks for pending edits before its window closes. They are handed to the main
+// process right away; it finishes its write queue before quitting, however long writes take.
+if (typeof window !== 'undefined') (window as any).electronApp?.onFlushRequest?.(() => persistStorage.sendPendingNow());
+
+/**
+ * Bring loaded or imported data into a consistent shape: settings gain defaults added in
+ * newer versions, follow-up links are repaired, and navigation never points at records that
+ * no longer exist (which otherwise leaves an empty screen after an import or restore).
+ */
+export function sanitizeWorkspace<T extends Partial<PersistedState>>(state: T): T {
+  // Tolerate malformed records: a crash here would abort loading the whole workspace.
+  const list = <T,>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
+  const projects = list(state.projects);
+  const suppliers = list(state.suppliers).map((supplier) =>
+    Array.isArray(supplier.projectIds) ? supplier : { ...supplier, projectIds: [] });
+  const notes = list(state.notes).map((note) => Array.isArray(note.projectIds) && Array.isArray(note.supplierIds)
+    ? note : { ...note, projectIds: Array.isArray(note.projectIds) ? note.projectIds : [], supplierIds: Array.isArray(note.supplierIds) ? note.supplierIds : [] });
+  const links = normalizeFollowUpLinks(list(state.tasks), list(state.followUps));
+  const projectIds = new Set(projects.map((project) => project.id));
+  const activeProjectId = state.activeProjectId && projectIds.has(state.activeProjectId)
+    ? state.activeProjectId
+    : (projects.find((project) => !project.archived) ?? projects[0])?.id ?? null;
+  const tabIsValid = (id: string) => id === INTERNAL_TAB_ID ||
+    suppliers.some((supplier) => supplier.id === id && !!activeProjectId && supplier.projectIds.includes(activeProjectId));
+  const openTabs = list(state.openTabs).filter(tabIsValid);
+  const activeTabId = state.activeTabId && tabIsValid(state.activeTabId) ? state.activeTabId : null;
+  if (activeTabId && !openTabs.includes(activeTabId)) openTabs.push(activeTabId);
+  const activeNoteId = state.activeNoteId && notes.some((note) => note.id === state.activeNoteId) ? state.activeNoteId : null;
+  return {
+    ...state,
+    projects,
+    suppliers,
+    notes,
+    tasks: links.tasks,
+    followUps: links.followUps,
+    activeProjectId,
+    openTabs,
+    activeTabId,
+    activeNoteId: activeTabId ? activeNoteId : null,
+    settings: { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) },
+  };
+}
 
 export const SUPPLIER_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
@@ -109,7 +153,6 @@ interface AppState {
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
   searchOpen: boolean;
-  kanbanOpen: boolean;
   editingTaskId: string | null;
   editingDecisionId: string | null;
   focusedFollowUpId: string | null;
@@ -151,18 +194,31 @@ interface AppState {
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => string;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  /** Put back a deleted task with the links it had (used by "Undo"). */
+  restoreTask: (task: Task, links: { followUpId?: string; decisionIds?: string[] }) => void;
   setEditingTask: (id: string | null) => void;
   toggleArchiveNote: (id: string) => void;
 
   addFollowUp: (followUp: Omit<FollowUp, 'id' | 'createdAt'>) => string;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => void;
+  /** Put back a deleted follow-up with its task link (used by "Undo"). */
+  restoreFollowUp: (followUp: FollowUp, links: { taskId?: string }) => void;
+  /** Link a task and a follow-up 1:1 (both sides, atomically), releasing previous partners. */
+  linkTaskAndFollowUp: (taskId: string, followUpId: string) => void;
+  /** Remove the task↔follow-up link held by either record. */
+  unlinkTaskAndFollowUp: (ids: { taskId?: string; followUpId?: string }) => void;
 
   addDecision: (decision: Omit<Decision, 'id' | 'createdAt'>) => string;
   updateDecision: (id: string, updates: Partial<Decision>) => void;
   deleteDecision: (id: string) => void;
   setEditingDecision: (id: string | null) => void;
   setFocusedFollowUp: (id: string | null) => void;
+  /** Decision shown in the decision detail/history dialog (any view can open it). */
+  viewingDecisionId: string | null;
+  /** Set when the stored workspace could not be loaded; saving stays disabled. */
+  loadError: string | null;
+  setViewingDecision: (id: string | null) => void;
 
   transcriptRecording: boolean;
   recordingNoteId: string | null;
@@ -199,7 +255,6 @@ interface AppState {
   setRightPanelTab: (tab: RightPanelTab) => void;
   toggleCommandPalette: () => void;
   toggleSearch: () => void;
-  toggleKanban: () => void;
   navigateToNote: (noteId: string | null) => void;
   setActiveView: (view: ActiveView) => void;
   setDashboardSection: (section: DashboardSection) => void;
@@ -226,10 +281,11 @@ export const useStore = create<AppState>()(
       rightPanelTab: 'tasks',
       commandPaletteOpen: false,
       searchOpen: false,
-      kanbanOpen: false,
       editingTaskId: null,
       editingDecisionId: null,
       focusedFollowUpId: null,
+      viewingDecisionId: null,
+      loadError: null,
       activeView: 'notes' as ActiveView,
       previousView: null,
       dashboardSection: 'tasks' as DashboardSection,
@@ -649,6 +705,20 @@ export const useStore = create<AppState>()(
         decisions: s.decisions.map((d) => ({ ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => taskId !== id) })),
       })),
 
+      restoreTask: (task, links) => set((s) => {
+        if (s.tasks.some((t) => t.id === task.id)) return {};
+        let tasks = [...s.tasks, { ...task, linkedFollowUpId: undefined }];
+        let followUps = s.followUps;
+        if (links.followUpId) ({ tasks, followUps } = linkFollowUp(tasks, followUps, task.id, links.followUpId));
+        const decisionIds = new Set(links.decisionIds ?? []);
+        return {
+          tasks,
+          followUps,
+          decisions: decisionIds.size ? s.decisions.map((d) => decisionIds.has(d.id) && !(d.relatedTaskIds ?? []).includes(task.id)
+            ? { ...d, relatedTaskIds: [...(d.relatedTaskIds ?? []), task.id] } : d) : s.decisions,
+        };
+      }),
+
       setEditingTask: (id) => set({ editingTaskId: id }),
 
       toggleArchiveNote: (id) =>
@@ -685,6 +755,15 @@ export const useStore = create<AppState>()(
         followUps: s.followUps.filter((f) => f.id !== id),
         tasks: s.tasks.map((t) => t.linkedFollowUpId === id ? { ...t, linkedFollowUpId: undefined } : t),
       })),
+
+      restoreFollowUp: (followUp, links) => set((s) => {
+        if (s.followUps.some((f) => f.id === followUp.id)) return {};
+        const followUps = [...s.followUps, { ...followUp, linkedTaskId: undefined }];
+        return links.taskId ? linkFollowUp(s.tasks, followUps, links.taskId, followUp.id) : { followUps };
+      }),
+
+      linkTaskAndFollowUp: (taskId, followUpId) => set((s) => linkFollowUp(s.tasks, s.followUps, taskId, followUpId)),
+      unlinkTaskAndFollowUp: (ids) => set((s) => unlinkFollowUp(s.tasks, s.followUps, ids)),
 
       // --- Decisions ---
 
@@ -728,6 +807,7 @@ export const useStore = create<AppState>()(
 
       setEditingDecision: (id) => set({ editingDecisionId: id }),
       setFocusedFollowUp: (id) => set({ focusedFollowUpId: id }),
+      setViewingDecision: (id) => set({ viewingDecisionId: id }),
 
       // --- UI ---
 
@@ -746,7 +826,6 @@ export const useStore = create<AppState>()(
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
       toggleSearch: () => set((s) => ({ searchOpen: !s.searchOpen })),
-      toggleKanban: () => set((s) => ({ kanbanOpen: !s.kanbanOpen })),
       setActiveView: (view) => set({ activeView: view, previousView: null }),
       setDashboardSection: (section) => set({ dashboardSection: section }),
       goBackToPreviousView: () =>
@@ -767,7 +846,6 @@ export const useStore = create<AppState>()(
             openTabs,
             activeTabId: supplierId,
             activeNoteId: noteId,
-            kanbanOpen: false,
             editingTaskId: null,
             previousView: s.activeView !== 'notes' ? s.activeView : s.previousView,
             activeView: 'notes',
@@ -777,52 +855,67 @@ export const useStore = create<AppState>()(
       // --- Import / Export ---
 
       importData: (data) => {
-        const normaliseNote = (n: any, fallbackProjectId?: string): Note => ({
+        const hasProjects = data.version >= 2 && !!data.projects;
+        const defaultProject: Project | null = hasProjects ? null : {
+          id: 'imported-default-' + uid(),
+          name: 'Imported Project',
+          color: '#6366f1',
+          archived: false,
+          createdAt: Date.now(),
+        };
+        const fallbackProjectId = defaultProject?.id;
+        const now = Date.now();
+        const text = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
+        const time = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : now);
+        // Fill fields older or hand-edited exports may lack, so views never meet undefined values.
+        const notes = data.notes.map((n: any): Note => ({
           ...n,
           projectIds: n.projectIds ?? (n.projectId ? [n.projectId] : (fallbackProjectId ? [fallbackProjectId] : [])),
           supplierIds: n.supplierIds ?? (n.supplierId ? [n.supplierId] : []),
+          title: text(n.title), content: text(n.content), attendees: text(n.attendees),
+          createdAt: time(n.createdAt), updatedAt: time(n.updatedAt ?? n.createdAt),
+        }));
+        const tasks = data.tasks.map((t: any): Task => ({
+          ...t,
+          projectId: t.projectId || fallbackProjectId || '',
+          supplierId: t.supplierId ?? null, noteId: t.noteId ?? null,
+          title: text(t.title), owner: text(t.owner), dueDate: text(t.dueDate), description: text(t.description),
+          status: ['open', 'doing', 'done'].includes(t.status) ? t.status : 'open',
+          priority: ['low', 'medium', 'high'].includes(t.priority) ? t.priority : 'medium',
+          createdAt: time(t.createdAt),
+        }));
+        const followUps = (data.followUps || []).map((f: any): FollowUp => ({
+          ...f,
+          projectId: f.projectId || fallbackProjectId || '',
+          supplierId: f.supplierId ?? null,
+          status: f.status === 'resolved' ? 'resolved' : 'open',
+          createdAt: time(f.createdAt),
+        }));
+        const imported = sanitizeWorkspace({
+          projects: defaultProject ? [defaultProject] : data.projects!,
+          suppliers: data.suppliers.map((sup: any) => ({
+            ...sup,
+            projectIds: sup.projectIds || (fallbackProjectId ? [fallbackProjectId] : []),
+          })),
+          notes,
+          tasks,
+          decisions: data.decisions.map((d: any) => upgradeDecision({ ...d, projectId: d.projectId || fallbackProjectId || '' })),
+          followUps,
+          activeProjectId: null,
+          openTabs: [],
+          activeTabId: null,
+          activeNoteId: null,
+          settings: get().settings,
         });
-
-        const hasProjects = data.version >= 2 && !!data.projects;
-        if (hasProjects) {
-          set({
-            projects: data.projects!,
-            suppliers: data.suppliers,
-            notes: data.notes.map((n: any) => normaliseNote(n)),
-            tasks: data.tasks,
-            decisions: data.decisions.map(upgradeDecision),
-            followUps: data.followUps || [],
-          });
-        } else {
-          const defaultProject: Project = {
-            id: 'imported-default-' + uid(),
-            name: 'Imported Project',
-            color: '#6366f1',
-            archived: false,
-            createdAt: Date.now(),
-          };
-          set({
-            projects: [defaultProject],
-            activeProjectId: defaultProject.id,
-            suppliers: data.suppliers.map((s: any) => ({
-              ...s,
-              projectIds: s.projectIds || [defaultProject.id],
-            })),
-            notes: data.notes.map((n: any) => normaliseNote(n, defaultProject.id)),
-            tasks: data.tasks.map((t: any) => ({
-              ...t,
-              projectId: t.projectId || defaultProject.id,
-            })),
-            decisions: data.decisions.map((d: any) => upgradeDecision({
-              ...d,
-              projectId: d.projectId || defaultProject.id,
-            })),
-            followUps: (data.followUps || []).map((f: any) => ({
-              ...f,
-              projectId: f.projectId || defaultProject.id,
-            })),
-          });
-        }
+        set({
+          ...imported,
+          activeView: 'dashboard',
+          previousView: null,
+          editingTaskId: null,
+          editingDecisionId: null,
+          viewingDecisionId: null,
+          focusedFollowUpId: null,
+        });
       },
 
       getExportData: () => {
@@ -842,7 +935,17 @@ export const useStore = create<AppState>()(
     {
       name: 'Combobulator-data',
       version: 11,
-      storage: createJSONStorage(() => appStorage),
+      storage: persistStorage,
+      // Loading failed after the file was read (migration or merge threw): keep saving disabled
+      // and tell the user, instead of continuing with an empty workspace that would be saved.
+      onRehydrateStorage: () => (_state, error) => {
+        if (!error) return;
+        console.error('Could not load the workspace', error);
+        setTimeout(() => useStore.setState({ loadError: `The stored data could not be loaded: ${error instanceof Error ? error.message : String(error)}` }), 0);
+      },
+      merge: (persisted, current) => persisted
+        ? { ...current, ...sanitizeWorkspace(persisted as Partial<PersistedState>) }
+        : current,
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
         if (version < 2) {
@@ -984,3 +1087,11 @@ export const useStore = create<AppState>()(
     },
   ),
 );
+
+// Saving is enabled only after the workspace loaded completely (read, migrated and merged).
+const finishHydration = () => {
+  if (persistStorage.readError) useStore.setState({ loadError: persistStorage.readError });
+  else persistStorage.markHydrated();
+};
+if (useStore.persist.hasHydrated()) finishHydration();
+else useStore.persist.onFinishHydration(finishHydration);

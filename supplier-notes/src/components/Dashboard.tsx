@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { OwnerDropdown } from './TaskModal';
 import { format } from 'date-fns';
 import type { TaskStatus, Priority, DashboardSection } from '../types';
-import { DecisionDetailDialog } from './DecisionDetailDialog';
 import {
   ArrowUpRight,
   Bookmark,
@@ -28,8 +27,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ColorDot, EntityChip, IconButton, PriorityBadge, PRIORITY_LABEL, STATUS_LABEL } from './common';
+import { ColorDot, EntityChip, IconButton, ownerInitials, PriorityBadge, PRIORITY_LABEL, STATUS_LABEL } from './common';
 import { DatePicker } from './DatePicker';
+import { InlineEditInput } from './InlineEdit';
+import { deleteFollowUpWithUndo, deleteTaskWithUndo, revokeDecisionWithUndo } from './undoableActions';
+import { dueUrgency, formatDueDate, formatTimeLeft, type DueUrgency } from '../utils/dates';
+import { isUnlinkedFollowUp, isUnlinkedTask, linkedFollowUpOf, linkedTaskOf } from '../utils/followUpLinks';
 
 const TASK_COLUMNS: { status: TaskStatus; label: string; dot: string }[] = [
   { status: 'open', label: 'Open', dot: 'bg-border-strong' },
@@ -37,45 +40,7 @@ const TASK_COLUMNS: { status: TaskStatus; label: string; dot: string }[] = [
   { status: 'done', label: 'Done', dot: 'bg-success' },
 ];
 
-function ownerInitials(owner: string): string {
-  return owner
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .slice(0, 2)
-    .join('');
-}
-
-type DueDateUrgency = 'overdue' | 'soon' | 'normal';
-
-function getDueDateUrgency(dueDate: string): DueDateUrgency {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return 'normal';
-  const diffDays = (d.getTime() - Date.now()) / 86_400_000;
-  if (diffDays < 0) return 'overdue';
-  if (diffDays < 3) return 'soon';
-  return 'normal';
-}
-
-function formatDueDate(dueDate: string): string {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return dueDate;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function formatTimeLeft(dueDate: string): string {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return '';
-  const diffMs = d.getTime() - Date.now();
-  const absDays = Math.floor(Math.abs(diffMs) / 86_400_000);
-  const absHours = Math.floor(Math.abs(diffMs) / 3_600_000);
-  if (diffMs < 0) return absDays >= 1 ? `${absDays}d overdue` : `${absHours}h overdue`;
-  if (absDays >= 1) return `${absDays}d left`;
-  if (absHours >= 1) return `${absHours}h left`;
-  return 'due soon';
-}
-
-const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
+const DUE_DATE_CLASSES: Record<DueUrgency, string> = {
   overdue: 'text-recording font-medium',
   soon: 'text-warning',
   normal: 'text-muted-foreground',
@@ -178,7 +143,7 @@ function ScopeFields({
           <SelectTrigger id="scope-project" className="w-full">
             <SelectValue placeholder="Select project" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper">
             {visibleProjects.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 <ColorDot color={p.color} />
@@ -410,10 +375,10 @@ function TasksSection({ defaultProjectId }: { defaultProjectId: string }) {
   const notes = useStore((s) => s.notes);
   const followUps = useStore((s) => s.followUps);
   const updateTask = useStore((s) => s.updateTask);
-  const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const navigateToNote = useStore((s) => s.navigateToNote);
   const setDashboardSection = useStore((s) => s.setDashboardSection);
+  const setFocusedFollowUp = useStore((s) => s.setFocusedFollowUp);
 
   const [filterProject, setFilterProject] = useState(defaultProjectId || 'all');
   const [filterSupplier, setFilterSupplier] = useState('all');
@@ -506,11 +471,8 @@ function TasksSection({ defaultProjectId }: { defaultProjectId: string }) {
                   const supplier = task.supplierId ? suppliers.find((s) => s.id === task.supplierId) : null;
                   const project = projects.find((p) => p.id === task.projectId);
                   const note = notes.find((n) => n.id === task.noteId);
-                  const linkedFollowUp =
-                    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null) ??
-                    followUps.find((f) => f.linkedTaskId === task.id) ??
-                    null;
-                  const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
+                  const linkedFollowUp = linkedFollowUpOf(task, followUps);
+                  const urgency = task.dueDate ? dueUrgency(task.dueDate) : null;
                   const ownerSupplier = task.owner ? suppliers.find((s) => s.name === task.owner) : undefined;
                   const done = task.status === 'done';
 
@@ -543,12 +505,14 @@ function TasksSection({ defaultProjectId }: { defaultProjectId: string }) {
                           className="flex max-w-full items-center gap-1 self-start rounded-full bg-brand-soft px-2 py-0.5 text-2xs font-medium text-brand-soft-foreground hover:opacity-80"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setFocusedFollowUp(linkedFollowUp.id);
                             setDashboardSection('followups');
                           }}
-                          title="Linked follow-up"
+                          title="Show linked follow-up"
                         >
                           <Bookmark className="size-3 shrink-0" />
                           <span className="truncate">{linkedFollowUp.text}</span>
+                          {linkedFollowUp.status === 'resolved' && <span className="shrink-0">· resolved</span>}
                         </button>
                       )}
 
@@ -583,7 +547,7 @@ function TasksSection({ defaultProjectId }: { defaultProjectId: string }) {
                             {ownerInitials(task.owner)}
                           </span>
                         )}
-                        <span className="hidden items-center group-hover/card:flex">
+                        <span className="hidden items-center group-focus-within/card:flex group-hover/card:flex">
                           <IconButton
                             label={`Move to ${STATUS_LABEL[NEXT_STATUS[col.status]]}`}
                             size="icon-xs"
@@ -600,7 +564,7 @@ function TasksSection({ defaultProjectId }: { defaultProjectId: string }) {
                             className="hover:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
-                              deleteTask(task.id);
+                              deleteTaskWithUndo(task.id);
                             }}
                           >
                             <Trash2 />
@@ -629,21 +593,18 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
   const projects = useStore((s) => s.projects);
   const suppliers = useStore((s) => s.suppliers);
   const notes = useStore((s) => s.notes);
-  const deleteDecision = useStore((s) => s.deleteDecision);
   const updateDecision = useStore((s) => s.updateDecision);
   const addDecision = useStore((s) => s.addDecision);
   const editingDecisionId = useStore((s) => s.editingDecisionId);
   const setEditingDecision = useStore((s) => s.setEditingDecision);
+  const setViewingDecision = useStore((s) => s.setViewingDecision);
   const navigateToNote = useStore((s) => s.navigateToNote);
 
   const [filterProject, setFilterProject] = useState(defaultProjectId || 'all');
   const [filterSupplier, setFilterSupplier] = useState('all');
-  const [editText, setEditText] = useState('');
-  const editInputRef = useRef<HTMLInputElement>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [decisionQuery, setDecisionQuery] = useState('');
   const [decisionScope, setDecisionScope] = useState<'current' | 'history' | 'all'>('current');
-  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
   const visibleProjects = projects.filter((p) => !p.archived);
 
   const filtered = decisions
@@ -723,38 +684,26 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
                 {groupDecisions.map((d) => {
                   const note = notes.find((n) => n.id === d.noteId);
                   const project = projects.find((p) => p.id === d.projectId);
-                  const isEditing = editingDecisionId === d.id;
-                  const startEdit = () => {
-                    setEditingDecision(d.id);
-                    setEditText(d.text);
-                  };
+                  const active = (d.status || 'active') === 'active';
+                  const isEditing = active && editingDecisionId === d.id;
+                  const startEdit = () => setEditingDecision(d.id);
                   return (
                     <div key={d.id} className="group/dec flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-xs">
                       <div className="flex min-w-0 flex-1 flex-col gap-2">
                         {isEditing ? (
-                          <Input
-                            ref={editInputRef}
-                            autoFocus
-                            aria-label="Edit decision"
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && editText.trim()) {
-                                updateDecision(d.id, { text: editText.trim() });
-                                setEditingDecision(null);
-                              }
-                              if (e.key === 'Escape') {
-                                e.preventDefault();
-                                setEditingDecision(null);
-                              }
-                            }}
-                            onBlur={() => {
-                              if (editText.trim()) updateDecision(d.id, { text: editText.trim() });
-                              setEditingDecision(null);
-                            }}
+                          <InlineEditInput
+                            label="Edit decision"
+                            initialValue={d.text}
+                            onCommit={(text) => updateDecision(d.id, { text })}
+                            onDone={() => setEditingDecision(null)}
+                            className="text-sm"
                           />
-                        ) : (
+                        ) : active ? (
                           <button type="button" className="text-left text-sm leading-relaxed" onClick={startEdit} title="Click to edit">
+                            {d.text}
+                          </button>
+                        ) : (
+                          <button type="button" className="text-left text-sm leading-relaxed text-muted-foreground" onClick={() => setViewingDecision(d.id)} title="Show history">
                             {d.text}
                           </button>
                         )}
@@ -777,14 +726,18 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
                         </div>
                       </div>
                       {!isEditing && (
-                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/dec:opacity-100">
-                          <Button variant="outline" size="xs" onClick={() => setSelectedDecisionId(d.id)}>History</Button>
-                          <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
-                            <Pencil />
-                          </IconButton>
-                          <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
-                            <Trash2 />
-                          </IconButton>
+                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within/dec:opacity-100 group-hover/dec:opacity-100">
+                          <Button variant="outline" size="xs" onClick={() => setViewingDecision(d.id)}>History</Button>
+                          {active && (
+                            <>
+                              <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
+                                <Pencil />
+                              </IconButton>
+                              <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => revokeDecisionWithUndo(d.id)}>
+                                <Trash2 />
+                              </IconButton>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -795,7 +748,6 @@ function DecisionsSection({ defaultProjectId }: { defaultProjectId: string }) {
           })}
         </div>
       </div>
-      {selectedDecisionId && <DecisionDetailDialog id={selectedDecisionId} onClose={() => setSelectedDecisionId(null)} />}
     </div>
   );
 }
@@ -808,22 +760,29 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
   const updateTask = useStore((s) => s.updateTask);
   const updateFollowUp = useStore((s) => s.updateFollowUp);
   const addFollowUp = useStore((s) => s.addFollowUp);
-  const deleteFollowUp = useStore((s) => s.deleteFollowUp);
+  const linkTaskAndFollowUp = useStore((s) => s.linkTaskAndFollowUp);
+  const unlinkTaskAndFollowUp = useStore((s) => s.unlinkTaskAndFollowUp);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const focusedFollowUpId = useStore((s) => s.focusedFollowUpId);
+  const setFocusedFollowUp = useStore((s) => s.setFocusedFollowUp);
 
   const [filterProject, setFilterProject] = useState(defaultProjectId || 'all');
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [showResolved, setShowResolved] = useState(false);
   const [editingFollowUpId, setEditingFollowUpId] = useState<string | null>(null);
-  const [editingFollowUpText, setEditingFollowUpText] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  // Jumping to a follow-up (from search, My Work or a linked task) must make it visible:
+  // widen filters that would hide it, expand "resolved", then scroll it into view.
   useEffect(() => {
     if (!focusedFollowUpId) return;
-    const target = followUps.find((item) => item.id === focusedFollowUpId);
-    if (target?.status === 'resolved') setShowResolved(true);
+    const target = useStore.getState().followUps.find((item) => item.id === focusedFollowUpId);
+    if (!target) return;
+    if (target.status === 'resolved') setShowResolved(true);
+    if (filterProject !== 'all' && target.projectId !== filterProject) setFilterProject('all');
+    if (filterSupplier !== 'all' && (filterSupplier === INTERNAL_TAB_ID ? target.supplierId !== null : target.supplierId !== filterSupplier)) setFilterSupplier('all');
     requestAnimationFrame(() => document.getElementById(`followup-${focusedFollowUpId}`)?.scrollIntoView({ block: 'center' }));
-  }, [focusedFollowUpId, followUps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedFollowUpId]);
   const visibleProjects = projects.filter((p) => !p.archived);
 
   const filteredTasks = tasks
@@ -871,20 +830,14 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
     // Linked item resolution
     const taskItem = type === 'task' ? (item as (typeof tasks)[0]) : null;
     const followUpItem = type === 'followup' ? (item as (typeof followUps)[0]) : null;
-    const linkedTask = followUpItem
-      ? ((followUpItem.linkedTaskId ? tasks.find((t) => t.id === followUpItem.linkedTaskId) : null) ??
-        tasks.find((t) => t.linkedFollowUpId === followUpItem.id) ??
-        null)
-      : null;
-    const linkedFollowUp = taskItem
-      ? ((taskItem.linkedFollowUpId ? followUps.find((f) => f.id === taskItem.linkedFollowUpId) : null) ??
-        followUps.find((f) => f.linkedTaskId === taskItem.id) ??
-        null)
-      : null;
+    const linkedTask = followUpItem ? linkedTaskOf(followUpItem, tasks) : undefined;
+    const linkedFollowUp = taskItem ? linkedFollowUpOf(taskItem, followUps) : undefined;
 
-    // Candidate tasks to link to a follow-up (same project, not already linked to another follow-up)
-    const linkableTasks = tasks.filter((t) => t.projectId === projectId && (!t.linkedFollowUpId || t.linkedFollowUpId === item.id));
-    const linkableFollowUps = followUps.filter((f) => f.projectId === projectId && !f.linkedTaskId);
+    // Link candidates: same project, open, and not linked to anything yet (checked on both sides).
+    const linkableTasks = linkedTask || !followUpItem ? [] :
+      tasks.filter((t) => t.projectId === projectId && t.status !== 'done' && isUnlinkedTask(t, followUps));
+    const linkableFollowUps = linkedFollowUp || !taskItem ? [] :
+      followUps.filter((f) => f.projectId === projectId && f.status === 'open' && isUnlinkedFollowUp(f, tasks));
 
     return (
       <div key={`${type}-${item.id}`} id={type === 'followup' ? `followup-${item.id}` : undefined} className={cn('group/fu flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-xs', type === 'followup' && focusedFollowUpId === item.id && 'border-primary')}>
@@ -910,30 +863,14 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
 
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {type === 'followup' && editingFollowUpId === item.id ? (
-            <Input
-              autoFocus
-              aria-label="Edit follow-up"
-              className="h-8"
-              value={editingFollowUpText}
-              onChange={(e) => setEditingFollowUpText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const t = editingFollowUpText.trim();
-                  if (t) updateFollowUp(item.id, { text: t });
-                  setEditingFollowUpId(null);
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setEditingFollowUpId(null);
-                }
-              }}
-              onBlur={() => {
-                const t = editingFollowUpText.trim();
-                if (t) updateFollowUp(item.id, { text: t });
-                setEditingFollowUpId(null);
-              }}
+            <InlineEditInput
+              label="Edit follow-up"
+              initialValue={text}
+              onCommit={(value) => updateFollowUp(item.id, { text: value })}
+              onDone={() => setEditingFollowUpId(null)}
             />
           ) : (
-            <span className={cn('text-sm leading-snug', isResolved && 'text-muted-foreground line-through')}>{text}</span>
+            <span className={cn('text-sm leading-snug break-words', isResolved && 'text-muted-foreground line-through')}>{text}</span>
           )}
           <div className="flex flex-wrap items-center gap-1.5">
             {project && <EntityChip color={project.color}>{project.name}</EntityChip>}
@@ -961,15 +898,13 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
               >
                 <Link2 className="size-3 shrink-0" />
                 <span className="truncate">Task: {linkedTask.title}</span>
+                <span className="shrink-0">· {STATUS_LABEL[linkedTask.status]}</span>
               </button>
               <IconButton
                 label="Remove link"
                 size="icon-xs"
                 className="hover:text-destructive"
-                onClick={() => {
-                  updateFollowUp(item.id, { linkedTaskId: undefined });
-                  updateTask(linkedTask.id, { linkedFollowUpId: undefined });
-                }}
+                onClick={() => unlinkTaskAndFollowUp({ followUpId: item.id })}
               >
                 <Link2Off />
               </IconButton>
@@ -977,18 +912,24 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
           )}
           {linkedFollowUp && (
             <div className="flex items-center gap-1">
-              <span className="inline-flex h-5 max-w-full items-center gap-1 rounded-full bg-brand-soft px-2 text-2xs font-medium text-brand-soft-foreground">
+              <button
+                type="button"
+                className="inline-flex h-5 max-w-full items-center gap-1 rounded-full bg-brand-soft px-2 text-2xs font-medium text-brand-soft-foreground hover:opacity-80"
+                onClick={() => {
+                  if (linkedFollowUp.status === 'resolved') setShowResolved(true);
+                  setFocusedFollowUp(linkedFollowUp.id);
+                }}
+                title="Show linked follow-up"
+              >
                 <Link2 className="size-3 shrink-0" />
                 <span className="truncate">{linkedFollowUp.text}</span>
-              </span>
+                {linkedFollowUp.status === 'resolved' && <span className="shrink-0">· resolved</span>}
+              </button>
               <IconButton
                 label="Remove link"
                 size="icon-xs"
                 className="hover:text-destructive"
-                onClick={() => {
-                  updateTask(item.id, { linkedFollowUpId: undefined });
-                  updateFollowUp(linkedFollowUp.id, { linkedTaskId: undefined });
-                }}
+                onClick={() => unlinkTaskAndFollowUp({ taskId: item.id })}
               >
                 <Link2Off />
               </IconButton>
@@ -996,20 +937,14 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
           )}
 
           {/* Link picker — only when not already linked */}
-          {type === 'followup' && !linkedTask && linkableTasks.length > 0 && (
-            <Select
-              value=""
-              onValueChange={(taskId) => {
-                updateFollowUp(item.id, { linkedTaskId: taskId });
-                updateTask(taskId, { linkedFollowUpId: item.id });
-              }}
-            >
+          {linkableTasks.length > 0 && (
+            <Select value="" onValueChange={(taskId) => linkTaskAndFollowUp(taskId, item.id)}>
               <SelectTrigger size="sm" className="w-fit max-w-full border-dashed bg-transparent text-xs text-muted-foreground shadow-none">
                 <span className="flex items-center gap-1.5">
                   <Link2 className="size-3" /> Link to task
                 </span>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper">
                 {linkableTasks.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.title}
@@ -1018,20 +953,14 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
               </SelectContent>
             </Select>
           )}
-          {type === 'task' && !linkedFollowUp && linkableFollowUps.length > 0 && (
-            <Select
-              value=""
-              onValueChange={(followUpId) => {
-                updateTask(item.id, { linkedFollowUpId: followUpId });
-                updateFollowUp(followUpId, { linkedTaskId: item.id });
-              }}
-            >
+          {linkableFollowUps.length > 0 && (
+            <Select value="" onValueChange={(followUpId) => linkTaskAndFollowUp(item.id, followUpId)}>
               <SelectTrigger size="sm" className="w-fit max-w-full border-dashed bg-transparent text-xs text-muted-foreground shadow-none">
                 <span className="flex items-center gap-1.5">
                   <Link2 className="size-3" /> Link to follow-up
                 </span>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper">
                 {linkableFollowUps.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
                     {f.text}
@@ -1043,18 +972,11 @@ function FollowUpsSection({ defaultProjectId }: { defaultProjectId: string }) {
         </div>
 
         {type === 'followup' && (
-          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/fu:opacity-100">
-            <IconButton
-              label="Edit follow-up"
-              size="icon-xs"
-              onClick={() => {
-                setEditingFollowUpId(item.id);
-                setEditingFollowUpText((item as (typeof followUps)[0]).text);
-              }}
-            >
+          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/fu:opacity-100 group-hover/fu:opacity-100">
+            <IconButton label="Edit follow-up" size="icon-xs" onClick={() => setEditingFollowUpId(item.id)}>
               <Pencil />
             </IconButton>
-            <IconButton label="Delete follow-up" size="icon-xs" className="hover:text-destructive" onClick={() => deleteFollowUp(item.id)}>
+            <IconButton label="Delete follow-up" size="icon-xs" className="hover:text-destructive" onClick={() => deleteFollowUpWithUndo(item.id)}>
               <Trash2 />
             </IconButton>
           </div>

@@ -12,6 +12,7 @@ import {
   Database,
   BookOpen,
   Lightbulb,
+  ShieldCheck,
 } from 'lucide-react';
 import { useStore } from '../store/store';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -28,7 +29,8 @@ type HelpSection =
   | 'ai'
   | 'teams'
   | 'shortcuts'
-  | 'settings';
+  | 'settings'
+  | 'privacy';
 
 const SECTIONS: { id: HelpSection; label: string; icon: React.ReactNode }[] = [
   { id: 'overview',      label: 'Overview',                    icon: <LayoutDashboard className="size-4" /> },
@@ -40,6 +42,7 @@ const SECTIONS: { id: HelpSection; label: string; icon: React.ReactNode }[] = [
   { id: 'teams',         label: 'Teams Integration',           icon: <Video className="size-4" /> },
   { id: 'shortcuts',     label: 'Keyboard Shortcuts',          icon: <Keyboard className="size-4" /> },
   { id: 'settings',      label: 'Settings & Data',             icon: <Database className="size-4" /> },
+  { id: 'privacy',       label: 'Privacy & Confidentiality',   icon: <ShieldCheck className="size-4" /> },
 ];
 
 function Heading({ children }: { children: React.ReactNode }) {
@@ -258,26 +261,28 @@ function TranscriptionSection() {
       <div className="space-y-2 mt-1">
         <div className="rounded-lg border p-3">
           <p className="mb-0.5 text-sm font-medium">Microphone</p>
-          <P>Uses your browser's built-in speech recognition. No API cost. Works offline. Best for capturing your own voice only.</P>
+          <P>Captures your microphone only. In a Chromium browser it uses the browser's online speech recognition (audio goes to Google). In the desktop app that service is not available, so the microphone is transcribed with Groq Whisper and needs a Groq API key. It does not work offline.</P>
         </div>
         <div className="rounded-lg border p-3">
           <p className="mb-0.5 text-sm font-medium">System audio</p>
-          <P>Captures all audio playing on your computer (including remote participants). Transcribed via Groq Whisper. Requires a Groq API key in Settings.</P>
+          <P>Captures all audio playing on your computer (including remote participants) plus your microphone. Audio is sent to Groq Whisper in chunks; HiveMind does not store the audio itself. Requires a Groq API key in Settings and the desktop app.</P>
         </div>
       </div>
 
       <SubHeading>During a recording</SubHeading>
       <Ul items={[
         'A red "Recording" badge appears in the top bar. Click it to jump back to the active note.',
-        'Transcription is chunked automatically (default: every 60 seconds).',
+        'Transcription is chunked automatically (default: every 60 seconds). If an upload fails, the audio is kept and retried at the next chunk.',
         'You can keep writing notes in the editor while recording continues in the background.',
         'Auto-stop kicks in after a configurable number of hours (default: 4 hours).',
       ]} />
 
       <SubHeading>After a recording</SubHeading>
       <P>
-        The full transcript is saved to the note. You can use the AI Summarize feature to
-        generate a structured summary from the transcript text.
+        The full transcript is saved to the note. With an OpenAI key, a summary is generated
+        automatically (or on request, if you turn automatic summaries off in Settings). Use
+        "Add to note" to copy the summary into the note, and "Analyze meeting" to get suggested
+        tasks, decisions and follow-ups that you review before they are saved.
       </P>
 
       <Tip>Configure the default audio mode and chunk interval under Settings → Recording so every session starts with your preferred setup.</Tip>
@@ -291,35 +296,35 @@ function AiSection() {
       <Heading>AI & Summarization</Heading>
       <P>
         HiveMind integrates with OpenAI (GPT models) and Groq (Whisper transcription) to
-        generate note summaries and transcribe audio. You bring your own API keys — no usage
-        is proxied through HiveMind's servers.
+        summarize and analyze meetings and to transcribe audio. You bring your own API keys;
+        requests go straight from your computer to those providers — HiveMind has no servers.
       </P>
 
       <SubHeading>Setting up API keys</SubHeading>
       <P>Go to <strong className="text-foreground">Settings → AI & Summarization</strong> and paste in your keys:</P>
       <Ul items={[
-        'OpenAI API key — used for GPT-based note summaries.',
-        'Groq API key — used for Whisper transcription (system audio mode only).',
+        'OpenAI API key — used for transcript summaries and meeting analysis.',
+        'Groq API key — used for Whisper transcription (system audio, and the microphone in the desktop app).',
       ]} />
-      <P>Use the "Test connection" button to verify each key before using it.</P>
+      <P>Use the "Test key" button to verify each key. Keys are stored encrypted on this computer and are never included in backups or exports.</P>
 
       <SubHeading>Generating a summary</SubHeading>
       <P>
-        With an OpenAI key configured, the Summarize button becomes available in the note
-        editor toolbar. Click it to generate a structured summary of the current note. The
-        summary is inserted directly into your note as editable text.
+        Summaries are made from a recording's transcript, in the Transcript tab of the side
+        panel. By default a summary is requested when the recording stops; you can turn this
+        off under Settings → AI & Summarization and click "Generate summary" when you want one.
+        "Add to note" inserts the summary into the note as editable text.
       </P>
 
       <SubHeading>Choosing a model</SubHeading>
       <P>
-        Four GPT models are available. The Settings screen shows an estimated cost for a
+        Three GPT models are available. The Settings screen shows an estimated cost for a
         typical one-hour meeting for each model so you can make an informed choice:
       </P>
       <Ul items={[
         'GPT-4o mini — fastest and cheapest, suitable for most meeting notes.',
         'GPT-4o — highest quality output, best for complex or technical meetings.',
-        'GPT-4 Turbo — good balance of quality and speed.',
-        'o1-mini — reasoning model, useful for analytical summaries.',
+        'GPT-4 Turbo — older, more expensive model kept for compatibility.',
       ]} />
 
       <SubHeading>Custom summary instructions</SubHeading>
@@ -423,6 +428,42 @@ function ShortcutsSection() {
   );
 }
 
+function PrivacySection() {
+  return (
+    <div className="space-y-3">
+      <Heading>Privacy & Confidentiality</Heading>
+      <P>
+        Everything you type stays on this computer (or in the data folder you choose). Content
+        leaves the computer only when you use a recording or AI feature with your own API keys:
+      </P>
+      <Ul items={[
+        'System-audio recording: meeting audio is sent to Groq (Whisper) in chunks for transcription.',
+        'Microphone recording: audio goes to Groq Whisper in the desktop app, or to the browser\u2019s speech service (Google) in a browser.',
+        'Summaries: the transcript is sent to OpenAI — automatically when a recording stops, unless you turn that off in Settings.',
+        'Meeting analysis: the transcript, short excerpts of recent notes in the project and current decisions are sent to OpenAI when you click "Analyze meeting".',
+        'Version history in Settings loads the public release list from GitHub. Teams detection only talks to the Teams app on this computer.',
+      ]} />
+
+      <SubHeading>Before recording confidential meetings</SubHeading>
+      <Ul items={[
+        'Make sure every participant agrees to being recorded, and that your agreements (NDAs, customer contracts) allow sharing the content with OpenAI and Groq.',
+        'Check the providers\u2019 data policies and your organization\u2019s agreements with them. OpenAI and Groq both offer zero-data-retention options for API accounts.',
+        'Turn off "Summarize recordings automatically" so nothing is sent to OpenAI unless you ask.',
+        'If content must not leave your computer, do not record — take notes instead. Notes, tasks, decisions and follow-ups never use external services.',
+      ]} />
+
+      <SubHeading>What is stored where</SubHeading>
+      <Ul items={[
+        'Workspace data, images, attachments and automatic backups: your data folder (Settings → Data & Storage).',
+        'API keys: encrypted with your Windows account (they are not in backups or JSON exports).',
+        'Audio recordings are not stored — only the transcript text.',
+        'A technical log (no note content) is kept in the app-data "logs" folder to diagnose problems such as failed updates.',
+        'JSON exports contain all workspace text in readable form — store and share them like the originals.',
+      ]} />
+    </div>
+  );
+}
+
 function SettingsSection() {
   return (
     <div className="space-y-3">
@@ -447,8 +488,10 @@ function SettingsSection() {
       <SubHeading>Custom data directory</SubHeading>
       <P>
         By default data is saved in your system's app-data folder. You can point HiveMind
-        at a custom directory under <strong className="text-foreground">Settings → Data & Storage</strong>
-        — useful if you want to store data on a synced drive (e.g. OneDrive or Dropbox).
+        at a custom directory under <strong className="text-foreground">Settings → Data & Storage</strong>,
+        for example a synced drive (OneDrive, Dropbox). Use HiveMind on one computer at a time:
+        if the data file changes elsewhere, HiveMind pauses saving to protect it and offers to
+        restore a backup.
       </P>
 
       <SubHeading>Export & backup</SubHeading>
@@ -491,6 +534,7 @@ export function HelpModal() {
     teams: <TeamsSection />,
     shortcuts: <ShortcutsSection />,
     settings: <SettingsSection />,
+    privacy: <PrivacySection />,
   };
 
   return (

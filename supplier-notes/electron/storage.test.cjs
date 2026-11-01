@@ -16,12 +16,13 @@ test('serializes writes, excludes secrets, and restores a validated backup', asy
   let secret = {};
   const service = new StorageService(dir, { readSecret: () => secret, writeSecret: (keys) => { secret = keys; } });
   assert.equal(await service.read(), null);
+  await service.write(envelope([{ id: 'one', title: 'First' }]));
   await Promise.all([
-    service.write(envelope([{ id: 'one', title: 'First' }])),
     service.write(envelope([{ id: 'two', title: 'Second' }])),
+    service.write(envelope([{ id: 'three', title: 'Third' }])),
   ]);
   const disk = JSON.parse(await fs.readFile(service.file, 'utf8'));
-  assert.equal(disk.state.notes[0].id, 'two');
+  assert.equal(disk.state.notes[0].id, 'three');
   assert.equal(disk.state.settings.openaiApiKey, '');
   assert.equal(secret.openaiApiKey, 'secret');
   const backups = await service.listBackups();
@@ -94,4 +95,25 @@ test('rebases managed attachments when data moves and when an older backup is re
   const restoredPath = JSON.parse(await fs.readFile(newService.file, 'utf8')).state.notes[0].attachments[0].filePath;
   assert.equal(path.dirname(restoredPath), newService.attachmentsDir);
   assert.equal(await fs.readFile(restoredPath, 'utf8'), 'linked file');
+});
+
+test('coalesces superseded writes, lets callers wait for the queue, and ignores writes after a restore', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-coalesce-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const service = new StorageService(dir);
+  await service.read();
+  let diskWrites = 0;
+  const original = service.writeLocked.bind(service);
+  service.writeLocked = async (raw) => { diskWrites++; return original(raw); };
+  const writes = Array.from({ length: 6 }, (_, index) => service.write(envelope([{ id: `n${index}`, title: `Note ${index}` }])));
+  assert.ok(service.pending > 0);
+  await service.flush();
+  assert.equal(service.pending, 0);
+  await Promise.all(writes);
+  assert.ok(diskWrites < 6, `expected superseded writes to be skipped, got ${diskWrites} disk writes`);
+  assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.notes[0].id, 'n5');
+
+  service.closeForRestart();
+  await service.write(envelope([{ id: 'late', title: 'After restore' }]));
+  assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.notes[0].id, 'n5');
 });

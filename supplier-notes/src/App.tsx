@@ -14,6 +14,7 @@ import { HelpModal } from './components/HelpModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpdateDialog } from './components/UpdateDialog';
+import { DecisionDetailDialog } from './components/DecisionDetailDialog';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RecoveryScreen } from './components/RecoveryScreen';
 import { FileText, FolderOpen } from 'lucide-react';
@@ -94,6 +95,9 @@ export default function App() {
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
   const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
+  const viewingDecisionId = useStore((s) => s.viewingDecisionId);
+  const loadError = useStore((s) => s.loadError);
+  const setViewingDecision = useStore((s) => s.setViewingDecision);
   const theme = useStore((s) => s.settings.theme);
 
   useEffect(() => {
@@ -112,11 +116,17 @@ export default function App() {
         // Dialogs, menus and popovers close themselves (and mark the event handled)
         if (e.defaultPrevented) return;
         const overlayOpen =
-          s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen || s.teamsPromptOpen || s.confirmDialog;
+          s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen || s.teamsPromptOpen || s.confirmDialog || s.viewingDecisionId;
         if (overlayOpen) return;
         if (s.activeView === 'tasks' || s.activeView === 'dashboard') s.setActiveView('notes');
         return;
       }
+
+      // While a dialog is open, app-wide shortcuts would open other views behind it — e.g. search
+      // could switch the task being edited and discard its unsaved changes.
+      const modalOpen = s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen ||
+        s.teamsPromptOpen || s.confirmDialog || s.viewingDecisionId;
+      if (modalOpen && !(ctrl && e.key === 'k' && s.commandPaletteOpen)) return;
 
       if (ctrl && e.key === ',') {
         e.preventDefault();
@@ -205,6 +215,14 @@ export default function App() {
     };
   }, []);
 
+  // Tell the desktop app whether to watch for Teams meetings — only once the stored setting has
+  // loaded, so a user who turned detection off never sees the overlay at startup.
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+  useEffect(() => useStore.persist.onFinishHydration(() => setHydrated(true)), []);
+  useEffect(() => {
+    if (hydrated) (window as any).electronTeams?.setEnabled?.(teamsEnabled);
+  }, [hydrated, teamsEnabled]);
+
   // When the overlay's "Start Recording" is clicked, show the recording
   // destination prompt as a modal so the user can choose which note to use.
   useEffect(() => {
@@ -213,10 +231,7 @@ export default function App() {
     if (!electronTeams) return;
 
     const onJoined = () => {
-      // #region agent log
       const s = useStore.getState();
-      try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'App.tsx:onJoined',message:'teams:meeting-joined fired',data:{transcriptRecording:s.transcriptRecording,teamsPromptOpen:s.teamsPromptOpen,activeNoteId:s.activeNoteId,activeTabId:s.activeTabId},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
-      // #endregion
       if (!s.transcriptRecording) s.setTeamsPromptOpen(true);
     };
 
@@ -232,13 +247,14 @@ export default function App() {
       {helpOpen && <HelpModal />}
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
+      {viewingDecisionId && <DecisionDetailDialog key={viewingDecisionId} id={viewingDecisionId} onClose={() => setViewingDecision(null)} />}
       <ConfirmDialog />
       <UpdateDialog />
       <Toaster position="bottom-right" />
     </>
   );
 
-  if (recoveryError) return <RecoveryScreen error={recoveryError} />;
+  if (recoveryError || loadError) return <RecoveryScreen error={recoveryError ?? loadError ?? ''} />;
 
   // First run: no sidebar until there is a project to put things in
   if (projects.length === 0) {

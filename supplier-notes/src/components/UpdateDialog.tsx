@@ -27,16 +27,26 @@ export function UpdateDialog() {
         id: TOAST_ID,
         description: 'HiveMind will restart to apply the update.',
         duration: Infinity,
-        action: { label: 'Restart & install', onClick: () => (window as any).electronUpdater?.install() },
+        action: {
+          label: 'Restart & install',
+          onClick: () => {
+            Promise.resolve(updater.install()).catch((error: Error) => onError({ message: error?.message || String(error) }));
+          },
+        },
         cancel: { label: 'Later', onClick: () => {} },
       });
     };
+    // Downloads or installs can fail when security software blocks the installer. Offer the
+    // installer from GitHub Releases instead of leaving the user without the update.
+    const manualDownload = { label: 'Download manually', onClick: () => updater.openReleases?.() };
     const onError = (info: { message: string }) => {
       if (!announced) return;
-      toast.error('Update check failed', {
+      toast.error('The update could not be completed', {
         id: TOAST_ID,
-        description: info.message || 'An unknown error occurred.',
-        duration: 10000,
+        description: `${info.message || 'An unknown error occurred.'} You can install the latest version from GitHub Releases.`,
+        duration: Infinity,
+        action: manualDownload,
+        cancel: { label: 'Dismiss', onClick: () => {} },
       });
     };
 

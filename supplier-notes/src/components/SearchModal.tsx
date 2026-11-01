@@ -28,9 +28,10 @@ export function SearchModal() {
   const setActiveView = useStore((s) => s.setActiveView);
   const setDashboardSection = useStore((s) => s.setDashboardSection);
   const setEditingTask = useStore((s) => s.setEditingTask);
-  const setEditingDecision = useStore((s) => s.setEditingDecision);
+  const setViewingDecision = useStore((s) => s.setViewingDecision);
   const setFocusedFollowUp = useStore((s) => s.setFocusedFollowUp);
   const navigateToNote = useStore((s) => s.navigateToNote);
+  const setRightPanelTab = useStore((s) => s.setRightPanelTab);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [type, setType] = useState<SearchKind | 'all'>('all');
@@ -58,11 +59,18 @@ export function SearchModal() {
   const openResult = (result: SearchItem) => {
     const projectId = result.projectIds.find((id) => projects.some((project) => project.id === id));
     if (projectId) setActiveProject(projectId);
-    if (result.type === 'note' || result.type === 'transcript') navigateToNote(result.noteId || result.id);
-    else {
+    if (result.type === 'note' || result.type === 'transcript') {
+      navigateToNote(result.noteId || result.id);
+      if (result.type === 'transcript') {
+        setRightPanelTab('transcript');
+        if (!useStore.getState().rightPanelOpen) useStore.getState().toggleRightPanel();
+      }
+    } else if (result.type === 'decision') {
+      // Opens the decision's details and history (it used to open an empty inline editor).
+      setViewingDecision(result.id);
+    } else {
       setActiveView('tasks');
       if (result.type === 'task') { setDashboardSection('tasks'); setEditingTask(result.id); }
-      if (result.type === 'decision') { setDashboardSection('decisions'); setEditingDecision(result.id); }
       if (result.type === 'followup') { setDashboardSection('followups'); setFocusedFollowUp(result.id); }
     }
     toggleSearch();

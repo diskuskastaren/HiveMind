@@ -84,8 +84,15 @@ contextBridge.exposeInMainWorld('electronCapture', {
   },
 });
 
-contextBridge.exposeInMainWorld('electronDebug', {
-  log: (payload) => ipcRenderer.send('debug:log', payload),
+// Close handshake: the main process asks the renderer to persist pending edits before the
+// window closes. Only one handler is kept; it must resolve once everything is written.
+let flushHandler = null;
+ipcRenderer.on('app:flush', async (_event, id) => {
+  try { if (flushHandler) await flushHandler(); }
+  finally { ipcRenderer.send('app:flushed', id); }
+});
+contextBridge.exposeInMainWorld('electronApp', {
+  onFlushRequest: (cb) => { flushHandler = typeof cb === 'function' ? cb : null; },
 });
 
 contextBridge.exposeInMainWorld('electronOpenExternal', {
@@ -104,13 +111,9 @@ const _teamsJoinedWrappers = new Map();
 const _teamsLeftWrappers   = new Map();
 
 contextBridge.exposeInMainWorld('electronTeams', {
+  setEnabled: (enabled) => ipcRenderer.send('teams:set-enabled', enabled === true),
   onMeetingJoined: (cb) => {
-    const wrapper = () => {
-      // #region agent log
-      ipcRenderer.send('debug:log', {sessionId:'6cf3ea',location:'preload.cjs:onMeetingJoined-wrapper',message:'teams:meeting-joined received - calling cb without event',timestamp:Date.now(),hypothesisId:'H-FINAL'});
-      // #endregion
-      cb();
-    };
+    const wrapper = () => cb();
     _teamsJoinedWrappers.set(cb, wrapper);
     ipcRenderer.on('teams:meeting-joined', wrapper);
   },
@@ -142,6 +145,7 @@ const _updaterErrorWrappers        = new Map();
 contextBridge.exposeInMainWorld('electronUpdater', {
   check:   () => ipcRenderer.invoke('updater:check'),
   install: () => ipcRenderer.invoke('updater:install'),
+  openReleases: () => ipcRenderer.invoke('updater:openReleases'),
   onUpdateAvailable: (cb) => {
     const w = (_e, ...a) => cb(...a); _updaterAvailableWrappers.set(cb, w);
     ipcRenderer.on('updater:update-available', w);
