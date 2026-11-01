@@ -57,6 +57,7 @@ Most important fixes:
 | 16 | Electron | No single-instance lock (a second window tripped the "changed outside this app" protection). Disabling Teams detection had no effect on the main process (overlay still appeared). Capture start could hang forever. | Single-instance lock focusing the existing window; Teams detection follows the setting live; 15 s capture start timeout and abort on crash. | Electron E2E (second instance exits). |
 | 17 | Settings | Settings added in newer versions were `undefined` for existing users (shallow persist merge). | Hydration merges defaults and drops dangling navigation. | Unit test. |
 | 18 | Dependencies | 7 high-severity production advisories (incl. a ProseMirror paste XSS, electron-updater token leak, `ws`). | Updated within semver ranges. | `npm audit --omit=dev`: 0 high/critical; full test suite re-run. |
+| 19 | Distribution | All renderer libraries were runtime `dependencies`, so the installer shipped the whole `node_modules` (app.asar 97.3 MB) although Vite already bundles them; test files were packaged too. | Only `electron-updater` and `ws` stay runtime dependencies; tests excluded. | app.asar **97.3 MB → 5.0 MB**; packaged app starts, renders and saves (Linux package with the same file config). |
 
 ### P2 — medium
 
@@ -106,9 +107,11 @@ outcome:
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
 | CSP | No violations: app build, demo site, Electron |
 | `npm audit --omit=dev` | 0 high/critical (41 moderate — TipTap 2.x) |
+| `electron-builder --win --x64 --dir` (on Linux) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
+| Packaged app smoke (Linux `--dir` build, same files config) | Starts from app.asar, renders, saves over IPC, writes its log |
 
-**Not tested (environment limits):** Windows-specific behaviour — NSIS packaging
-(`npm run electron:build`, needs a Windows machine), `scripts/smoke-electron.cjs`, real desktop
+**Not tested (environment limits):** Windows-specific behaviour — the NSIS installer itself and
+running the Windows executable (only the unpacked Windows build was produced here), `scripts/smoke-electron.cjs`, real desktop
 audio capture and the hidden-window frame behaviour (known #1a), Outlook draft opening, Teams local
 API, electron-updater download/install and code signing. No real provider requests were made; all
 AI calls in tests are intercepted locally.
