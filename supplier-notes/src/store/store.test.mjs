@@ -12,7 +12,7 @@ globalThis.localStorage = {
 
 const bundle = await build({ entryPoints: ['src/store/store.ts'], bundle: true,
   platform: 'node', format: 'esm', write: false, logLevel: 'silent' });
-const { useStore } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+const { useStore, persistStorage } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
 test('replacing a decision keeps a navigable chain and an audit record', () => {
   useStore.setState({
@@ -99,4 +99,21 @@ test('task/follow-up linking is atomic and survives relinking', () => {
   assert.equal(followUps[0].linkedTaskId, 'b');
   useStore.getState().unlinkTaskAndFollowUp({ taskId: 'b' });
   assert.equal(useStore.getState().followUps[0].linkedTaskId, undefined);
+});
+
+test('a stored workspace with malformed records still loads instead of aborting', async () => {
+  memory.set('Combobulator-data', JSON.stringify({ version: 11, state: {
+    projects: [{ id: 'p', name: 'P', color: '#000', archived: false, createdAt: 1 }],
+    suppliers: [{ id: 's', name: 'No project list' }],
+    notes: [{ id: 'n', title: 'Old note', content: '', attendees: '', createdAt: 1, updatedAt: 1 }],
+    tasks: [], decisions: [], followUps: [],
+    activeProjectId: 'p', openTabs: ['s'], activeTabId: 's', activeNoteId: 'n', rightPanelOpen: true,
+    settings: {},
+  } }));
+  await useStore.persist.rehydrate();
+  const s = useStore.getState();
+  assert.equal(s.notes[0].title, 'Old note');
+  assert.deepEqual(s.suppliers[0].projectIds, []);
+  assert.equal(s.loadError, null);
+  assert.equal(persistStorage.canWrite, true);
 });

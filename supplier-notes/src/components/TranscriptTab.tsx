@@ -242,6 +242,9 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
                 Generating summary…
               </div>
             )}
+            {!isSummarizing && transcript.summary && summarizeError && (
+              <p role="alert" className="mb-2 text-xs text-destructive">Regenerating failed: {summarizeError}</p>
+            )}
             {!isSummarizing && transcript.summary && <div dangerouslySetInnerHTML={{ __html: summaryToHtml(transcript.summary) }} />}
             {!isSummarizing && !transcript.summary && (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
@@ -363,6 +366,7 @@ export function TranscriptTab() {
     () => useStore.getState().settings.defaultAudioMode,
   );
   const [showStartScreen, setShowStartScreen] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [liveText, setLiveText] = useState('');
   // Which transcript is open in detail view (null = list view)
@@ -426,7 +430,8 @@ export function TranscriptTab() {
     setLiveText('');
     recordingNoteIdRef.current = note?.id ?? '';
     recordingStartTimeRef.current = Date.now();
-    const ok = await start(setLiveText);
+    setStarting(true);
+    const ok = await start(setLiveText).finally(() => setStarting(false));
     if (ok && transcriptIdRef.current) {
       setSelectedId(transcriptIdRef.current);
     }
@@ -569,8 +574,8 @@ export function TranscriptTab() {
           Make sure participants agree to being recorded and that your agreements (e.g. NDAs) allow sharing the content with these services.
         </p>
 
-        <Button variant="destructive" onClick={handleStart} disabled={mode === 'system' && !groqApiKey}>
-          <span className="size-2 rounded-full bg-white" /> Start recording
+        <Button variant="destructive" onClick={handleStart} disabled={starting || (mode === 'system' && !groqApiKey)}>
+          <span className="size-2 rounded-full bg-white" /> {starting ? 'Starting…' : 'Start recording'}
         </Button>
 
         {note && (

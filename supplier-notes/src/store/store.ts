@@ -73,8 +73,9 @@ export const persistStorage = createWriteBehindStorage<PersistedState>(() => (el
   onError: (message) => emit('storage-error', message),
 });
 
-// The desktop app asks for pending edits to be written before its window closes.
-if (typeof window !== 'undefined') (window as any).electronApp?.onFlushRequest?.(() => persistStorage.flush());
+// The desktop app asks for pending edits before its window closes. They are handed to the main
+// process right away; it finishes its write queue before quitting, however long writes take.
+if (typeof window !== 'undefined') (window as any).electronApp?.onFlushRequest?.(() => persistStorage.sendPendingNow());
 
 /**
  * Bring loaded or imported data into a consistent shape: settings gain defaults added in
@@ -82,22 +83,29 @@ if (typeof window !== 'undefined') (window as any).electronApp?.onFlushRequest?.
  * no longer exist (which otherwise leaves an empty screen after an import or restore).
  */
 export function sanitizeWorkspace<T extends Partial<PersistedState>>(state: T): T {
-  const projects = state.projects ?? [];
-  const suppliers = state.suppliers ?? [];
-  const notes = state.notes ?? [];
-  const links = normalizeFollowUpLinks(state.tasks ?? [], state.followUps ?? []);
+  // Tolerate malformed records: a crash here would abort loading the whole workspace.
+  const list = <T,>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
+  const projects = list(state.projects);
+  const suppliers = list(state.suppliers).map((supplier) =>
+    Array.isArray(supplier.projectIds) ? supplier : { ...supplier, projectIds: [] });
+  const notes = list(state.notes).map((note) => Array.isArray(note.projectIds) && Array.isArray(note.supplierIds)
+    ? note : { ...note, projectIds: Array.isArray(note.projectIds) ? note.projectIds : [], supplierIds: Array.isArray(note.supplierIds) ? note.supplierIds : [] });
+  const links = normalizeFollowUpLinks(list(state.tasks), list(state.followUps));
   const projectIds = new Set(projects.map((project) => project.id));
   const activeProjectId = state.activeProjectId && projectIds.has(state.activeProjectId)
     ? state.activeProjectId
     : (projects.find((project) => !project.archived) ?? projects[0])?.id ?? null;
   const tabIsValid = (id: string) => id === INTERNAL_TAB_ID ||
     suppliers.some((supplier) => supplier.id === id && !!activeProjectId && supplier.projectIds.includes(activeProjectId));
-  const openTabs = (state.openTabs ?? []).filter(tabIsValid);
+  const openTabs = list(state.openTabs).filter(tabIsValid);
   const activeTabId = state.activeTabId && tabIsValid(state.activeTabId) ? state.activeTabId : null;
   if (activeTabId && !openTabs.includes(activeTabId)) openTabs.push(activeTabId);
   const activeNoteId = state.activeNoteId && notes.some((note) => note.id === state.activeNoteId) ? state.activeNoteId : null;
   return {
     ...state,
+    projects,
+    suppliers,
+    notes,
     tasks: links.tasks,
     followUps: links.followUps,
     activeProjectId,
@@ -145,7 +153,6 @@ interface AppState {
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
   searchOpen: boolean;
-  kanbanOpen: boolean;
   editingTaskId: string | null;
   editingDecisionId: string | null;
   focusedFollowUpId: string | null;
@@ -209,6 +216,8 @@ interface AppState {
   setFocusedFollowUp: (id: string | null) => void;
   /** Decision shown in the decision detail/history dialog (any view can open it). */
   viewingDecisionId: string | null;
+  /** Set when the stored workspace could not be loaded; saving stays disabled. */
+  loadError: string | null;
   setViewingDecision: (id: string | null) => void;
 
   transcriptRecording: boolean;
@@ -246,7 +255,6 @@ interface AppState {
   setRightPanelTab: (tab: RightPanelTab) => void;
   toggleCommandPalette: () => void;
   toggleSearch: () => void;
-  toggleKanban: () => void;
   navigateToNote: (noteId: string | null) => void;
   setActiveView: (view: ActiveView) => void;
   setDashboardSection: (section: DashboardSection) => void;
@@ -273,11 +281,11 @@ export const useStore = create<AppState>()(
       rightPanelTab: 'tasks',
       commandPaletteOpen: false,
       searchOpen: false,
-      kanbanOpen: false,
       editingTaskId: null,
       editingDecisionId: null,
       focusedFollowUpId: null,
       viewingDecisionId: null,
+      loadError: null,
       activeView: 'notes' as ActiveView,
       previousView: null,
       dashboardSection: 'tasks' as DashboardSection,
@@ -818,7 +826,6 @@ export const useStore = create<AppState>()(
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
       toggleSearch: () => set((s) => ({ searchOpen: !s.searchOpen })),
-      toggleKanban: () => set((s) => ({ kanbanOpen: !s.kanbanOpen })),
       setActiveView: (view) => set({ activeView: view, previousView: null }),
       setDashboardSection: (section) => set({ dashboardSection: section }),
       goBackToPreviousView: () =>
@@ -839,7 +846,6 @@ export const useStore = create<AppState>()(
             openTabs,
             activeTabId: supplierId,
             activeNoteId: noteId,
-            kanbanOpen: false,
             editingTaskId: null,
             previousView: s.activeView !== 'notes' ? s.activeView : s.previousView,
             activeView: 'notes',
@@ -930,6 +936,13 @@ export const useStore = create<AppState>()(
       name: 'Combobulator-data',
       version: 11,
       storage: persistStorage,
+      // Loading failed after the file was read (migration or merge threw): keep saving disabled
+      // and tell the user, instead of continuing with an empty workspace that would be saved.
+      onRehydrateStorage: () => (_state, error) => {
+        if (!error) return;
+        console.error('Could not load the workspace', error);
+        setTimeout(() => useStore.setState({ loadError: `The stored data could not be loaded: ${error instanceof Error ? error.message : String(error)}` }), 0);
+      },
       merge: (persisted, current) => persisted
         ? { ...current, ...sanitizeWorkspace(persisted as Partial<PersistedState>) }
         : current,
@@ -1074,3 +1087,11 @@ export const useStore = create<AppState>()(
     },
   ),
 );
+
+// Saving is enabled only after the workspace loaded completely (read, migrated and merged).
+const finishHydration = () => {
+  if (persistStorage.readError) useStore.setState({ loadError: persistStorage.readError });
+  else persistStorage.markHydrated();
+};
+if (useStore.persist.hasHydrated()) finishHydration();
+else useStore.persist.onFinishHydration(finishHydration);

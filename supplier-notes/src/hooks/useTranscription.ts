@@ -75,6 +75,7 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRef = useRef<() => Promise<string>>(async () => '');
+  const stoppingRef = useRef<Promise<string> | null>(null);
   const liveTextCallbackRef = useRef<(text: string) => void>(() => {});
 
   const saveProgress = useCallback((extra?: { duration?: number }) => {
@@ -312,6 +313,9 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
 
   const start = useCallback(
     async (onLiveText: (text: string) => void) => {
+      // One recording at a time: a double-click (or Teams auto-start) while starting or stopping
+      // would otherwise register capture handlers twice and leak timers and streams.
+      if (isRecordingRef.current || stoppingRef.current) return false;
       recordingNoteIdRef.current = noteId;
       accumulatedRef.current = '';
       startTimeRef.current = Date.now();
@@ -360,7 +364,6 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
     [noteId, apiKey, mode, addTranscript, deleteTranscript, startMicRecording, startSystemRecording, setTranscriptRecording, setRecordingNote],
   );
 
-  const stoppingRef = useRef<Promise<string> | null>(null);
   const stop = useCallback(() => {
     if (stoppingRef.current) return stoppingRef.current;
     const run = (async () => {
@@ -371,8 +374,20 @@ export function useTranscription({ noteId, apiKey, mode }: UseTranscriptionOptio
         autoStopTimeoutRef.current = null;
       }
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* not started */ }
+        // Speech recognition delivers its last (final) result after stop(); wait for its end
+        // event so the last sentence is kept.
+        const recognition = recognitionRef.current;
         recognitionRef.current = null;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2000);
+          const previousEnd = recognition.onend;
+          recognition.onend = (event: unknown) => {
+            clearTimeout(timer);
+            previousEnd?.call(recognition, event);
+            resolve();
+          };
+          try { recognition.stop(); } catch { clearTimeout(timer); resolve(); }
+        });
       }
       if (chunkIntervalRef.current) {
         clearInterval(chunkIntervalRef.current);

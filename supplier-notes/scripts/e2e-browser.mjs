@@ -82,6 +82,20 @@ try {
     await context.close();
   }
 
+  {
+    // A stored workspace that cannot be loaded is reported and never overwritten.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('Combobulator-data', '{"version":11,"state":{broken'); sessionStorage.setItem('seeded', '1'); } });
+    await page.goto(BASE);
+    await page.waitForSelector('text=Data recovery');
+    await page.keyboard.press('Control+k');
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => localStorage.getItem('Combobulator-data')), '{"version":11,"state":{broken');
+    ok('a workspace that cannot be loaded is reported, and the stored data is left untouched');
+    await context.close();
+  }
+
   // ── 2. Task, follow-up and decision workflows ──────────────────────────────
   {
     const { state, pid, vela } = demo();
@@ -202,7 +216,59 @@ try {
     await context.close();
   }
 
-  // ── 4. Recording, transcription and summaries (providers mocked) ───────────
+  // ── 4. Recording lifecycle edge cases ──────────────────────────────────────
+  {
+    const { state, pid, vela } = demo();
+    state.notes = [{ id: 'rec', projectIds: [pid], supplierIds: [vela], title: 'Edge cases', content: '<p>x</p>', attendees: '', createdAt: 1, updatedAt: 1 }];
+    state.settings = { openaiApiKey: '', groqApiKey: 'test-groq', autoSummarize: false, defaultAudioMode: 'mic', chunkIntervalSeconds: 60, autoStopHours: 4, teamsEnabled: false, theme: 'light', gptModel: 'gpt-4o-mini', temperature: 0.3, customSummaryInstructions: '' };
+    const init = () => {
+      // Like real speech recognition: the final result for the last sentence arrives after stop().
+      const Fake = class {
+        start() { setTimeout(() => this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: 'first sentence' }], { isFinal: true })] }), 50); }
+        stop() { setTimeout(() => { this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: 'last sentence' }], { isFinal: true })] }); this.onend?.(); }, 300); }
+        abort() {}
+      };
+      Object.defineProperty(window, 'SpeechRecognition', { value: Fake, configurable: true });
+      Object.defineProperty(window, 'webkitSpeechRecognition', { value: Fake, configurable: true });
+      let starts = 0, onLevels;
+      window.__captureStarts = () => starts;
+      window.electronCapture = {
+        getSources: async () => [{ id: 'screen:0', name: 'Entire screen' }],
+        startCapture: async () => { starts++; await new Promise((r) => setTimeout(r, 300)); return 'audio/webm'; },
+        flushCapture: async () => {}, stopCapture: async () => {},
+        onChunk: () => {}, offChunk: () => {}, onError: () => {}, offError: () => {},
+        onLevels: (cb) => { onLevels = cb; }, offLevels: () => {},
+      };
+    };
+    const { page, context, errors } = await open({ ...state, activeProjectId: pid, openTabs: [vela], activeTabId: vela, activeNoteId: 'rec', rightPanelOpen: true }, { init });
+    await page.waitForSelector('.ProseMirror');
+    const panel = page.locator('aside[aria-label="Note side panel"]');
+    await panel.getByRole('tab', { name: /Transcript/ }).click();
+    await panel.getByRole('button', { name: /Start recording/ }).click();
+    await page.waitForTimeout(300);
+    await panel.getByRole('button', { name: /Stop recording/ }).click();
+    await page.waitForTimeout(800);
+    let note = (await stored(page)).notes[0];
+    assert.equal(note.transcripts.length, 1);
+    assert.equal(note.transcripts[0].rawText.trim(), 'first sentence last sentence');
+    ok('speech recognition: the final result delivered after Stop is kept');
+
+    await panel.getByRole('button', { name: /New recording/ }).click();
+    await panel.getByRole('radio', { name: /All audio/ }).click();
+    await panel.getByRole('button', { name: /Start recording/ }).click();
+    await page.evaluate(() => { window.dispatchEvent(new CustomEvent('teams:autostart')); window.dispatchEvent(new CustomEvent('teams:autostart')); });
+    await page.waitForTimeout(1200);
+    assert.equal(await page.evaluate(() => window.__captureStarts()), 1, 'a second start while starting is ignored');
+    await panel.getByRole('button', { name: /Stop recording/ }).click();
+    await page.waitForTimeout(800);
+    note = (await stored(page)).notes[0];
+    assert.equal(note.transcripts.length, 1, 'no empty entries left behind');
+    ok('starting twice (double click / Teams auto-start) starts one capture and leaves no empty entries');
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+
+  // ── 5. Recording, transcription and summaries (providers mocked) ───────────
   for (const mode of ['mic', 'system']) {
     const { state, pid, vela } = demo();
     state.notes = [{ id: 'rec', projectIds: [pid], supplierIds: [vela], title: 'Recorded meeting', content: '<p>Agenda</p>', attendees: '', createdAt: 1, updatedAt: 1 }];

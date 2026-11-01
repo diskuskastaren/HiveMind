@@ -21,7 +21,9 @@ export function RecoveryScreen({ error }: { error: string }) {
       {backups.length === 0 && <p className="text-sm text-muted-foreground">No automatic backups were found. Open the data folder to recover the file manually.</p>}
       <div className="max-h-64 overflow-y-auto">{backups.map((item) => <div key={item.id} className="flex items-center justify-between border-b py-2 text-sm"><span>{new Date(item.createdAt).toLocaleString()}</span><Button variant="outline" size="sm" disabled={busy} onClick={() => restore(item.id)}>Restore</Button></div>)}</div>
       {restoreError && <p role="alert" className="text-xs text-destructive">{restoreError}</p>}
-      <Button variant="ghost" size="sm" className="self-start" onClick={() => api?.openFolder?.()}>Open data folder</Button>
+      {api?.openFolder
+        ? <Button variant="ghost" size="sm" className="self-start" onClick={() => api.openFolder()}>Open data folder</Button>
+        : <p className="text-xs text-muted-foreground">Nothing has been changed. Reload the page to try again; your browser storage is kept as it is.</p>}
     </div>
   </main>;
 }

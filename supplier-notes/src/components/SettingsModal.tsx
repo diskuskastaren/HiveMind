@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useStore } from '../store/store';
+import { persistStorage, useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
 import { importBackupFile } from '../utils/backup';
@@ -240,6 +240,7 @@ export function SettingsModal() {
   const handleAutomaticBackup = async () => {
     setBackupBusy(true);
     try {
+      await persistStorage.flush();
       await (window as any).electronStore.backup();
       await refreshStorage();
       toast.success('Backup created');
@@ -395,7 +396,10 @@ export function SettingsModal() {
       current.tasks.length + current.decisions.length + current.followUps.length > 0;
     if (hasData && (window as any).electronStore?.backup) {
       setBackupBusy(true);
-      try { await (window as any).electronStore.backup(); }
+      try {
+        await persistStorage.flush(); // the backup must include the latest edits
+        await (window as any).electronStore.backup();
+      }
       catch (error) {
         toast.error(`Could not create a backup before clearing data: ${String(error)}`);
         setBackupBusy(false);

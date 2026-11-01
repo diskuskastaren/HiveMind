@@ -417,6 +417,8 @@ export function NoteEditor() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      // Only for a selection in the editor itself (not while typing in a dialog or side panel).
+      if (!editor?.isFocused) return;
       if (!selectionText || !activeNoteId || !activeTabId || !activeProjectId) return;
       const supplierId = activeTabId === INTERNAL_TAB_ID ? null : activeTabId;
 
@@ -459,7 +461,7 @@ export function NoteEditor() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectionText, activeNoteId, activeTabId, activeProjectId, addTask, addDecision, addFollowUp, setRightPanelTab]);
+  }, [editor, selectionText, activeNoteId, activeTabId, activeProjectId, addTask, addDecision, addFollowUp, setRightPanelTab]);
 
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

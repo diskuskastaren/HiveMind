@@ -96,6 +96,7 @@ export default function App() {
   const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
   const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
   const viewingDecisionId = useStore((s) => s.viewingDecisionId);
+  const loadError = useStore((s) => s.loadError);
   const setViewingDecision = useStore((s) => s.setViewingDecision);
   const theme = useStore((s) => s.settings.theme);
 
@@ -120,6 +121,12 @@ export default function App() {
         if (s.activeView === 'tasks' || s.activeView === 'dashboard') s.setActiveView('notes');
         return;
       }
+
+      // While a dialog is open, app-wide shortcuts would open other views behind it — e.g. search
+      // could switch the task being edited and discard its unsaved changes.
+      const modalOpen = s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen ||
+        s.teamsPromptOpen || s.confirmDialog || s.viewingDecisionId;
+      if (modalOpen && !(ctrl && e.key === 'k' && s.commandPaletteOpen)) return;
 
       if (ctrl && e.key === ',') {
         e.preventDefault();
@@ -247,7 +254,7 @@ export default function App() {
     </>
   );
 
-  if (recoveryError) return <RecoveryScreen error={recoveryError} />;
+  if (recoveryError || loadError) return <RecoveryScreen error={recoveryError ?? loadError ?? ''} />;
 
   // First run: no sidebar until there is a project to put things in
   if (projects.length === 0) {

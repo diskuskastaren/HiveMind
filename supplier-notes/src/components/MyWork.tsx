@@ -28,12 +28,12 @@ export function MyWork() {
 
   const matchingTasks = tasks.filter((task) => task.status !== 'done')
     .filter((task) => project === 'all' || task.projectId === project)
-    .filter((task) => supplier === 'all' || task.supplierId === supplier)
+    .filter((task) => supplier === 'all' || (supplier === '__internal__' ? task.supplierId === null : task.supplierId === supplier))
     .filter((task) => owner === 'all' || (owner === '__unassigned__' ? !task.owner : task.owner === owner))
     .filter((task) => priority === 'all' || task.priority === priority);
   const matchingFollowUps = followUps.filter((item) => item.status === 'open')
     .filter((item) => project === 'all' || item.projectId === project)
-    .filter((item) => supplier === 'all' || item.supplierId === supplier)
+    .filter((item) => supplier === 'all' || (supplier === '__internal__' ? item.supplierId === null : item.supplierId === supplier))
     .filter((item) => owner === 'all' && priority === 'all')
     .filter((item) => !item.linkedTaskId || !matchingTasks.some((task) => task.id === item.linkedTaskId));
   const overdue = matchingTasks.filter((task) => task.dueDate && task.dueDate < today);
@@ -58,7 +58,7 @@ export function MyWork() {
     <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Today / My Work</h2><p className="text-xs text-muted-foreground">Actions needing attention</p></div></div>
     <div className="flex flex-wrap gap-2">
       <Select value={project} onValueChange={setProject}><SelectTrigger size="sm" aria-label="Project"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All projects</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-      <Select value={supplier} onValueChange={setSupplier}><SelectTrigger size="sm" aria-label="Supplier"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All suppliers</SelectItem>{suppliers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+      <Select value={supplier} onValueChange={setSupplier}><SelectTrigger size="sm" aria-label="Supplier"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All suppliers</SelectItem><SelectItem value="__internal__">Internal</SelectItem>{suppliers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
       <Select value={owner} onValueChange={setOwner}><SelectTrigger size="sm" aria-label="Owner"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All owners</SelectItem><SelectItem value="__unassigned__">Unassigned</SelectItem>{owners.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
       <Select value={priority} onValueChange={setPriority}><SelectTrigger size="sm" aria-label="Priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All priorities</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
     </div>

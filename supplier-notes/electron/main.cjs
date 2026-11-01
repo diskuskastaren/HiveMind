@@ -345,7 +345,7 @@ function showOverlay() {
     movable: true,
     focusable: true,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'overlay-preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -664,13 +664,15 @@ function getMainWindow() {
 }
 
 const APP_URLS = { devServerUrl: process.env.VITE_DEV_SERVER_URL || '', indexFileUrl: pathToFileURL(INDEX_FILE).href };
+// The helper windows (Teams overlay, hidden audio capture) may only show their own page.
+const HELPER_PAGES = new Set(['overlay.html', 'capture.html'].map((name) => pathToFileURL(path.join(__dirname, name)).href));
 
 // Every window HiveMind creates only ever shows its own bundled pages. Dropping a file or
 // following a link must not replace the app (the page would keep the privileged preload API).
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', (event, url) => {
     if (contents === getMainWindow()?.webContents && isAppUrl(url, APP_URLS)) return;
-    if (contents !== getMainWindow()?.webContents && url.startsWith('file:')) return; // overlay/capture pages
+    if (contents !== getMainWindow()?.webContents && HELPER_PAGES.has(url.split('#')[0])) return;
     event.preventDefault();
     if (isSafeExternalUrl(url)) shell.openExternal(url).catch(() => {});
   });
