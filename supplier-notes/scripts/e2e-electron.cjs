@@ -9,7 +9,8 @@ const assert = require('node:assert/strict');
 const { WebSocket } = require('ws');
 
 const root = path.resolve(__dirname, '..');
-const electron = require('electron');
+// ELECTRON_PATH lets the checks run against another Electron build (e.g. before upgrading).
+const electron = process.env.ELECTRON_PATH || require('electron');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hivemind-e2e-'));
 const dataFile = path.join(profile, 'Combobulator-data.json');
 const children = new Set();

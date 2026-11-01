@@ -56,7 +56,7 @@ Most important fixes:
 | 15 | Decisions | Side panel listed revoked/superseded decisions like active ones ("Revoke" seemed to do nothing); search opened an empty inline editor. | Current decisions + collapsible "Revoked or replaced"; Undo on revoke; global decision history dialog (from side panel, board, search). | **Verified** (search) before/after; browser E2E. |
 | 16 | Electron | No single-instance lock (a second window tripped the "changed outside this app" protection). Disabling Teams detection had no effect on the main process (overlay still appeared). Capture start could hang forever. | Single-instance lock focusing the existing window; Teams detection follows the setting live; 15 s capture start timeout and abort on crash. | Electron E2E (second instance exits). |
 | 17 | Settings | Settings added in newer versions were `undefined` for existing users (shallow persist merge). | Hydration merges defaults and drops dangling navigation. | Unit test. |
-| 18 | Dependencies | 7 high-severity production advisories (incl. a ProseMirror paste XSS, electron-updater token leak, `ws`). | Updated within semver ranges. | `npm audit --omit=dev`: 0 high/critical; full test suite re-run. |
+| 18 | Dependencies | 7 high-severity advisories in shipped libraries (incl. a ProseMirror paste XSS, electron-updater token leak, `ws`); the Electron runtime 40.7.0 had ~25 advisories fixed in later 40.x releases, several relevant here (`shell.openPath` null-byte bypass, cross-origin reads through custom protocols with `supportFetchAPI` — as `app-image:` uses, a context-isolation bypass). | Updated within semver ranges; Electron 40.7.0 → 40.10.6. | All suites re-run on 40.10.6, incl. Windows unpacked build and packaged-app smoke check. |
 | 19 | Distribution | All renderer libraries were runtime `dependencies`, so the installer shipped the whole `node_modules` (app.asar 97.3 MB) although Vite already bundles them; test files were packaged too. | Only `electron-updater` and `ws` stay runtime dependencies; tests excluded. | app.asar **97.3 MB → 5.0 MB**; packaged app starts, renders and saves (Linux package with the same file config). |
 
 ### P2 — medium
@@ -106,7 +106,7 @@ outcome:
 | `node scripts/e2e-electron.cjs` (Electron 40.7, Linux/Xvfb) | 6/6 pass: navigation guard, IPC allowlists, app-image under CSP, single instance, save-on-close, reload |
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
 | CSP | No violations: app build, demo site, Electron |
-| `npm audit --omit=dev` | 0 high/critical (41 moderate — TipTap 2.x) |
+| `npm audit` | `--omit=dev` reports 0, but only because the bundled renderer libraries became devDependencies (see #19) — the 41 moderate TipTap 2.x advisories still apply to the shipped editor, and Electron advisories fixed only in 41.10.6+/42.11.16 remain (see §4). The other remaining high advisories are in build tools (electron-builder, Vite and their dependencies). |
 | `electron-builder --win --x64 --dir` (on Linux) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
 | Packaged app smoke (Linux `--dir` build, same files config) | Starts from app.asar, renders, saves over IPC, writes its log |
 
@@ -120,6 +120,11 @@ AI calls in tests are intercepted locally.
 
 - **P1 — Code signing (known #6).** Requires a certificate or Azure Trusted Signing account; config is
   ready (`docs/RELEASING.md`). Then report the signed build to Heimdal.
+- **P1 — Upgrade Electron to a currently supported major (40 → 42+).** 40.10.6 is the newest 40.x;
+  advisories fixed only in 41.10.6/42.11.16 remain. Most concern features HiveMind does not use or
+  blocks (iframes, popups, `<webview>`, extensions, off-screen rendering), but the CA-certificate
+  mitigation (eMudhra intermediates) affects all HTTPS calls. Needs Windows testing of capture,
+  overlay and updater.
 - **P1 — Verify known #1 on Windows.** Record system audio on a Windows machine (ideally at 125–150 %
   display scaling) and confirm the visualizer moves.
 - **P2 — TipTap 2 → 3 migration** to clear 41 moderate advisories (breaking API changes in the editor).
