@@ -17,7 +17,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { createDemoState } = await import(path.join(root, 'docs/demo/fixture.mjs'));
 const port = 4300 + Math.floor(Math.random() * 500);
 const BASE = `http://localhost:${port}/`;
-const server = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { cwd: root, stdio: 'ignore', shell: process.platform === 'win32' });
+// Run Vite's entry point directly (not through npx) so that stopping it stops the actual server.
+const server = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--port', String(port), '--strictPort'], { cwd: root, stdio: 'ignore' });
 for (let i = 0; i < 60; i++) {
   try { if ((await fetch(BASE)).ok) break; } catch { /* starting */ }
   await new Promise((resolve) => setTimeout(resolve, 250));
