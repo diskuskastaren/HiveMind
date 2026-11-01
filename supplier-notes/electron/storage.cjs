@@ -97,6 +97,51 @@ async function copyTree(source, target) {
   }
 }
 
+/**
+ * Copies a live folder (images, attachments) into a backup. The app never changes these files in
+ * place (each gets a unique name), and nothing writes to a file inside a backup. So a file that is
+ * unchanged since the previous backup (same name, size and modification time) is hard-linked to
+ * that backup's copy instead of being copied again. Every backup still contains every file, but an
+ * unchanged file uses its disk space once. Links only ever point to earlier backups, never to the
+ * live folders, so editing or deleting a live file cannot alter a backup. Where hard links are not
+ * supported (e.g. FAT-formatted drives) the file is copied, as before.
+ */
+async function snapshotTree(source, target, previous) {
+  let entries;
+  try { entries = await fs.promises.readdir(source, { withFileTypes: true }); }
+  catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  await fs.promises.mkdir(target, { recursive: true });
+  for (const entry of entries) {
+    const from = path.join(source, entry.name);
+    const to = path.join(target, entry.name);
+    const earlier = previous && path.join(previous, entry.name);
+    if (entry.isDirectory()) {
+      await snapshotTree(from, to, earlier);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const current = await fs.promises.stat(from).catch((error) => {
+      if (error.code === 'ENOENT') return null; // deleted since the folder was listed
+      throw error;
+    });
+    if (!current) continue;
+    if (earlier && await linkIfUnchanged(earlier, to, current)) continue;
+    await fs.promises.copyFile(from, to, fs.constants.COPYFILE_FICLONE);
+    // A plain copy gets a new modification time on some systems; keep the original so the next
+    // backup can tell that the file has not changed.
+    await fs.promises.utimes(to, current.atimeMs / 1000, current.mtimeMs / 1000).catch(() => {});
+  }
+}
+
+async function linkIfUnchanged(earlier, target, current) {
+  const stat = await fs.promises.lstat(earlier).catch(() => null);
+  if (!stat || !stat.isFile() || stat.size !== current.size || Math.abs(stat.mtimeMs - current.mtimeMs) >= 1) return false;
+  return fs.promises.link(earlier, target).then(() => true, () => false);
+}
+
 class StorageService {
   constructor(dataDir, options = {}) {
     this.readSecret = options.readSecret || (() => ({}));
@@ -259,14 +304,14 @@ class StorageService {
       envelope.state.settings.groqApiKey = '';
     }
     await fs.promises.mkdir(this.backupDir, { recursive: true });
+    const previous = await this.latestBackupDir();
     const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID().slice(0, 8)}`;
     const stage = path.join(this.backupDir, `.${id}.tmp`);
     const target = path.join(this.backupDir, id);
     try {
       await fs.promises.mkdir(stage);
       await fs.promises.writeFile(path.join(stage, 'Combobulator-data.json'), JSON.stringify(envelope), 'utf8');
-      await copyTree(this.imagesDir, path.join(stage, 'images'));
-      await copyTree(this.attachmentsDir, path.join(stage, 'attachments'));
+      await this.snapshotFiles(stage, previous);
       await fs.promises.rename(stage, target);
       this.lastBackupAt = Date.now();
       this.backupError = null;
@@ -290,6 +335,20 @@ class StorageService {
 
   backup() { return this.run(() => this.withLock(() => this.createBackupLocked())); }
 
+  /** The most recent finished backup: the one a new backup links unchanged files to. */
+  async latestBackupDir() {
+    const backups = await this.listBackups();
+    if (backups.length === 0) return null;
+    backups.sort((a, b) => b.createdAt - a.createdAt);
+    return path.join(this.backupDir, backups[0].id);
+  }
+
+  async snapshotFiles(target, previous) {
+    for (const folder of ['images', 'attachments']) {
+      await snapshotTree(path.join(this.dir, folder), path.join(target, folder), previous && path.join(previous, folder));
+    }
+  }
+
   async listBackups() {
     const entries = await fs.promises.readdir(this.backupDir, { withFileTypes: true }).catch(() => []);
     return Promise.all(entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
@@ -312,6 +371,8 @@ class StorageService {
           ? path.join(this.attachmentsDir, filename) : file;
       });
       if (fs.existsSync(this.file)) {
+        // Looked up before the safety copy's own folder exists, which would otherwise be "latest".
+        const previous = await this.latestBackupDir();
         const emergency = path.join(this.backupDir, `pre-restore-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`);
         await fs.promises.mkdir(emergency, { recursive: true });
         let current = await fs.promises.readFile(this.file, 'utf8');
@@ -324,11 +385,11 @@ class StorageService {
           current = JSON.stringify(parsed);
         } catch { /* Keep corrupt data for manual recovery. */ }
         await fs.promises.writeFile(path.join(emergency, 'Combobulator-data.json'), current, 'utf8');
-        await copyTree(this.imagesDir, path.join(emergency, 'images'));
-        await copyTree(this.attachmentsDir, path.join(emergency, 'attachments'));
+        await this.snapshotFiles(emergency, previous);
       }
       const restoredRaw = JSON.stringify(restored);
       await atomicWrite(this.file, restoredRaw);
+      // Restored files are real copies: a live file must never share its data with a backup.
       await copyTree(path.join(source, 'images'), this.imagesDir);
       await copyTree(path.join(source, 'attachments'), this.attachmentsDir);
       this.lastHash = hash(restoredRaw);
