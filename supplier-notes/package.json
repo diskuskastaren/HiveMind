@@ -13,7 +13,7 @@
     "electron:publish": "vite build && electron-builder --win --publish always",
     "electron:start": "electron .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test electron/storage.test.cjs electron/security.test.cjs && node --experimental-strip-types --test src/utils/product.test.mjs src/utils/followUpLinks.test.mjs src/utils/dates.test.mjs src/store/persistence.test.mjs && node --test src/store/store.test.mjs"
+    "test": "node --test electron/storage.test.cjs electron/security.test.cjs && node --experimental-strip-types --test src/utils/product.test.mjs src/utils/followUpLinks.test.mjs src/utils/dates.test.mjs src/utils/markdown.test.mjs src/store/persistence.test.mjs && node --test src/store/store.test.mjs"
   },
   "build": {
     "appId": "com.fractal.supplier-notes",

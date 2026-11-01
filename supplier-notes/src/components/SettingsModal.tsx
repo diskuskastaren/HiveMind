@@ -46,11 +46,11 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'data', label: 'Data & Storage', icon: <Database className="size-4" /> },
 ];
 
+// o1-mini was removed: it rejects the system prompt and parameters summaries use.
 const GPT_MODELS = [
   { value: 'gpt-4o-mini', label: 'GPT-4o mini (fast, cheap)' },
   { value: 'gpt-4o', label: 'GPT-4o (best quality)' },
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'o1-mini', label: 'o1-mini (reasoning)' },
 ];
 
 // Prices per 1M tokens (source: openai.com/api/pricing)
@@ -58,7 +58,6 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-4o-mini':  { input: 0.15,  output: 0.60  },
   'gpt-4o':       { input: 2.50,  output: 10.00 },
   'gpt-4-turbo':  { input: 10.00, output: 30.00 },
-  'o1-mini':      { input: 3.00,  output: 12.00 },
 };
 const WHISPER_COST_PER_MIN = 0.000667; // $0.04/hr — Groq whisper-large-v3-turbo (~4.5x cheaper than gpt-4o-mini-transcribe)
 
@@ -101,7 +100,7 @@ function CostEstimatePanel({ activeModel }: { activeModel: string }) {
         })}
       </div>
       <p className="text-2xs leading-relaxed text-muted-foreground">
-        Transcription cost is the same regardless of model. Mic mode uses browser speech recognition — no transcription charge. Transcription via Groq Whisper Large V3 Turbo ($0.04/hr). Summary prices from openai.com/api/pricing, ~100 wpm assumed.
+        Transcription cost is the same regardless of model: Groq Whisper Large V3 Turbo ($0.04/hr). In the desktop app the microphone is also transcribed with Groq Whisper, because built-in speech recognition is not available there. Summary prices from openai.com/api/pricing, ~100 wpm assumed.
       </p>
     </div>
   );
@@ -584,7 +583,7 @@ export function SettingsModal() {
                 <SettingRow
                   label="Groq API key"
                   htmlFor="groq-key"
-                  hint="Used for system audio transcription via Groq Whisper. Stored locally — never sent anywhere except Groq."
+                  hint="Used for transcription with Groq Whisper (system audio, and the microphone in the desktop app). Stored encrypted on this computer and only sent to Groq."
                 >
                   {keyInput('groq-key', groqKeyDraft, setGroqKeyDraft, saveGroqKey, showGroqKey, setShowGroqKey, 'gsk_…', groqTestStatus, handleTestGroqKey)}
                   <KeyStatus status={groqTestStatus} error={groqTestError} saved={!!settings.groqApiKey} savedLabel="Groq key saved" />
@@ -595,7 +594,7 @@ export function SettingsModal() {
                 <SettingRow
                   label="OpenAI API key"
                   htmlFor="openai-key"
-                  hint="Used for generating meeting summaries. Stored locally — never sent anywhere except OpenAI."
+                  hint="Used for meeting summaries and meeting analysis. Stored encrypted on this computer and only sent to OpenAI."
                 >
                   {keyInput('openai-key', apiKeyDraft, setApiKeyDraft, saveApiKey, showApiKey, setShowApiKey, 'sk-…', testStatus, handleTestApiKey)}
                   <KeyStatus status={testStatus} error={testError} saved={!!settings.openaiApiKey} savedLabel="API key saved" />
@@ -603,12 +602,26 @@ export function SettingsModal() {
 
                 <Divider />
                 <SectionHeading>Summarization</SectionHeading>
+                <div className="flex items-start gap-4 rounded-lg border p-4">
+                  <Label htmlFor="auto-summarize" className="flex flex-1 flex-col items-start gap-1">
+                    <span className="text-sm font-medium">Summarize recordings automatically</span>
+                    <span className="text-ui leading-relaxed font-normal text-muted-foreground">
+                      When a recording stops, its transcript is sent to OpenAI for a summary. Turn off to summarize only when you click “Generate summary”
+                      — useful for confidential meetings.
+                    </span>
+                  </Label>
+                  <Switch id="auto-summarize" checked={settings.autoSummarize} onCheckedChange={(v) => updateSettings({ autoSummarize: v })} />
+                </div>
+
                 <SettingRow label="GPT model" htmlFor="gpt-model" hint="gpt-4o-mini is recommended — fast and cheap. Use gpt-4o for higher-quality summaries.">
                   <Select value={settings.gptModel} onValueChange={(v) => updateSettings({ gptModel: v })}>
                     <SelectTrigger id="gpt-model" className="w-full max-w-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {!GPT_MODELS.some((m) => m.value === settings.gptModel) && (
+                        <SelectItem value={settings.gptModel}>{settings.gptModel} (no longer listed)</SelectItem>
+                      )}
                       {GPT_MODELS.map((m) => (
                         <SelectItem key={m.value} value={m.value}>
                           {m.label}

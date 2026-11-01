@@ -28,8 +28,32 @@ test('validates AI source quotes and rejects incomplete analysis', () => {
   assert.equal(validateSuggestions(valid, transcript)[0].status, 'pending');
   assert.equal(validateSuggestions({ suggestions: [valid.suggestions[0], valid.suggestions[0]] }, transcript).length, 1);
   assert.equal(sourceHash(transcript), sourceHash(transcript));
-  assert.throws(() => validateSuggestions({ suggestions: [{ ...valid.suggestions[0], sourceQuote: 'Not in the source' }] }, transcript), /untraceable/);
   assert.throws(() => validateSuggestions({}, transcript), /incomplete/);
+});
+
+test('an untraceable suggestion is left out without discarding the rest of the analysis', () => {
+  const transcript = 'Alex: We will send the revised\nplan tomorrow, okay?  Maria: Agreed — ship on Friday.';
+  const good = { kind: 'task', text: 'Send revised plan', owner: 'Alex', dueDate: 'tomorrow', priority: 'medium',
+    sourceQuote: 'send the revised plan tomorrow', timestampSeconds: null };
+  const result = validateSuggestions({ suggestions: [
+    good,
+    { ...good, kind: 'decision', text: 'Ship Friday', sourceQuote: 'Agreed - ship on Friday' },   // punctuation differs
+    { ...good, text: 'Invented', sourceQuote: 'Not in the source' },                            // untraceable
+    { ...good, kind: 'nonsense', text: 'Bad kind' },                                            // malformed
+    null,
+  ] }, transcript);
+  assert.deepEqual(result.map((item) => item.text), ['Send revised plan', 'Ship Friday']);
+  assert.equal(result.dropped, 3);
+  assert.equal(result[0].dueDate, '', 'non-ISO due dates are not passed to date fields');
+});
+
+test('reasoning models get max_completion_tokens and no temperature', async () => {
+  const { chatCompletionBody, isReasoningModel } = await import('./summarize.ts');
+  assert.deepEqual(chatCompletionBody({ model: 'gpt-4o-mini', messages: [], maxTokens: 10, temperature: 0.2 }),
+    { model: 'gpt-4o-mini', messages: [], max_completion_tokens: 10, temperature: 0.2 });
+  assert.equal('temperature' in chatCompletionBody({ model: 'o3-mini', messages: [], maxTokens: 10, temperature: 0.2 }), false);
+  assert.equal(isReasoningModel('gpt-5-mini'), true);
+  assert.equal(isReasoningModel('gpt-4.1'), false);
 });
 
 test('search stays bounded with a large local collection', () => {
