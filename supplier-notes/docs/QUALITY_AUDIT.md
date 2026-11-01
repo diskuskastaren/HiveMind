@@ -117,12 +117,32 @@ check was confirmed to fail against the code it guards against (old permission l
 key-file guard, a deprecated API call). The
 Electron E2E now also runs in the Windows CI job, against Windows' key store (DPAPI) and screen capture.
 
+### Follow-up: backup disk usage
+
+Every backup copied all images and attachments, and up to ~24 backups are kept (10 most recent plus
+one per day for 14 days), so the backups folder grew to about 24× the attachments folder. Backups now
+hard-link files that are unchanged since the previous backup (same name, size and modification time)
+instead of copying them, the way `rsync --link-dest` and Time Machine do:
+
+- Each backup is still a complete folder in the same layout, so restore, older app versions and
+  manual recovery work unchanged, and existing backups need no migration (they age out as before).
+- Links only point to earlier backups, never to the live `images`/`attachments` folders: editing or
+  deleting a live file cannot change a backup, and restored files are real copies.
+- A file changed in place gets a fresh copy; earlier backups keep the earlier version.
+- Where hard links are unsupported (e.g. FAT/exFAT drives) files are copied as before.
+- Measured: 10 backups of 53 MB of files took 511 MB before and 53 MB after; 11 backups took 2.9 s
+  before and 0.15 s after.
+
+Notes: Windows Explorer's folder size counts every link, so the backups folder still *looks* as large
+as before. Moving the data folder copies backups without links (as before); new backups share files
+again. Editing a file inside a backup folder by hand would change every backup that shares it.
+
 ## 3. Test results
 
 | Check | Result |
 |-------|--------|
 | `npm run typecheck` | Pass (0 errors) |
-| `npm test` | 38 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
+| `npm test` | 40 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
 | `npm run build` | Pass (Vite production build with CSP) |
 | `node scripts/e2e-electron.cjs` (Electron 45.2.1; Linux/Xvfb locally and in CI, Windows in CI) | 11/11 pass: navigation guard, IPC allowlists, app-image under CSP, desktop capture permission, single instance, save-on-close, undecryptable key file kept, reload, API key stored encrypted, API key read back after restart, no deprecation warnings |
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
@@ -147,8 +167,6 @@ AI calls in tests are intercepted locally.
   saved by the previous version are still shown in Settings, and that the Teams overlay and an update
   from the previous release work.
 - **P2 — TipTap 2 → 3 migration** to clear 41 moderate advisories (breaking API changes in the editor).
-- **P2 — Backup disk usage.** Each backup copies all images and attachments (up to ~24 backups);
-  large attachment folders multiply. Consider hard links or content-addressed storage.
 - **P3 — Unused settings.** `releaseVersionDraft`, `releaseNotesDraft` and `releaseHistory` are no
   longer used by any screen (kept so older data files round-trip unchanged).
 - **P3 — Bundle size.** One 1.3 MB JS chunk; irrelevant for the desktop app, could be split for the web demo.

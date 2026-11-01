@@ -57,6 +57,9 @@ jobs:
           cache-dependency-path: supplier-notes/package-lock.json
       - run: npm ci
       - run: npm run build
+      # Backups share unchanged files through NTFS hard links.
+      - name: Storage tests
+        run: node --test electron/storage.test.cjs
       # Same checks as on Linux, here against Windows' own key store (DPAPI) and screen capture.
       - name: Electron end-to-end checks
         run: node scripts/e2e-electron.cjs

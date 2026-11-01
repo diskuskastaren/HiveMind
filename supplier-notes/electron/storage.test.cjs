@@ -117,3 +117,70 @@ test('coalesces superseded writes, lets callers wait for the queue, and ignores 
   await service.write(envelope([{ id: 'late', title: 'After restore' }]));
   assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.notes[0].id, 'n5');
 });
+
+test('backups share unchanged files with the previous backup and copy changed ones', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-dedupe-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const service = new StorageService(dir);
+  await fs.mkdir(service.imagesDir, { recursive: true });
+  await fs.mkdir(service.attachmentsDir, { recursive: true });
+  const image = path.join(service.imagesDir, 'img-a.png');
+  const doc = path.join(service.attachmentsDir, 'doc.txt');
+  await fs.writeFile(image, 'image-bytes');
+  await fs.writeFile(doc, 'version 1');
+  await service.read();
+  await service.write(envelope([{ id: 'one', title: 'First' }]));
+  const inBackup = (id, ...parts) => path.join(service.backupDir, id, ...parts);
+  const first = (await service.listBackups())[0].id;
+  const second = (await service.backup()).id;
+
+  // Unchanged files: one copy on disk, present in both backups.
+  const [imageA, imageB, liveImage] = await Promise.all([
+    fs.stat(inBackup(first, 'images', 'img-a.png')), fs.stat(inBackup(second, 'images', 'img-a.png')), fs.stat(image)]);
+  assert.equal(imageA.ino, imageB.ino);
+  assert.ok(imageB.nlink >= 2);
+  assert.notEqual(liveImage.ino, imageB.ino, 'live files are never linked to a backup');
+  assert.equal(liveImage.nlink, 1);
+
+  // An attachment edited in place (same size, saved later) gets its own copy in the next backup;
+  // the earlier backups keep the earlier version.
+  await fs.writeFile(doc, 'version 2');
+  const later = new Date(Date.now() + 5000);
+  await fs.utimes(doc, later, later);
+  const third = (await service.backup()).id;
+  assert.equal(await fs.readFile(inBackup(third, 'attachments', 'doc.txt'), 'utf8'), 'version 2');
+  assert.equal(await fs.readFile(inBackup(second, 'attachments', 'doc.txt'), 'utf8'), 'version 1');
+  assert.notEqual((await fs.stat(inBackup(third, 'attachments', 'doc.txt'))).ino, (await fs.stat(inBackup(second, 'attachments', 'doc.txt'))).ino);
+  assert.equal((await fs.stat(inBackup(third, 'images', 'img-a.png'))).ino, imageB.ino);
+
+  // Removing an older backup (as pruning does) leaves the newer ones complete.
+  await fs.rm(inBackup(first), { recursive: true });
+  assert.equal(await fs.readFile(inBackup(third, 'images', 'img-a.png'), 'utf8'), 'image-bytes');
+
+  // Restoring writes real copies; the safety backup taken first shares unchanged files too.
+  await service.restore(second);
+  assert.equal(await fs.readFile(doc, 'utf8'), 'version 1');
+  assert.equal((await fs.stat(doc)).nlink, 1);
+  const safety = (await service.listBackups()).find((backup) => backup.id.startsWith('pre-restore-')).id;
+  assert.equal(await fs.readFile(inBackup(safety, 'attachments', 'doc.txt'), 'utf8'), 'version 2');
+  assert.equal((await fs.stat(inBackup(safety, 'images', 'img-a.png'))).ino, imageB.ino);
+});
+
+test('backups fall back to copying where hard links are not supported', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-nolinks-'));
+  const realFs = require('node:fs');
+  const link = realFs.promises.link;
+  realFs.promises.link = async () => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }); };
+  t.after(async () => { realFs.promises.link = link; await fs.rm(dir, { recursive: true, force: true }); });
+  const service = new StorageService(dir);
+  await fs.mkdir(service.imagesDir, { recursive: true });
+  await fs.writeFile(path.join(service.imagesDir, 'img-b.png'), 'pixels');
+  await service.read();
+  await service.write(envelope());
+  const first = (await service.listBackups())[0].id;
+  const second = (await service.backup()).id;
+  const [a, b] = await Promise.all([first, second].map((id) => fs.stat(path.join(service.backupDir, id, 'images', 'img-b.png'))));
+  assert.notEqual(a.ino, b.ino);
+  assert.equal(b.nlink, 1);
+  assert.equal(await fs.readFile(path.join(service.backupDir, second, 'images', 'img-b.png'), 'utf8'), 'pixels');
+});
