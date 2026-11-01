@@ -34,11 +34,10 @@ function CollapsibleView({ node, updateAttributes }: any) {
             className="flex-1 cursor-text border-none bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground"
           />
         </div>
-        {open && (
-          <div className="px-3 py-2">
-            <NodeViewContent />
-          </div>
-        )}
+        {/* Kept in the document when collapsed (hidden), so the editor's content stays intact. */}
+        <div className={open ? 'px-3 py-2' : 'hidden'}>
+          <NodeViewContent />
+        </div>
       </div>
     </NodeViewWrapper>
   );
@@ -50,9 +49,21 @@ export const CollapsibleExtension = Node.create({
   content: 'block+',
   defining: true,
 
-  attrs: {
-    title: { default: 'Section' },
-    open: { default: true },
+  addAttributes() {
+    return {
+      title: {
+        default: 'Section',
+        parseHTML: (element) => element.getAttribute('data-title') ?? 'Section',
+        renderHTML: (attributes) => ({ 'data-title': attributes.title }),
+      },
+      open: {
+        default: true,
+        // Before these attributes were registered, every section was saved without a title and as
+        // closed, so its content could not be seen. Open those, keep the others as saved.
+        parseHTML: (element) => element.getAttribute('data-open') !== 'false' || !element.hasAttribute('data-title'),
+        renderHTML: (attributes) => ({ 'data-open': attributes.open ? 'true' : 'false' }),
+      },
+    };
   },
 
   addNodeView() {
@@ -63,16 +74,8 @@ export const CollapsibleExtension = Node.create({
     return [{ tag: 'div[data-type="collapsible"]' }];
   },
 
-  renderHTML({ HTMLAttributes, node }) {
-    return [
-      'div',
-      mergeAttributes(HTMLAttributes, {
-        'data-type': 'collapsible',
-        'data-title': node.attrs.title,
-        'data-open': node.attrs.open ? 'true' : 'false',
-      }),
-      0,
-    ];
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes({ 'data-type': 'collapsible' }, HTMLAttributes), 0];
   },
 
   addCommands() {

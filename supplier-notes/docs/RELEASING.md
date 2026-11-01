@@ -82,8 +82,8 @@ cannot verify a publisher they don't know.
 
 The `CI` workflow (`.github/workflows/ci.yml`) runs on every push and pull request:
 
-- **Linux:** typecheck, unit tests, production build, Electron end-to-end checks (Xvfb) and browser
-  end-to-end checks (Playwright, AI providers mocked).
+- **Linux:** typecheck, unit tests, production build, Electron end-to-end checks (Xvfb), browser
+  end-to-end checks (Playwright, AI providers mocked) and note-editor checks.
 - **Windows:** runs the Electron end-to-end checks (incl. API keys in the Windows key store and the
   screen-capture permission), builds the unsigned installer with `--publish never`, launches the
   packaged app with `scripts/smoke-electron.cjs`, and attaches the installer to the run as the
@@ -108,6 +108,7 @@ npm test
 npm run build
 xvfb-run -a node scripts/e2e-electron.cjs   # Linux; on Windows: node scripts/e2e-electron.cjs
 node scripts/e2e-browser.mjs                 # needs Playwright: npx playwright install chromium
+node scripts/e2e-editor.mjs                  # note editor: every feature, stored notes never rewritten
 npx electron-builder --win --publish never   # Windows; release/HiveMind-Setup-<version>.exe
 node scripts/smoke-electron.cjs              # Windows only; launches the packaged app
 ```

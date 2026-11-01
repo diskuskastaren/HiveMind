@@ -1,24 +1,18 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import { Extension } from '@tiptap/core';
 import { EditorState, Plugin } from '@tiptap/pm/state';
 import { toast } from 'sonner';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
-import Placeholder from '@tiptap/extension-placeholder';
-import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
+import { CharacterCount, Placeholder } from '@tiptap/extensions';
+import { TaskItem, TaskList } from '@tiptap/extension-list';
 import Highlight from '@tiptap/extension-highlight';
-import Underline from '@tiptap/extension-underline';
-import Link from '@tiptap/extension-link';
 import Typography from '@tiptap/extension-typography';
 import Superscript from '@tiptap/extension-superscript';
 import Subscript from '@tiptap/extension-subscript';
-import CharacterCount from '@tiptap/extension-character-count';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableHeader from '@tiptap/extension-table-header';
-import TableCell from '@tiptap/extension-table-cell';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import Mention from '@tiptap/extension-mention';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
@@ -89,6 +83,11 @@ import { FindReplaceExtension, FindReplacePanel } from './editor/FindReplace';
 import { createMentionSuggestion, type MentionItem } from './editor/MentionSuggestion';
 
 const TAB_CHAR = '\u00A0\u00A0\u00A0\u00A0';
+
+// Defined once: BubbleMenu dispatches an editor update whenever these props change identity, which
+// together with re-rendering on every editor update would loop forever if they were created inline.
+const BUBBLE_MENU_OPTIONS = { placement: 'top-start', offset: 10 } as const;
+const showBubbleMenu = ({ state }: { state: EditorState }) => !state.selection.empty && !(state.selection as { node?: unknown }).node;
 
 const ToolbarBtn = ({
   active,
@@ -280,18 +279,26 @@ export function NoteEditor() {
   }, [activeNoteId]);
 
   const editor = useEditor({
+    // The toolbar, selection menu, find panel, template picker and word count read the editor's
+    // state while rendering, so re-render on every change (TipTap 2's behaviour; off by default in 3).
+    shouldRerenderOnTransaction: true,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+        link: {
+          autolink: true,
+          openOnClick: false,
+          HTMLAttributes: { class: 'tiptap-link', rel: 'noopener noreferrer' },
+        },
+        // New in TipTap 3's StarterKit. TrailingNode would append an empty paragraph to every note
+        // that ends in a list or table (and save it); ListKeymap changes Backspace/Delete in lists.
+        trailingNode: false,
+        listKeymap: false,
+      }),
       Placeholder.configure({ placeholder: 'Start typing… (type / for commands, @ to mention)' }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Highlight,
-      Underline,
-      Link.configure({
-        autolink: true,
-        openOnClick: false,
-        HTMLAttributes: { class: 'tiptap-link', rel: 'noopener noreferrer' },
-      }),
       Typography,
       Superscript,
       Subscript,
@@ -375,7 +382,8 @@ export function NoteEditor() {
     const switchedNote = loadedNoteIdRef.current !== note.id;
     if (!switchedNote && editor.getHTML() === storeContent) return;
     switchingRef.current = true;
-    editor.commands.setContent(storeContent, false);
+    // Loading a note is not an edit: don't emit an update (TipTap 3 emits one by default).
+    editor.commands.setContent(storeContent, { emitUpdate: false });
     if (switchedNote) {
       // Undo history belongs to one note. Without a fresh history, Ctrl+Z right after
       // opening a note restored the previous note's text — and saved it into this note.
@@ -550,7 +558,7 @@ export function NoteEditor() {
   const applyTemplate = (key: string) => {
     if (!editor || !activeNoteId) return;
     const content = TEMPLATES[key]?.content || '';
-    editor.commands.setContent(content);
+    editor.commands.setContent(content, { emitUpdate: false });
     updateNote(activeNoteId, { content });
   };
 
@@ -1024,17 +1032,9 @@ export function NoteEditor() {
 
           {/* Editor */}
           <div className="relative">
+            {/* z-20: above the sticky toolbar (z-10), as TipTap 2's popup was, for selections near the top. */}
             {editor && (
-              <BubbleMenu
-                editor={editor}
-                tippyOptions={{ duration: 100, placement: 'top-start', maxWidth: 'none' }}
-                shouldShow={({ state }) => {
-                  const { selection } = state;
-                  if (selection.empty) return false;
-                  if ((selection as any).node) return false;
-                  return true;
-                }}
-              >
+              <BubbleMenu editor={editor} options={BUBBLE_MENU_OPTIONS} shouldShow={showBubbleMenu} className="z-20">
                 <div role="toolbar" aria-label="Selection actions" className="flex items-center gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
                   <button
                     type="button"

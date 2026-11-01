@@ -67,7 +67,11 @@ node scripts/e2e-electron.cjs
 node scripts/e2e-browser.mjs
 ```
 
-`npm install` does not download the Electron binary; it is fetched the first time Electron starts. On Linux run the Electron check under Xvfb (`xvfb-run -a node scripts/e2e-electron.cjs`). The browser check needs Playwright with Chromium (`npx playwright install chromium`). Windows installers are built with `npm run electron:build`; see [releasing and code signing](supplier-notes/docs/RELEASING.md). The latest quality audit is in [docs/QUALITY_AUDIT.md](supplier-notes/docs/QUALITY_AUDIT.md).
+```bash
+node scripts/e2e-editor.mjs
+```
+
+`npm install` does not download the Electron binary; it is fetched the first time Electron starts. On Linux run the Electron check under Xvfb (`xvfb-run -a node scripts/e2e-electron.cjs`). The browser and editor checks need Playwright with Chromium (`npx playwright install chromium`). Windows installers are built with `npm run electron:build`; see [releasing and code signing](supplier-notes/docs/RELEASING.md). The latest quality audit is in [docs/QUALITY_AUDIT.md](supplier-notes/docs/QUALITY_AUDIT.md).
 
 The [interactive demo](https://diskuskastaren.github.io/HiveMind/) uses a real [HyperFrames composition](supplier-notes/docs/demo/hivemind-tour/index.html) and [`@hyperframes/player`](https://github.com/heygen-com/hyperframes/tree/main/packages/player) for playback, seeking and scene navigation. Its **Explore live workspace** tab runs the browser build of HiveMind with [fictional sample data](supplier-notes/docs/demo/fixture.mjs). The [demo source and rebuild steps](supplier-notes/docs/demo/README.md) are included in this repository.
 
