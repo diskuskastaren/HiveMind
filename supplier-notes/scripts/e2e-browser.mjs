@@ -79,7 +79,10 @@ try {
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => window.__xss || 0), 0);
     ok('HTML stored in notes is never executed (sidebar previews, search index)');
-    assert.deepEqual(errors, []);
+    // This fixture deliberately contains an inline onerror handler. Newer Chromium (156+) reports the
+    // Content-Security-Policy *blocking* that handler while the note is parsed inertly for previews and
+    // search; that is the policy working, not a failure. Anything else is still an error.
+    assert.deepEqual(errors.filter((message) => !/inline event handler.*has been blocked/i.test(message)), []);
     await context.close();
   }
 
