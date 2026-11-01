@@ -118,8 +118,8 @@ AI calls in tests are intercepted locally.
 
 ## 4. Remaining issues (prioritized)
 
-- **P1 — Code signing (known #6).** Requires a certificate or Azure Trusted Signing account; config is
-  ready (`docs/RELEASING.md`). Then report the signed build to Heimdal.
+- **Decided — releases stay unsigned (open source, MIT).** Expect SmartScreen warnings and occasional
+  antivirus flags; mitigations and the free SignPath option are in `docs/RELEASING.md`.
 - **P1 — Upgrade Electron to a currently supported major (40 → 42+).** 40.10.6 is the newest 40.x;
   advisories fixed only in 41.10.6/42.11.16 remain. Most concern features HiveMind does not use or
   blocks (iframes, popups, `<webview>`, extensions, off-screen rendering), but the CA-certificate
@@ -147,9 +147,9 @@ AI calls in tests are intercepted locally.
 
 ## 6. Recommended next steps
 
-1. Obtain signing, publish a signed release, ask users on older versions to install it manually.
-2. Run the Windows checks listed in §3 and `scripts/e2e-electron.cjs` on Windows.
-3. Add `npm test`, `npm run build` and both E2E scripts to a CI workflow (GitHub Actions has Xvfb
-   and Playwright available).
+1. Watch the first `CI` runs (`.github/workflows/ci.yml`): Linux tests + end-to-end checks, and a
+   Windows job that builds the installer, launches it and attaches it as an artifact.
+2. Use that installer for the Windows checks in §3 (visualizer with system audio, update flow).
+3. Report false positives to Heimdal for each release (or apply for free signing via SignPath).
 4. Decide on the summary provider/endpoint question for NDA meetings.
-5. Plan the TipTap 3 migration.
+5. Plan the Electron 42+ and TipTap 3 upgrades.

@@ -19,7 +19,7 @@ and distributed, rather than only a false positive:
 4. **Debug instrumentation** wrote log files into the installation directory and showed modal
    "[HiveMind debug] … please screenshot" dialogs on any unhandled error.
 
-### What this release changes
+### What changed in the app
 
 - `scripts/after-pack.cjs` signs `HiveMind.exe` after editing its resources **whenever signing is
   configured**, so configuring a certificate now signs the app binary as well as the installer and
@@ -30,33 +30,75 @@ and distributed, rather than only a false positive:
   which opens the latest GitHub release.
 - The debug instrumentation is removed.
 
-### What still has to be done (requires a decision/purchase — cannot be done in code)
+## Signing decision: releases are unsigned
 
-1. **Get a code-signing identity.** Options:
-   - *Azure Trusted Signing* (Microsoft's managed signing service): configure in `package.json`:
-     ```json
-     "win": {
-       "azureSignOptions": {
-         "publisherName": "<exactly as in the certificate>",
-         "endpoint": "https://<region>.codesigning.azure.net",
-         "certificateProfileName": "<profile>",
-         "codeSigningAccountName": "<account>"
-       }
-     }
-     ```
-     and provide `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` when building
-     (Windows build machine).
-   - *OV/EV certificate from a CA*: set `CSC_LINK` (or `WIN_CSC_LINK`) and `CSC_KEY_PASSWORD`
-     (or use a hardware token/HSM per the CA's instructions).
-   Once signed, electron-builder writes the publisher name into `app-update.yml`, and the updater
-   verifies the signature of downloaded updates before installing them.
-2. **Report the false positive to Heimdal** with the signed build's hash, and ask the organization's
-   IT to allow-list the publisher if needed. Signing builds reputation; until then expect some
-   SmartScreen/heuristic friction for new versions.
-3. **Users on an unsigned version** must install the first signed release manually (Download
-   manually / GitHub Releases), because older builds cannot verify a publisher they don't know.
+HiveMind is a free, open-source (MIT) project, so releases are **not code-signed** by choice. What
+that means in practice:
+
+- **Windows SmartScreen** may show "Windows protected your PC" for a new installer. Users choose
+  *More info → Run anyway*. Reputation is tracked per file, so each new unsigned version can show
+  the warning again until enough people have downloaded it.
+- **Antivirus heuristics (e.g. Heimdal)** may still flag the installer or block the downloaded update.
+  When that happens the app shows **Download manually**, which opens the latest GitHub release, and
+  details are written to `%APPDATA%\supplier-notes\logs\hivemind.log`.
+- **Reduce false positives:** report the release's installer to the antivirus vendor as a false
+  positive (most vendors have a submission form), or ask the organization's IT to allow-list it.
+  Publishing the SHA-256 checksum of each installer in the release notes lets users verify downloads:
+  ```powershell
+  Get-FileHash .\HiveMind-Setup-<version>.exe -Algorithm SHA256
+  ```
+
+### If signing is wanted later (free for open source)
+
+[SignPath Foundation](https://signpath.org/) signs open-source projects free of charge. Its published
+requirements include an OSI-approved license (MIT qualifies), source in a public repository, a fully
+automated build (the `CI` workflow builds the installer on `windows-latest`), and a credit line in the
+project. Apply via [signpath.org](https://signpath.org/); check the current terms there.
+
+The build is already prepared: `scripts/after-pack.cjs` signs `HiveMind.exe` whenever signing is
+configured (by default `signAndEditExecutable: false` would skip it), and electron-builder then also
+signs the installer and writes the publisher into `app-update.yml`, so the updater verifies downloaded
+updates. Configuration options:
+
+- *Azure Trusted Signing*:
+  ```json
+  "win": {
+    "azureSignOptions": {
+      "publisherName": "<exactly as in the certificate>",
+      "endpoint": "https://<region>.codesigning.azure.net",
+      "certificateProfileName": "<profile>",
+      "codeSigningAccountName": "<account>"
+    }
+  }
+  ```
+  with `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` set when building (Windows).
+- *A certificate file*: set `CSC_LINK` (or `WIN_CSC_LINK`) and `CSC_KEY_PASSWORD`.
+- *SignPath*: integrates with GitHub Actions to sign the installer built by CI (see SignPath's documentation).
+
+Users on an unsigned version must install the first signed release manually, because older builds
+cannot verify a publisher they don't know.
 
 ## Release checklist
+
+The `CI` workflow (`.github/workflows/ci.yml`) runs on every push and pull request:
+
+- **Linux:** typecheck, unit tests, production build, Electron end-to-end checks (Xvfb) and browser
+  end-to-end checks (Playwright, AI providers mocked).
+- **Windows:** builds the unsigned installer with `--publish never`, launches the packaged app with
+  `scripts/smoke-electron.cjs`, and attaches the installer to the run as the `HiveMind-installer`
+  artifact (kept 7 days) for manual testing.
+
+To release:
+
+1. Bump `version` in `supplier-notes/package.json` and push; wait for CI to pass.
+2. Install the CI artifact on a test machine: check recording (incl. the visualizer with system
+   audio), then quit and reopen.
+3. On a Windows machine with a GitHub token that may create releases: `npm run electron:publish`.
+4. Add the installer's SHA-256 checksum and the changes to the GitHub release notes.
+5. On a machine with the previous version, confirm the update arrives and installs; if not, read
+   `%APPDATA%\supplier-notes\logs\hivemind.log`.
+
+The same checks locally:
 
 ```bash
 npm ci
@@ -64,9 +106,7 @@ npm run typecheck
 npm test
 npm run build
 xvfb-run -a node scripts/e2e-electron.cjs   # Linux; on Windows: node scripts/e2e-electron.cjs
-npm run electron:build                       # Windows; produces release/HiveMind-Setup-<version>.exe
+node scripts/e2e-browser.mjs                 # needs Playwright: npx playwright install chromium
+npx electron-builder --win --publish never   # Windows; release/HiveMind-Setup-<version>.exe
 node scripts/smoke-electron.cjs              # Windows only; launches the packaged app
 ```
-
-Then bump the version in `package.json`, publish with `npm run electron:publish` (requires a GitHub
-token with release permissions), and check `logs/hivemind.log` on a test machine after updating.
