@@ -1,11 +1,8 @@
 import type { Note, Task, Decision } from '../types';
 import { format } from 'date-fns';
+import { htmlToText } from './html';
 
-function htmlToPlain(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html;
-  return el.textContent || '';
-}
+const htmlToPlain = (html: string) => htmlToText(html, { separateBlocks: true }).replace(/\s+/g, ' ').trim();
 
 function htmlToMarkdown(html: string): string {
   let md = html;

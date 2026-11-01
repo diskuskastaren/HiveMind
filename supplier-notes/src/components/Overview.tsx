@@ -35,6 +35,7 @@ export function Overview() {
   const addNote = useStore((s) => s.addNote);
   const addInternalNote = useStore((s) => s.addInternalNote);
   const toggleHelp = useStore((s) => s.toggleHelp);
+  const setActiveProject = useStore((s) => s.setActiveProject);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -173,7 +174,7 @@ export function Overview() {
           </div>
 
           <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-6">
-            {recentProjects.length > 1 && <section className="flex flex-col gap-2.5"><h2 className="text-sm font-semibold">Recently updated projects</h2><div className="flex flex-col gap-1">{recentProjects.map(({ project, lastTouched }) => <div key={project.id} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-xs"><span className="font-medium">{project.name}</span><span className="text-muted-foreground">{formatRelativeTime(lastTouched)}</span></div>)}</div></section>}
+            {recentProjects.length > 1 && <section className="flex flex-col gap-2.5"><h2 className="text-sm font-semibold">Recently updated projects</h2><div className="flex flex-col gap-1">{recentProjects.map(({ project, lastTouched }) => <button key={project.id} type="button" onClick={() => setActiveProject(project.id)} aria-current={project.id === activeProjectId ? 'true' : undefined} className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-left text-xs transition-colors hover:bg-accent/60"><span className="flex min-w-0 items-center gap-2 font-medium"><ColorDot color={project.color} /><span className="truncate">{project.name}</span></span><span className="shrink-0 text-muted-foreground">{formatRelativeTime(lastTouched)}</span></button>)}</div></section>}
             {recentItems.length > 0 && (
               <section className="flex flex-col gap-2.5">
                 <h2 className="text-sm font-semibold">Recently active</h2>

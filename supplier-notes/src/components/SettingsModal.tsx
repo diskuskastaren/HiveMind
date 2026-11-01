@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import { useStore } from '../store/store';
 import { version } from '../../package.json';
 import { exportAllData } from '../utils/export';
-import { validateExport } from '../utils/validateExport';
+import { importBackupFile } from '../utils/backup';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -154,7 +154,6 @@ export function SettingsModal() {
   const updateSettings = useStore((s) => s.updateSettings);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const getExportData = useStore((s) => s.getExportData);
-  const importData = useStore((s) => s.importData);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -168,7 +167,8 @@ export function SettingsModal() {
   const [groqTestError, setGroqTestError] = useState('');
   const [clearConfirm, setClearConfirm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'error'>('idle');
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available' | 'unavailable' | 'error'>('idle');
+  const [updateCheckMessage, setUpdateCheckMessage] = useState('');
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
   const [dataDirChanging, setDataDirChanging] = useState(false);
@@ -322,19 +322,8 @@ export function SettingsModal() {
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = validateExport(JSON.parse(ev.target?.result as string));
-        importData(data);
-        toast.success('Data imported successfully');
-      } catch {
-        toast.error('Invalid backup file', { description: 'Please select a valid HiveMind backup JSON.' });
-      }
-    };
-    reader.readAsText(file);
     e.target.value = '';
+    if (file) void importBackupFile(file);
   };
 
   const handleOpenFolder = async () => {
@@ -389,11 +378,14 @@ export function SettingsModal() {
     const updater = (window as any).electronUpdater;
     if (!updater) return;
     setUpdateCheckStatus('checking');
+    setUpdateCheckMessage('');
     try {
       const result = await updater.check();
       setUpdateCheckStatus(result?.status ?? 'up-to-date');
-    } catch {
+      setUpdateCheckMessage(result?.message ?? '');
+    } catch (error) {
       setUpdateCheckStatus('error');
+      setUpdateCheckMessage(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -746,9 +738,9 @@ export function SettingsModal() {
                   </Label>
                   <Switch id="teams-enabled" checked={settings.teamsEnabled} onCheckedChange={(v) => updateSettings({ teamsEnabled: v })} />
                 </div>
-                <div role="note" className="flex gap-2.5 rounded-lg bg-warning-soft px-3.5 py-3 text-ui text-warning">
+                <div role="note" className="flex gap-2.5 rounded-lg bg-muted px-3.5 py-3 text-ui text-subtle-foreground">
                   <Info className="mt-0.5 size-4 shrink-0" />
-                  <span>Changes to Teams integration take effect after restarting the app.</span>
+                  <span>Detection connects only to the Teams app on this computer (its local third-party app API). When it is off, HiveMind does not connect to Teams.</span>
                 </div>
                 <Divider />
                 <div className="flex flex-col gap-3">
@@ -894,7 +886,16 @@ export function SettingsModal() {
                           {updateCheckStatus === 'up-to-date' && <span className="text-success">· You’re up to date</span>}
                           {updateCheckStatus === 'available' && <span className="text-primary">· Update available — downloading…</span>}
                           {updateCheckStatus === 'error' && <span className="text-destructive">· Could not check for updates</span>}
+                          {updateCheckStatus === 'unavailable' && <span>· {updateCheckMessage}</span>}
                         </span>
+                        {updateCheckStatus === 'error' && (
+                          <span className="text-xs text-muted-foreground">
+                            {updateCheckMessage && `${updateCheckMessage} · `}
+                            <button type="button" className="text-primary underline underline-offset-2" onClick={() => (window as any).electronUpdater?.openReleases?.()}>
+                              Download the latest version manually
+                            </button>
+                          </span>
+                        )}
                       </div>
                       <Button variant="outline" size="sm" onClick={handleCheckForUpdates} disabled={updateCheckStatus === 'checking'}>
                         <RefreshCw className={updateCheckStatus === 'checking' ? 'animate-spin' : undefined} />

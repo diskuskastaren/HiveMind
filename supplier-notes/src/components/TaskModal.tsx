@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useStore } from '../store/store';
+import { isUnlinkedFollowUp, linkedFollowUpOf } from '../utils/followUpLinks';
 import type { TaskStatus, Priority, TaskUpdate } from '../types';
 import { format } from 'date-fns';
 import { ArrowUpRight, Bookmark, Link2, Link2Off, Paperclip, Plus, SquareCheck, Trash2, X } from 'lucide-react';
@@ -11,17 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Kbd } from '@/components/ui/kbd';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ColorDot, EntityChip, PRIORITY_LABEL, STATUS_LABEL } from './common';
+import { ColorDot, EntityChip, ownerInitials, PRIORITY_LABEL, STATUS_LABEL } from './common';
 import { DatePicker } from './DatePicker';
-
-function ownerInitials(owner: string): string {
-  return owner
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .slice(0, 2)
-    .join('');
-}
 
 const UNASSIGNED = '__unassigned__';
 
@@ -92,11 +85,19 @@ export function TaskModal() {
   const task = useStore((s) => s.tasks.find((t) => t.id === s.editingTaskId));
   const notes = useStore((s) => s.notes);
   const suppliers = useStore((s) => s.suppliers);
+  const tasks = useStore((s) => s.tasks);
   const followUps = useStore((s) => s.followUps);
   const projects = useStore((s) => s.projects);
   const updateTask = useStore((s) => s.updateTask);
-  const updateFollowUp = useStore((s) => s.updateFollowUp);
   const addFollowUp = useStore((s) => s.addFollowUp);
+  const linkTaskAndFollowUp = useStore((s) => s.linkTaskAndFollowUp);
+  const unlinkTaskAndFollowUp = useStore((s) => s.unlinkTaskAndFollowUp);
+  const showFollowUp = (id: string) => {
+    const s = useStore.getState();
+    s.setFocusedFollowUp(id);
+    s.setDashboardSection('followups');
+    s.setActiveView('tasks');
+  };
   const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const navigateToNote = useStore((s) => s.navigateToNote);
@@ -114,26 +115,33 @@ export function TaskModal() {
   const [newUpdateText, setNewUpdateText] = useState('');
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
   const [newFollowUpText, setNewFollowUpText] = useState('');
+  const [unsavedHint, setUnsavedHint] = useState(false);
   const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
 
+  // Load the form when a task is opened. This must depend on the task *id* only: the flag
+  // switch, follow-up linking and attachments save immediately and replace the task object,
+  // which used to reset the form and silently discard unsaved title/description edits.
   useEffect(() => {
-    if (task) {
-      setTitle(task.title);
-      setStatus(task.status);
-      setPriority(task.priority);
-      setOwner(task.owner);
-      setDueDate(task.dueDate);
-      setDescription(task.description ?? '');
-      setUpdates(task.updates ?? []);
-      setNewUpdateText('');
-      setCreatingFollowUp(false);
-      setNewFollowUpText('');
-    }
-  }, [task]);
+    const current = useStore.getState().tasks.find((t) => t.id === editingTaskId);
+    if (!current) return;
+    setTitle(current.title);
+    setStatus(current.status);
+    setPriority(current.priority);
+    setOwner(current.owner);
+    setDueDate(current.dueDate);
+    setDescription(current.description ?? '');
+    setUpdates(current.updates ?? []);
+    setNewUpdateText('');
+    setCreatingFollowUp(false);
+    setNewFollowUpText('');
+    setUnsavedHint(false);
+  }, [editingTaskId]);
 
   const handlePickFiles = async () => {
     if (!editingTaskId || !electronAttachments?.pick) return;
-    const filePaths: string[] = await electronAttachments.pick();
+    let filePaths: string[] = [];
+    try { filePaths = await electronAttachments.pick(); }
+    catch (error) { toast.error('Could not attach the file', { description: String(error) }); return; }
     for (const filePath of filePaths) {
       const fileName = filePath.split(/[\\/]/).pop() || filePath;
       addTaskAttachment(editingTaskId, {
@@ -150,11 +158,16 @@ export function TaskModal() {
   const note = notes.find((n) => n.id === task.noteId);
   const supplier = suppliers.find((s) => s.id === task.supplierId);
   const project = projects.find((p) => p.id === task.projectId);
-  const linkedFollowUp =
-    (task.linkedFollowUpId ? followUps.find((f) => f.id === task.linkedFollowUpId) : null) ??
-    followUps.find((f) => f.linkedTaskId === task.id) ??
-    null;
-  const linkableFollowUps = followUps.filter((f) => f.projectId === task.projectId && (!f.linkedTaskId || f.linkedTaskId === task.id));
+  const linkedFollowUp = linkedFollowUpOf(task, followUps) ?? null;
+  const linkableFollowUps = followUps.filter((f) => f.projectId === task.projectId && f.status === 'open' && isUnlinkedFollowUp(f, tasks));
+  const dirty = title !== task.title || status !== task.status || priority !== task.priority || owner !== task.owner ||
+    dueDate !== task.dueDate || description !== (task.description ?? '') ||
+    JSON.stringify(updates) !== JSON.stringify(task.updates ?? []) || !!newUpdateText.trim();
+  // Escape / clicking outside keeps the dialog open when there are unsaved edits; Cancel discards.
+  const requestClose = () => {
+    if (dirty) setUnsavedHint(true);
+    else setEditingTask(null);
+  };
 
   const handleAddUpdate = () => {
     const text = newUpdateText.trim();
@@ -169,14 +182,16 @@ export function TaskModal() {
   };
 
   const save = () => {
+    // A progress note typed but not yet added is saved too, rather than silently dropped.
+    const pendingUpdate = newUpdateText.trim();
     updateTask(editingTaskId, {
-      title,
+      title: title.trim() || task.title,
       status,
       priority,
       owner,
       dueDate,
       description,
-      updates,
+      updates: pendingUpdate ? [{ id: crypto.randomUUID(), timestamp: Date.now(), text: pendingUpdate }, ...updates] : updates,
     });
     setEditingTask(null);
   };
@@ -200,16 +215,27 @@ export function TaskModal() {
       status: 'open',
       projectId: task.projectId,
       supplierId: task.supplierId,
+      noteId: task.noteId,
     });
-    updateTask(editingTaskId, { linkedFollowUpId: newId });
-    updateFollowUp(newId, { linkedTaskId: editingTaskId });
+    linkTaskAndFollowUp(editingTaskId, newId);
     setCreatingFollowUp(false);
     setNewFollowUpText('');
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && setEditingTask(null)}>
-      <DialogContent showCloseButton={false} className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onEscapeKeyDown={(event) => {
+          // Escape in the inline "new follow-up" field only closes that field.
+          if (creatingFollowUp) {
+            event.preventDefault();
+            setCreatingFollowUp(false);
+            setNewFollowUpText('');
+          }
+        }}
+      >
         <DialogDescription className="sr-only">Edit task details</DialogDescription>
         <header className="flex h-13 shrink-0 items-center gap-2 border-b pr-3 pl-6 text-ui text-muted-foreground">
           <SquareCheck className="size-4" />
@@ -230,7 +256,7 @@ export function TaskModal() {
             </>
           )}
           <span className="flex-1" />
-          <Button variant="ghost" size="icon-sm" onClick={() => setEditingTask(null)} aria-label="Close" className="text-muted-foreground">
+          <Button variant="ghost" size="icon-sm" onClick={requestClose} aria-label="Close" className="text-muted-foreground">
             <X />
           </Button>
         </header>
@@ -333,7 +359,11 @@ export function TaskModal() {
                     <span key={att.id} className="group/att inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-ui">
                       <button
                         type="button"
-                        onClick={() => electronAttachments && electronAttachments.open(att.filePath)}
+                        onClick={async () => {
+                          if (!electronAttachments) return;
+                          const problem: string = await electronAttachments.open(att.filePath);
+                          if (problem) toast.error(`Could not open ${att.fileName}`, { description: problem });
+                        }}
                         className="max-w-48 truncate hover:underline"
                         title={`Open ${att.fileName}`}
                       >
@@ -417,13 +447,18 @@ export function TaskModal() {
               {linkedFollowUp ? (
                 <div className="flex items-center gap-2 rounded-lg bg-brand-soft px-2.5 py-2 text-brand-soft-foreground">
                   <Bookmark className="size-3.5 shrink-0" />
-                  <span className="flex-1 truncate text-ui">{linkedFollowUp.text}</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      updateTask(editingTaskId, { linkedFollowUpId: undefined });
-                      updateFollowUp(linkedFollowUp.id, { linkedTaskId: undefined });
-                    }}
+                    onClick={() => { if (!dirty) { setEditingTask(null); showFollowUp(linkedFollowUp.id); } else setUnsavedHint(true); }}
+                    className="flex min-w-0 flex-1 flex-col items-start text-left hover:underline"
+                    title="Show in Follow-up board"
+                  >
+                    <span className={linkedFollowUp.status === 'resolved' ? 'w-full truncate text-ui line-through opacity-70' : 'w-full truncate text-ui'}>{linkedFollowUp.text}</span>
+                    <span className="text-2xs opacity-80">{linkedFollowUp.status === 'resolved' ? 'Resolved' : 'Open'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => unlinkTaskAndFollowUp({ taskId: editingTaskId })}
                     title="Remove link"
                     aria-label="Remove link"
                     className="shrink-0 opacity-70 hover:opacity-100"
@@ -458,17 +493,14 @@ export function TaskModal() {
                   {linkableFollowUps.length > 0 && (
                     <Select
                       value=""
-                      onValueChange={(followUpId) => {
-                        updateTask(editingTaskId, { linkedFollowUpId: followUpId });
-                        updateFollowUp(followUpId, { linkedTaskId: editingTaskId });
-                      }}
+                      onValueChange={(followUpId) => linkTaskAndFollowUp(editingTaskId, followUpId)}
                     >
                       <SelectTrigger className="w-full border-dashed bg-transparent text-muted-foreground">
                         <span className="flex items-center gap-2">
                           <Link2 className="size-3.5" /> Link existing follow-up…
                         </span>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper">
                         {linkableFollowUps.map((f) => (
                           <SelectItem key={f.id} value={f.id}>
                             {f.text}
@@ -492,6 +524,9 @@ export function TaskModal() {
             <Trash2 /> Delete task
           </Button>
           <span className="flex-1" />
+          {unsavedHint && dirty && (
+            <span role="status" className="text-xs text-warning">Unsaved changes — save or cancel.</span>
+          )}
           <Button variant="ghost" size="sm" onClick={() => setEditingTask(null)}>
             Cancel
           </Button>

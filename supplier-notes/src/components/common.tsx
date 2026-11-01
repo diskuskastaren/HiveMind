@@ -99,6 +99,16 @@ export function SectionLabel({ children, count, className }: { children: React.R
   );
 }
 
+/** Up to two initials, e.g. "Nora Vale" → "NV". */
+export function ownerInitials(owner: string): string {
+  return owner
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .slice(0, 2)
+    .join('');
+}
+
 export function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);

@@ -187,12 +187,16 @@ interface AppState {
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => string;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  /** Put back a deleted task with the links it had (used by "Undo"). */
+  restoreTask: (task: Task, links: { followUpId?: string; decisionIds?: string[] }) => void;
   setEditingTask: (id: string | null) => void;
   toggleArchiveNote: (id: string) => void;
 
   addFollowUp: (followUp: Omit<FollowUp, 'id' | 'createdAt'>) => string;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => void;
+  /** Put back a deleted follow-up with its task link (used by "Undo"). */
+  restoreFollowUp: (followUp: FollowUp, links: { taskId?: string }) => void;
   /** Link a task and a follow-up 1:1 (both sides, atomically), releasing previous partners. */
   linkTaskAndFollowUp: (taskId: string, followUpId: string) => void;
   /** Remove the task↔follow-up link held by either record. */
@@ -693,6 +697,20 @@ export const useStore = create<AppState>()(
         decisions: s.decisions.map((d) => ({ ...d, relatedTaskIds: d.relatedTaskIds?.filter((taskId) => taskId !== id) })),
       })),
 
+      restoreTask: (task, links) => set((s) => {
+        if (s.tasks.some((t) => t.id === task.id)) return {};
+        let tasks = [...s.tasks, { ...task, linkedFollowUpId: undefined }];
+        let followUps = s.followUps;
+        if (links.followUpId) ({ tasks, followUps } = linkFollowUp(tasks, followUps, task.id, links.followUpId));
+        const decisionIds = new Set(links.decisionIds ?? []);
+        return {
+          tasks,
+          followUps,
+          decisions: decisionIds.size ? s.decisions.map((d) => decisionIds.has(d.id) && !(d.relatedTaskIds ?? []).includes(task.id)
+            ? { ...d, relatedTaskIds: [...(d.relatedTaskIds ?? []), task.id] } : d) : s.decisions,
+        };
+      }),
+
       setEditingTask: (id) => set({ editingTaskId: id }),
 
       toggleArchiveNote: (id) =>
@@ -729,6 +747,12 @@ export const useStore = create<AppState>()(
         followUps: s.followUps.filter((f) => f.id !== id),
         tasks: s.tasks.map((t) => t.linkedFollowUpId === id ? { ...t, linkedFollowUpId: undefined } : t),
       })),
+
+      restoreFollowUp: (followUp, links) => set((s) => {
+        if (s.followUps.some((f) => f.id === followUp.id)) return {};
+        const followUps = [...s.followUps, { ...followUp, linkedTaskId: undefined }];
+        return links.taskId ? linkFollowUp(s.tasks, followUps, links.taskId, followUp.id) : { followUps };
+      }),
 
       linkTaskAndFollowUp: (taskId, followUpId) => set((s) => linkFollowUp(s.tasks, s.followUps, taskId, followUpId)),
       unlinkTaskAndFollowUp: (ids) => set((s) => unlinkFollowUp(s.tasks, s.followUps, ids)),

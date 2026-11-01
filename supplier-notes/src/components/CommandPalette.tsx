@@ -52,7 +52,6 @@ export function CommandPalette() {
   const setActiveView = useStore((s) => s.setActiveView);
   const toggleRightPanel = useStore((s) => s.toggleRightPanel);
   const getExportData = useStore((s) => s.getExportData);
-  const importData = useStore((s) => s.importData);
   const setRightPanelTab = useStore((s) => s.setRightPanelTab);
 
   const run = (fn: () => void) => () => {
@@ -204,7 +203,7 @@ export function CommandPalette() {
                 Backup all data
                 <span className="ml-auto text-xs text-muted-foreground">Export everything to JSON</span>
               </CommandItem>
-              <CommandItem keywords={['restore', 'import', 'backup', 'json']} onSelect={run(() => pickAndImportBackup(importData))}>
+              <CommandItem keywords={['restore', 'import', 'backup', 'json']} onSelect={run(() => pickAndImportBackup())}>
                 <Upload />
                 Restore from backup
               </CommandItem>

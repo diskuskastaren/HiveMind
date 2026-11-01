@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useStore, INTERNAL_TAB_ID, SUPPLIER_COLORS } from '../store/store';
 import { TEMPLATES } from '../utils/templates';
 import { format } from 'date-fns';
@@ -45,13 +45,18 @@ import {
 import { cn } from '@/lib/utils';
 import { ColorDot, IconButton, Monogram } from './common';
 import type { ActiveView, Note, Supplier } from '../types';
+import { htmlToText } from '../utils/html';
 
-function htmlPreview(html: string): string {
-  const el = document.createElement('div');
-  // Separate block elements so headings and paragraphs don't run together
-  el.innerHTML = html.replace(/<\/(p|h[1-6]|li|div|blockquote)>/g, ' </$1>');
-  const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-  return text.length > 60 ? text.slice(0, 60) + '…' : text;
+// Previews are cached per note revision: the sidebar re-renders on every keystroke in the editor.
+const previewCache = new Map<string, { updatedAt: number; text: string }>();
+function notePreview(note: Note): string {
+  const cached = previewCache.get(note.id);
+  if (cached && cached.updatedAt === note.updatedAt) return cached.text;
+  const text = htmlToText(note.content, { separateBlocks: true }).replace(/\s+/g, ' ').trim();
+  const preview = text.length > 60 ? text.slice(0, 60) + '…' : text;
+  if (previewCache.size > 500) previewCache.clear();
+  previewCache.set(note.id, { updatedAt: note.updatedAt, text: preview });
+  return preview;
 }
 
 const NAV_ITEM =
@@ -162,13 +167,16 @@ export function Sidebar() {
     setActiveView('notes');
   };
 
-  const confirmDeleteNote = (id: string) =>
+  const confirmDeleteNote = (id: string) => {
+    const taskCount = tasks.filter((task) => task.noteId === id).length;
     openConfirmDialog({
       title: 'Delete note?',
-      message: 'This note and all its linked tasks and decisions will be removed.',
+      message: `The note${taskCount ? ` and its ${taskCount} task${taskCount === 1 ? '' : 's'}` : ''} will be deleted. ` +
+        'Decisions and follow-ups from it are kept, without the link to the note. Consider archiving instead.',
       confirmLabel: 'Delete note',
       onConfirm: () => deleteNote(id),
     });
+  };
 
   const navItem = (view: ActiveView, label: string, icon: React.ReactNode, trailing?: React.ReactNode) => {
     const on = activeView === view;
@@ -186,10 +194,13 @@ export function Sidebar() {
     );
   };
 
-  const NoteRow = ({ note, archived }: { note: Note; archived?: boolean }) => {
+  // Plain render functions, not components: components declared inside Sidebar would be new types
+  // on every render, so React would remount every row (and lose focus) on each keystroke.
+  const renderNoteRow = (note: Note, archived?: boolean) => {
     const on = activeNoteId === note.id && activeView === 'notes';
     return (
       <div
+        key={note.id}
         role="button"
         tabIndex={0}
         onClick={() => {
@@ -212,7 +223,7 @@ export function Sidebar() {
           <div className={cn('truncate text-ui', on ? 'font-medium text-foreground' : 'text-subtle-foreground')}>
             {note.title || 'Untitled'}
           </div>
-          {note.content && !archived && <div className="truncate text-2xs text-muted-foreground">{htmlPreview(note.content)}</div>}
+          {note.content && !archived && <div className="truncate text-2xs text-muted-foreground">{notePreview(note)}</div>}
         </div>
         <span className="mt-0.5 shrink-0 text-2xs text-muted-foreground tabular-nums group-hover/note:hidden">
           {format(new Date(note.createdAt), 'MMM d')}
@@ -244,11 +255,9 @@ export function Sidebar() {
     );
   };
 
-  const NotesTree = () => (
+  const renderNotesTree = () => (
     <div className="mt-0.5 mb-1.5 ml-[15px] flex flex-col gap-px border-l border-sidebar-border pl-2">
-      {activeNotes.map((n) => (
-        <NoteRow key={n.id} note={n} />
-      ))}
+      {activeNotes.map((n) => renderNoteRow(n))}
       {activeNotes.length === 0 && (
         <p className="px-2 py-1.5 text-2xs text-muted-foreground">
           {archivedNotes.length > 0 ? 'All notes are archived.' : 'No notes yet.'}
@@ -275,13 +284,13 @@ export function Sidebar() {
             <span className="text-2xs tabular-nums">{archivedNotes.length}</span>
             {archivedNotesExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
           </button>
-          {archivedNotesExpanded && archivedNotes.map((n) => <NoteRow key={n.id} note={n} archived />)}
+          {archivedNotesExpanded && archivedNotes.map((n) => renderNoteRow(n, true))}
         </>
       )}
     </div>
   );
 
-  const SupplierMenu = ({ supplier }: { supplier: Supplier }) => (
+  const renderSupplierMenu = (supplier: Supplier) => (
     <DropdownMenu open={menuFor === supplier.id} onOpenChange={(o) => setMenuFor(o ? supplier.id : null)}>
       <DropdownMenuTrigger asChild>
         <button
@@ -348,7 +357,7 @@ export function Sidebar() {
             onSelect={() =>
               openConfirmDialog({
                 title: 'Remove from project?',
-                message: `Remove "${supplier.name}" from this project? Notes in this project for this supplier will be deleted.`,
+                message: `Remove "${supplier.name}" from this project? Its notes, tasks and follow-ups in this project will be deleted; decisions are kept. Notes also linked to another project stay there.`,
                 confirmLabel: 'Remove',
                 onConfirm: () => unlinkSupplierFromProject(supplier.id, activeProjectId),
               })
@@ -363,7 +372,7 @@ export function Sidebar() {
           onSelect={() =>
             openConfirmDialog({
               title: 'Delete supplier?',
-              message: `Delete "${supplier.name}" globally? This removes ALL notes, tasks, and decisions for this supplier across all projects.`,
+              message: `Delete "${supplier.name}" in every project? Its tasks and follow-ups are deleted, and so are notes that belong only to this supplier. Decisions are kept and marked with the supplier's name.`,
               confirmLabel: 'Delete supplier',
               onConfirm: () => deleteSupplier(supplier.id),
             })
@@ -376,10 +385,10 @@ export function Sidebar() {
     </DropdownMenu>
   );
 
-  const SupplierRow = ({ supplier }: { supplier: Supplier }) => {
+  const renderSupplierRow = (supplier: Supplier) => {
     const on = activeTabId === supplier.id;
     return (
-      <>
+      <Fragment key={supplier.id}>
         <div
           role="button"
           tabIndex={0}
@@ -397,10 +406,10 @@ export function Sidebar() {
           <span className="flex-1 truncate text-left">{supplier.name}</span>
           {supplier.pinned && <Pin className="size-3 text-muted-foreground" aria-label="Pinned" />}
           <span className="text-2xs text-muted-foreground tabular-nums group-hover/sup:hidden">{noteCountFor(supplier.id)}</span>
-          <SupplierMenu supplier={supplier} />
+          {renderSupplierMenu(supplier)}
         </div>
-        {on && <NotesTree />}
-      </>
+        {on && renderNotesTree()}
+      </Fragment>
     );
   };
 
@@ -483,7 +492,7 @@ export function Sidebar() {
                     onSelect={() =>
                       openConfirmDialog({
                         title: 'Delete project?',
-                        message: `Delete project "${activeProject.name}"? All notes, tasks, and decisions in this project will be removed.`,
+                        message: `Delete project "${activeProject.name}"? Its tasks and follow-ups are deleted, and so are notes that belong only to this project. Decisions are kept and marked with the project name.`,
                         confirmLabel: 'Delete project',
                         onConfirm: () => deleteProject(activeProject.id),
                       })
@@ -638,9 +647,7 @@ export function Sidebar() {
 
             {!suppliersCollapsed && (
               <>
-                {filtered.map((s) => (
-                  <SupplierRow key={s.id} supplier={s} />
-                ))}
+                {filtered.map((s) => renderSupplierRow(s))}
                 {filtered.length === 0 && (
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">{search ? 'No matches' : 'No suppliers in this project'}</p>
                 )}
@@ -658,7 +665,7 @@ export function Sidebar() {
               <span className="flex-1 text-left">Internal</span>
               <span className="text-2xs text-muted-foreground tabular-nums">{noteCountFor(INTERNAL_TAB_ID)}</span>
             </button>
-            {isInternalTab && <NotesTree />}
+            {isInternalTab && renderNotesTree()}
           </div>
         ) : (
           <div className="px-3 py-8 text-center text-xs text-muted-foreground">Select or create a project to get started</div>

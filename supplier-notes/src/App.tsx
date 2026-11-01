@@ -14,6 +14,7 @@ import { HelpModal } from './components/HelpModal';
 import { TeamsRecordingPrompt } from './components/TeamsRecordingPrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { UpdateDialog } from './components/UpdateDialog';
+import { DecisionDetailDialog } from './components/DecisionDetailDialog';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RecoveryScreen } from './components/RecoveryScreen';
 import { FileText, FolderOpen } from 'lucide-react';
@@ -94,6 +95,8 @@ export default function App() {
   const transcriptRecording = useStore((s) => s.transcriptRecording);
   const teamsEnabled = useStore((s) => s.settings.teamsEnabled);
   const teamsPromptOpen = useStore((s) => s.teamsPromptOpen);
+  const viewingDecisionId = useStore((s) => s.viewingDecisionId);
+  const setViewingDecision = useStore((s) => s.setViewingDecision);
   const theme = useStore((s) => s.settings.theme);
 
   useEffect(() => {
@@ -112,7 +115,7 @@ export default function App() {
         // Dialogs, menus and popovers close themselves (and mark the event handled)
         if (e.defaultPrevented) return;
         const overlayOpen =
-          s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen || s.teamsPromptOpen || s.confirmDialog;
+          s.editingTaskId || s.helpOpen || s.settingsOpen || s.commandPaletteOpen || s.searchOpen || s.teamsPromptOpen || s.confirmDialog || s.viewingDecisionId;
         if (overlayOpen) return;
         if (s.activeView === 'tasks' || s.activeView === 'dashboard') s.setActiveView('notes');
         return;
@@ -237,6 +240,7 @@ export default function App() {
       {helpOpen && <HelpModal />}
       {editingTaskId && <TaskModal />}
       {teamsPromptOpen && <TeamsRecordingPrompt />}
+      {viewingDecisionId && <DecisionDetailDialog key={viewingDecisionId} id={viewingDecisionId} onClose={() => setViewingDecision(null)} />}
       <ConfirmDialog />
       <UpdateDialog />
       <Toaster position="bottom-right" />

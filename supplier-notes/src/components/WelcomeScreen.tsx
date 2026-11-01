@@ -16,7 +16,6 @@ export function WelcomeScreen() {
   const [projectName, setProjectName] = useState('');
   const addProject = useStore((s) => s.addProject);
   const setActiveProject = useStore((s) => s.setActiveProject);
-  const importData = useStore((s) => s.importData);
 
   const handleCreate = () => {
     const trimmed = projectName.trim();
@@ -65,7 +64,7 @@ export function WelcomeScreen() {
             Create project
           </Button>
         </div>
-        <Button variant="link" size="sm" className="self-center text-muted-foreground" onClick={() => pickAndImportBackup(importData)}>
+        <Button variant="link" size="sm" className="self-center text-muted-foreground" onClick={() => pickAndImportBackup()}>
           <Upload />
           Restore from a backup instead
         </Button>

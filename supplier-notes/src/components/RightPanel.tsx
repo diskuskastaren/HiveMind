@@ -1,29 +1,23 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore, INTERNAL_TAB_ID } from '../store/store';
 import { format } from 'date-fns';
 import type { TaskStatus, Task, Decision } from '../types';
-import { Bookmark, CheckCircle2, Circle, Clock, FileText, Gavel, Pencil, Plus, Trash2, Zap } from 'lucide-react';
+import { Bookmark, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock, FileText, Gavel, History, Pencil, Plus, Trash2, Zap } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TranscriptTab } from './TranscriptTab';
 import { FollowUpsPanel } from './FollowUpsPanel';
-import { IconButton, PriorityBadge, SectionLabel } from './common';
+import { IconButton, ownerInitials, PriorityBadge, SectionLabel } from './common';
+import { InlineEditInput } from './InlineEdit';
+import { deleteTaskWithUndo, revokeDecisionWithUndo } from './undoableActions';
+import { dueUrgency, formatDueDate, formatTimeLeft, type DueUrgency } from '../utils/dates';
 import type { RightPanelTab } from '../types';
+import { htmlBlockTexts } from '../utils/html';
 
 function detectActionLines(html: string): string[] {
-  if (!html) return [];
-  const el = document.createElement('div');
-  el.innerHTML = html;
-  const lines: string[] = [];
-  el.querySelectorAll('p, li').forEach((node) => {
-    const text = (node.textContent || '').trim();
-    if (/^(TODO|AI):\s*/i.test(text)) {
-      lines.push(text);
-    }
-  });
-  return lines;
+  return htmlBlockTexts(html).filter((text) => /^(TODO|AI):\s*/i.test(text));
 }
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
@@ -38,45 +32,7 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   done: 'open',
 };
 
-function ownerInitials(owner: string): string {
-  return owner
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .slice(0, 2)
-    .join('');
-}
-
-type DueDateUrgency = 'overdue' | 'soon' | 'normal';
-
-function getDueDateUrgency(dueDate: string): DueDateUrgency {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return 'normal';
-  const diffDays = (d.getTime() - Date.now()) / 86_400_000;
-  if (diffDays < 0) return 'overdue';
-  if (diffDays < 3) return 'soon';
-  return 'normal';
-}
-
-function formatDueDate(dueDate: string): string {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return dueDate;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function formatTimeLeft(dueDate: string): string {
-  const d = new Date(dueDate);
-  if (isNaN(d.getTime())) return '';
-  const diffMs = d.getTime() - Date.now();
-  const absDays = Math.floor(Math.abs(diffMs) / 86_400_000);
-  const absHours = Math.floor(Math.abs(diffMs) / 3_600_000);
-  if (diffMs < 0) return absDays >= 1 ? `${absDays}d overdue` : `${absHours}h overdue`;
-  if (absDays >= 1) return `${absDays}d left`;
-  if (absHours >= 1) return `${absHours}h left`;
-  return 'due soon';
-}
-
-const DUE_DATE_CLASSES: Record<DueDateUrgency, string> = {
+const DUE_DATE_CLASSES: Record<DueUrgency, string> = {
   overdue: 'text-recording font-medium',
   soon: 'text-warning',
   normal: 'text-muted-foreground',
@@ -97,21 +53,19 @@ export function RightPanel() {
   const followUps = useStore((s) => s.followUps);
   const addTask = useStore((s) => s.addTask);
   const updateTask = useStore((s) => s.updateTask);
-  const deleteTask = useStore((s) => s.deleteTask);
   const setEditingTask = useStore((s) => s.setEditingTask);
   const addDecision = useStore((s) => s.addDecision);
   const updateDecision = useStore((s) => s.updateDecision);
-  const deleteDecision = useStore((s) => s.deleteDecision);
   const editingDecisionId = useStore((s) => s.editingDecisionId);
   const setEditingDecision = useStore((s) => s.setEditingDecision);
+  const setViewingDecision = useStore((s) => s.setViewingDecision);
   const navigateToNote = useStore((s) => s.navigateToNote);
 
   const activeNoteContent = useStore((s) => s.notes.find((n) => n.id === s.activeNoteId)?.content || '');
 
   const [quickTask, setQuickTask] = useState('');
   const [quickDecision, setQuickDecision] = useState('');
-  const [editDecisionText, setEditDecisionText] = useState('');
-  const decisionEditRef = useRef<HTMLInputElement>(null);
+  const [showEarlierDecisions, setShowEarlierDecisions] = useState(false);
 
   const detectedActions = useMemo(() => detectActionLines(activeNoteContent), [activeNoteContent]);
 
@@ -140,21 +94,19 @@ export function RightPanel() {
     [tasks, activeProjectId, contextSupplierId, activeNoteId],
   );
 
-  const noteDecisions = useMemo(
+  // Only decisions that currently apply are listed by default; revoked and superseded ones
+  // used to look identical, so revoking appeared to do nothing.
+  const contextDecisions = useMemo(
     () =>
       decisions
-        .filter((d) => d.projectId === activeProjectId && d.supplierId === contextSupplierId && d.noteId === activeNoteId)
+        .filter((d) => d.projectId === activeProjectId && d.supplierId === contextSupplierId)
         .sort((a, b) => b.createdAt - a.createdAt),
-    [decisions, activeProjectId, contextSupplierId, activeNoteId],
+    [decisions, activeProjectId, contextSupplierId],
   );
-
-  const otherDecisions = useMemo(
-    () =>
-      decisions
-        .filter((d) => d.projectId === activeProjectId && d.supplierId === contextSupplierId && d.noteId !== activeNoteId)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [decisions, activeProjectId, contextSupplierId, activeNoteId],
-  );
+  const isActive = (d: Decision) => (d.status || 'active') === 'active';
+  const noteDecisions = contextDecisions.filter((d) => isActive(d) && d.noteId === activeNoteId);
+  const otherDecisions = contextDecisions.filter((d) => isActive(d) && d.noteId !== activeNoteId);
+  const earlierDecisions = contextDecisions.filter((d) => !isActive(d));
 
   const openFollowUpCount =
     tasks.filter((t) => t.supplierId === contextSupplierId && t.projectId === activeProjectId && t.isFollowUp && t.status !== 'done').length +
@@ -190,7 +142,7 @@ export function RightPanel() {
 
   const renderTaskCard = (task: Task, showNoteLink: boolean) => {
     const taskNote = notes.find((n) => n.id === task.noteId);
-    const urgency = task.dueDate ? getDueDateUrgency(task.dueDate) : null;
+    const urgency = task.dueDate ? dueUrgency(task.dueDate) : null;
     const done = task.status === 'done';
 
     return (
@@ -266,7 +218,7 @@ export function RightPanel() {
             className="opacity-0 group-hover/task:opacity-100 hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation();
-              deleteTask(task.id);
+              deleteTaskWithUndo(task.id);
             }}
           >
             <Trash2 />
@@ -277,45 +229,30 @@ export function RightPanel() {
   };
 
   const renderDecision = (d: Decision, showNoteLink: boolean) => {
-    const isEditing = editingDecisionId === d.id;
+    const active = isActive(d);
+    const isEditing = active && editingDecisionId === d.id;
     const sourceNote = showNoteLink ? notes.find((n) => n.id === d.noteId) : undefined;
-    const startEdit = () => {
-      setEditingDecision(d.id);
-      setEditDecisionText(d.text);
-    };
+    const startEdit = () => setEditingDecision(d.id);
     return (
-      <div key={d.id} className="group/dec flex items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5">
+      <div key={d.id} className={cn('group/dec flex items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5', !active && 'bg-transparent')}>
         <Gavel className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {isEditing ? (
-            <Input
-              ref={decisionEditRef}
-              autoFocus
-              aria-label="Edit decision"
-              value={editDecisionText}
-              onChange={(e) => setEditDecisionText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && editDecisionText.trim()) {
-                  updateDecision(d.id, { text: editDecisionText.trim() });
-                  setEditingDecision(null);
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setEditingDecision(null);
-                }
-              }}
-              onBlur={() => {
-                if (editDecisionText.trim()) updateDecision(d.id, { text: editDecisionText.trim() });
-                setEditingDecision(null);
-              }}
-              className="h-8 text-ui"
+            <InlineEditInput
+              label="Edit decision"
+              initialValue={d.text}
+              onCommit={(text) => updateDecision(d.id, { text })}
+              onDone={() => setEditingDecision(null)}
             />
-          ) : (
+          ) : active ? (
             <button type="button" className="text-left text-ui leading-snug" onClick={startEdit} title="Click to edit">
               {d.text}
             </button>
+          ) : (
+            <span className="text-ui leading-snug text-muted-foreground line-through">{d.text}</span>
           )}
           <div className="flex items-center gap-2 text-2xs text-muted-foreground">
+            {!active && <span className="rounded border px-1.5">{d.status}</span>}
             <span className="tabular-nums">{format(new Date(d.createdAt), 'MMM d, HH:mm')}</span>
             {sourceNote && (
               <button
@@ -331,13 +268,20 @@ export function RightPanel() {
           </div>
         </div>
         {!isEditing && (
-          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/dec:opacity-100">
-            <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
-              <Pencil />
+          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/dec:opacity-100 group-hover/dec:opacity-100">
+            <IconButton label="History and details" size="icon-xs" onClick={() => setViewingDecision(d.id)}>
+              <History />
             </IconButton>
-          <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => deleteDecision(d.id)}>
-              <Trash2 />
-            </IconButton>
+            {active && (
+              <>
+                <IconButton label="Edit decision" size="icon-xs" onClick={startEdit}>
+                  <Pencil />
+                </IconButton>
+                <IconButton label="Revoke decision" size="icon-xs" className="hover:text-destructive" onClick={() => revokeDecisionWithUndo(d.id)}>
+                  <Trash2 />
+                </IconButton>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -466,6 +410,20 @@ export function RightPanel() {
                   Other notes
                 </SectionLabel>
                 {otherDecisions.map((d) => renderDecision(d, true))}
+              </div>
+            )}
+            {earlierDecisions.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEarlierDecisions((v) => !v)}
+                  aria-expanded={showEarlierDecisions}
+                  className="flex items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  {showEarlierDecisions ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  Revoked or replaced <span className="tabular-nums">{earlierDecisions.length}</span>
+                </button>
+                {showEarlierDecisions && earlierDecisions.map((d) => renderDecision(d, true))}
               </div>
             )}
           </div>
