@@ -90,6 +90,23 @@ async function main() {
     assert.match(await page.evaluate(`window.electronAttachments.open(${JSON.stringify(process.execPath)})`), /not stored/);
   });
 
+  await check('pasted images are saved over IPC and load through app-image: under the CSP', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const result = await page.evaluate(`(async () => {
+      const violations = [];
+      document.addEventListener('securitypolicyviolation', (e) => violations.push(e.violatedDirective));
+      const bytes = Uint8Array.from(atob('${png}'), (c) => c.charCodeAt(0));
+      const name = await window.electronImages.save(bytes.buffer, 'png');
+      const img = new Image();
+      const loaded = await new Promise((resolve) => { img.onload = () => resolve(true); img.onerror = () => resolve(false); img.src = 'app-image://' + name; });
+      return { name, loaded, width: img.naturalWidth, violations };
+    })()`);
+    assert.match(result.name, /^img-.+\.png$/);
+    assert.equal(result.loaded, true);
+    assert.equal(result.width, 1);
+    assert.deepEqual(result.violations, []);
+  });
+
   await check('a second launch hands over to the running window instead of opening the data file again', async () => {
     const second = launch();
     assert.equal(await exited(second.child, 15000), true, 'second instance should exit');

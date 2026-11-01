@@ -27,7 +27,7 @@
 | Record or import transcripts and review AI suggestions before saving them. | Track decisions and their history as work changes. |
 | Find notes, tasks and decisions with search. | See what needs attention in **Today / My Work** and the follow-up board. |
 
-HiveMind stores its workspace locally and makes automatic backups. You can also export project data as JSON. Transcription and AI analysis use Groq or OpenAI only when you configure the relevant API keys and run those features.
+HiveMind stores its workspace locally and makes automatic backups. You can also export project data as JSON. Transcription and AI analysis use Groq or OpenAI only when you configure the relevant API keys and run those features — see the [privacy and confidentiality guide](supplier-notes/docs/PRIVACY.md) for exactly what is sent where, and how to use HiveMind for meetings under NDA.
 
 ## Install
 
@@ -54,7 +54,19 @@ Useful checks:
 ```bash
 npm run typecheck
 npm test
-npm run electron:build
+npm run build
 ```
+
+End-to-end checks (after `npm run build`; they use temporary profiles and mock all AI providers):
+
+```bash
+node scripts/e2e-electron.cjs
+```
+
+```bash
+node scripts/e2e-browser.mjs
+```
+
+On Linux run the Electron check under Xvfb (`xvfb-run -a node scripts/e2e-electron.cjs`). The browser check needs Playwright with Chromium (`npx playwright install chromium`). Windows installers are built with `npm run electron:build`; see [releasing and code signing](supplier-notes/docs/RELEASING.md). The latest quality audit is in [docs/QUALITY_AUDIT.md](supplier-notes/docs/QUALITY_AUDIT.md).
 
 The [interactive demo](https://diskuskastaren.github.io/HiveMind/) uses a real [HyperFrames composition](supplier-notes/docs/demo/hivemind-tour/index.html) and [`@hyperframes/player`](https://github.com/heygen-com/hyperframes/tree/main/packages/player) for playback, seeking and scene navigation. Its **Explore live workspace** tab runs the browser build of HiveMind with [fictional sample data](supplier-notes/docs/demo/fixture.mjs). The [demo source and rebuild steps](supplier-notes/docs/demo/README.md) are included in this repository.

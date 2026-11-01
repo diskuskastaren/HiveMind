@@ -31,6 +31,61 @@ import { hasSummaryError, requestSummary, useSummaryStatus } from '../utils/summ
 import { AudioVisualizer } from './AudioVisualizer';
 import type { Transcript } from '../types';
 import { MeetingReview } from './MeetingReview';
+import { parseTranscriptFile } from '../utils/transcriptImport';
+
+/**
+ * Add a transcript that was produced elsewhere (e.g. a Microsoft Teams .vtt export or pasted
+ * text). Useful when recording is not allowed: no audio is sent anywhere.
+ */
+function TranscriptImport({ noteId, meetingTime, onImported }: { noteId: string; meetingTime: number; onImported: (id: string) => void }) {
+  const addTranscript = useStore((s) => s.addTranscript);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [duration, setDuration] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const readFile = async (file: File) => {
+    try {
+      const parsed = parseTranscriptFile(await file.text());
+      setText(parsed.text);
+      setDuration(parsed.duration);
+      if (!parsed.text) toast.error('No transcript text found in that file');
+    } catch (error) {
+      toast.error('Could not read the file', { description: String(error) });
+    }
+  };
+  const save = () => {
+    const parsed = parseTranscriptFile(text);
+    if (!parsed.text) return;
+    const id = crypto.randomUUID();
+    addTranscript(noteId, { id, rawText: parsed.text, duration: duration || parsed.duration, recordedAt: meetingTime });
+    setText(''); setDuration(0); setOpen(false);
+    toast.success('Transcript added');
+    onImported(id);
+  };
+
+  if (!open) {
+    return (
+      <Button variant="ghost" size="xs" className="self-start text-muted-foreground" onClick={() => setOpen(true)}>
+        <FileText /> Paste or import a transcript instead
+      </Button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-card p-3">
+      <p className="text-xs text-muted-foreground">Paste a transcript, or open a .txt, .vtt (Microsoft Teams) or .srt file. Nothing is sent anywhere until you ask for a summary or analysis.</p>
+      <Textarea aria-label="Transcript text" className="min-h-28 text-ui" value={text} onChange={(e) => { setText(e.target.value); setDuration(0); }} placeholder="Paste transcript text…" />
+      <input ref={fileRef} type="file" accept=".txt,.vtt,.srt,text/plain,text/vtt" className="hidden"
+        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void readFile(file); }} />
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="xs" onClick={() => fileRef.current?.click()}>Open file…</Button>
+        <span className="flex-1" />
+        <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setText(''); }}>Cancel</Button>
+        <Button size="xs" onClick={save} disabled={!text.trim()}>Add transcript</Button>
+      </div>
+    </div>
+  );
+}
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -517,6 +572,14 @@ export function TranscriptTab() {
         <Button variant="destructive" onClick={handleStart} disabled={mode === 'system' && !groqApiKey}>
           <span className="size-2 rounded-full bg-white" /> Start recording
         </Button>
+
+        {note && (
+          <TranscriptImport
+            noteId={note.id}
+            meetingTime={note.createdAt}
+            onImported={(id) => { setShowStartScreen(false); setSelectedId(id); }}
+          />
+        )}
       </div>
     );
   }
