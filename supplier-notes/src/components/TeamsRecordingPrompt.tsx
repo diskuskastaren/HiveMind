@@ -21,9 +21,6 @@ export function TeamsRecordingPrompt() {
 
   const currentNote = allNotes.find((n) => n.id === activeNoteId) ?? null;
 
-  // #region agent log
-  try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'TeamsRecordingPrompt.tsx:render',message:'component rendering',data:{supplierCount:suppliers.length,suppliersWithoutProjectIds:suppliers.filter((s:any)=>!s.projectIds).map((s:any)=>s.id),activeProjectId,activeNoteId,hasCurrentNote:!!currentNote},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
-  // #endregion
 
   // null = top-level, string = drilled into a supplier
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);

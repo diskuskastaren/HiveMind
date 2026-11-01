@@ -4,6 +4,8 @@ import { buildSearchIndex, searchLocal } from './search.ts';
 import { validateSuggestions, sourceHash, analyzeMeeting } from './meetingIntelligence.ts';
 import { validateExport } from './validateExport.ts';
 import { upgradeDecision } from './decisionMigration.ts';
+import { createRequire } from 'node:module';
+const { validateData } = createRequire(import.meta.url)('../../electron/storage.cjs');
 
 test('searches all information types and ranks a title match first', () => {
   const notes = [{ id: 'n', projectIds: ['p'], supplierIds: ['s'], title: 'Pump review', content: '<p>Flow target</p>', attendees: '', createdAt: 1, updatedAt: 2,
@@ -48,9 +50,26 @@ test('AI service failure is reported without creating data', async () => {
 });
 
 test('accepts version 5 exports with projects and rejects malformed collections', () => {
-  const value = { version: 5, exportedAt: 1, projects: [{ id: 'p' }], suppliers: [], notes: [], tasks: [], decisions: [], followUps: [] };
+  const value = { version: 5, exportedAt: 1, projects: [{ id: 'p', name: 'Project' }], suppliers: [], notes: [], tasks: [], decisions: [], followUps: [] };
   assert.equal(validateExport(value).version, 5);
   assert.throws(() => validateExport({ ...value, notes: {} }), /notes/);
+});
+
+test('imports are rejected up front when the storage layer would refuse to save them', () => {
+  const base = { version: 5, exportedAt: 1, projects: [{ id: 'p', name: 'Project' }], suppliers: [{ id: 's', name: 'S', projectIds: ['p'] }],
+    notes: [{ id: 'n', title: 'Meeting', projectIds: ['p'], supplierIds: ['s'], transcripts: [] }],
+    tasks: [{ id: 't', title: 'Task' }], decisions: [{ id: 'd', text: 'Decision' }], followUps: [{ id: 'f', text: 'Ask' }] };
+  const storageAccepts = (data) => { validateData(JSON.stringify({ version: 11, state: data })); return true; };
+  assert.ok(validateExport(base) && storageAccepts(base));
+  for (const broken of [
+    { ...base, projects: [{ id: 'p' }] },
+    { ...base, notes: [{ id: 'n', projectIds: ['p'], supplierIds: [] }] },
+    { ...base, followUps: [{ id: 'f', text: 7 }] },
+    { ...base, notes: [{ ...base.notes[0], transcripts: 'oops' }] },
+    { ...base, followUps: [{ id: 'f', text: 'a' }, { id: 'f', text: 'b' }] },
+  ]) {
+    assert.throws(() => validateExport(broken));
+  }
 });
 
 test('migrates legacy decisions without losing identity or source references', () => {

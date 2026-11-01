@@ -1,7 +1,9 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import { TEMPLATES } from '../utils/templates';
 import { upgradeDecision } from '../utils/decisionMigration';
+import { linkFollowUp, normalizeFollowUpLinks, unlinkFollowUp } from '../utils/followUpLinks';
+import { createWriteBehindStorage, type PersistBackend } from './persistence';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
@@ -10,6 +12,8 @@ export interface AppSettings {
   gptModel: string;
   temperature: number;
   customSummaryInstructions: string;
+  /** Send the transcript to OpenAI for a summary automatically when a recording stops. */
+  autoSummarize: boolean;
   defaultAudioMode: 'mic' | 'system';
   chunkIntervalSeconds: number;
   autoStopHours: number;
@@ -31,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gptModel: 'gpt-4o-mini',
   temperature: 0.3,
   customSummaryInstructions: '',
+  autoSummarize: true,
   defaultAudioMode: 'system',
   chunkIntervalSeconds: 60,
   autoStopHours: 4,
@@ -47,30 +52,61 @@ const uid = () => crypto.randomUUID();
 
 const electronAPI = typeof window !== 'undefined' && (window as any).electronStore;
 
-const appStorage = {
-  getItem: (name: string): string | null | Promise<string | null> => {
-    if (electronAPI) return electronAPI.read().catch((error: Error) => {
-      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
-      return null;
-    });
-    try { return localStorage.getItem(name); }
-    catch { return null; }
-  },
-  setItem: (name: string, value: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write(value).then((status: unknown) => {
-      window.dispatchEvent(new CustomEvent('storage-status', { detail: status }));
-    }).catch((error: Error) => {
-      window.dispatchEvent(new CustomEvent('storage-error', { detail: error.message }));
-    });
-    try { localStorage.setItem(name, value); }
-    catch (error) { window.dispatchEvent(new CustomEvent('storage-error', { detail: String(error) })); }
-  },
-  removeItem: (name: string): void | Promise<void> => {
-    if (electronAPI) return electronAPI.write('');
-    try { localStorage.removeItem(name); }
-    catch { /* ignore */ }
-  },
+const electronBackend: PersistBackend = {
+  read: () => electronAPI.read(),
+  write: (_name, raw) => electronAPI.write(raw),
 };
+const browserBackend: PersistBackend = {
+  read: (name) => localStorage.getItem(name),
+  write: (name, raw) => localStorage.setItem(name, raw),
+};
+const emit = (type: string, detail: unknown) => {
+  if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent(type, { detail }));
+};
+
+type PersistedState = Pick<AppState,
+  'projects' | 'suppliers' | 'notes' | 'tasks' | 'decisions' | 'followUps' | 'activeProjectId' |
+  'openTabs' | 'activeTabId' | 'activeNoteId' | 'rightPanelOpen' | 'settings'>;
+
+export const persistStorage = createWriteBehindStorage<PersistedState>(() => (electronAPI ? electronBackend : browserBackend), {
+  onStatus: (status) => { if (status) emit('storage-status', status); },
+  onError: (message) => emit('storage-error', message),
+});
+
+// The desktop app asks for pending edits to be written before its window closes.
+if (typeof window !== 'undefined') (window as any).electronApp?.onFlushRequest?.(() => persistStorage.flush());
+
+/**
+ * Bring loaded or imported data into a consistent shape: settings gain defaults added in
+ * newer versions, follow-up links are repaired, and navigation never points at records that
+ * no longer exist (which otherwise leaves an empty screen after an import or restore).
+ */
+export function sanitizeWorkspace<T extends Partial<PersistedState>>(state: T): T {
+  const projects = state.projects ?? [];
+  const suppliers = state.suppliers ?? [];
+  const notes = state.notes ?? [];
+  const links = normalizeFollowUpLinks(state.tasks ?? [], state.followUps ?? []);
+  const projectIds = new Set(projects.map((project) => project.id));
+  const activeProjectId = state.activeProjectId && projectIds.has(state.activeProjectId)
+    ? state.activeProjectId
+    : (projects.find((project) => !project.archived) ?? projects[0])?.id ?? null;
+  const tabIsValid = (id: string) => id === INTERNAL_TAB_ID ||
+    suppliers.some((supplier) => supplier.id === id && !!activeProjectId && supplier.projectIds.includes(activeProjectId));
+  const openTabs = (state.openTabs ?? []).filter(tabIsValid);
+  const activeTabId = state.activeTabId && tabIsValid(state.activeTabId) ? state.activeTabId : null;
+  if (activeTabId && !openTabs.includes(activeTabId)) openTabs.push(activeTabId);
+  const activeNoteId = state.activeNoteId && notes.some((note) => note.id === state.activeNoteId) ? state.activeNoteId : null;
+  return {
+    ...state,
+    tasks: links.tasks,
+    followUps: links.followUps,
+    activeProjectId,
+    openTabs,
+    activeTabId,
+    activeNoteId: activeTabId ? activeNoteId : null,
+    settings: { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) },
+  };
+}
 
 export const SUPPLIER_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
@@ -157,12 +193,19 @@ interface AppState {
   addFollowUp: (followUp: Omit<FollowUp, 'id' | 'createdAt'>) => string;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => void;
+  /** Link a task and a follow-up 1:1 (both sides, atomically), releasing previous partners. */
+  linkTaskAndFollowUp: (taskId: string, followUpId: string) => void;
+  /** Remove the task↔follow-up link held by either record. */
+  unlinkTaskAndFollowUp: (ids: { taskId?: string; followUpId?: string }) => void;
 
   addDecision: (decision: Omit<Decision, 'id' | 'createdAt'>) => string;
   updateDecision: (id: string, updates: Partial<Decision>) => void;
   deleteDecision: (id: string) => void;
   setEditingDecision: (id: string | null) => void;
   setFocusedFollowUp: (id: string | null) => void;
+  /** Decision shown in the decision detail/history dialog (any view can open it). */
+  viewingDecisionId: string | null;
+  setViewingDecision: (id: string | null) => void;
 
   transcriptRecording: boolean;
   recordingNoteId: string | null;
@@ -230,6 +273,7 @@ export const useStore = create<AppState>()(
       editingTaskId: null,
       editingDecisionId: null,
       focusedFollowUpId: null,
+      viewingDecisionId: null,
       activeView: 'notes' as ActiveView,
       previousView: null,
       dashboardSection: 'tasks' as DashboardSection,
@@ -686,6 +730,9 @@ export const useStore = create<AppState>()(
         tasks: s.tasks.map((t) => t.linkedFollowUpId === id ? { ...t, linkedFollowUpId: undefined } : t),
       })),
 
+      linkTaskAndFollowUp: (taskId, followUpId) => set((s) => linkFollowUp(s.tasks, s.followUps, taskId, followUpId)),
+      unlinkTaskAndFollowUp: (ids) => set((s) => unlinkFollowUp(s.tasks, s.followUps, ids)),
+
       // --- Decisions ---
 
       addDecision: (decision) => {
@@ -728,6 +775,7 @@ export const useStore = create<AppState>()(
 
       setEditingDecision: (id) => set({ editingDecisionId: id }),
       setFocusedFollowUp: (id) => set({ focusedFollowUpId: id }),
+      setViewingDecision: (id) => set({ viewingDecisionId: id }),
 
       // --- UI ---
 
@@ -777,52 +825,67 @@ export const useStore = create<AppState>()(
       // --- Import / Export ---
 
       importData: (data) => {
-        const normaliseNote = (n: any, fallbackProjectId?: string): Note => ({
+        const hasProjects = data.version >= 2 && !!data.projects;
+        const defaultProject: Project | null = hasProjects ? null : {
+          id: 'imported-default-' + uid(),
+          name: 'Imported Project',
+          color: '#6366f1',
+          archived: false,
+          createdAt: Date.now(),
+        };
+        const fallbackProjectId = defaultProject?.id;
+        const now = Date.now();
+        const text = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
+        const time = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : now);
+        // Fill fields older or hand-edited exports may lack, so views never meet undefined values.
+        const notes = data.notes.map((n: any): Note => ({
           ...n,
           projectIds: n.projectIds ?? (n.projectId ? [n.projectId] : (fallbackProjectId ? [fallbackProjectId] : [])),
           supplierIds: n.supplierIds ?? (n.supplierId ? [n.supplierId] : []),
+          title: text(n.title), content: text(n.content), attendees: text(n.attendees),
+          createdAt: time(n.createdAt), updatedAt: time(n.updatedAt ?? n.createdAt),
+        }));
+        const tasks = data.tasks.map((t: any): Task => ({
+          ...t,
+          projectId: t.projectId || fallbackProjectId || '',
+          supplierId: t.supplierId ?? null, noteId: t.noteId ?? null,
+          title: text(t.title), owner: text(t.owner), dueDate: text(t.dueDate), description: text(t.description),
+          status: ['open', 'doing', 'done'].includes(t.status) ? t.status : 'open',
+          priority: ['low', 'medium', 'high'].includes(t.priority) ? t.priority : 'medium',
+          createdAt: time(t.createdAt),
+        }));
+        const followUps = (data.followUps || []).map((f: any): FollowUp => ({
+          ...f,
+          projectId: f.projectId || fallbackProjectId || '',
+          supplierId: f.supplierId ?? null,
+          status: f.status === 'resolved' ? 'resolved' : 'open',
+          createdAt: time(f.createdAt),
+        }));
+        const imported = sanitizeWorkspace({
+          projects: defaultProject ? [defaultProject] : data.projects!,
+          suppliers: data.suppliers.map((sup: any) => ({
+            ...sup,
+            projectIds: sup.projectIds || (fallbackProjectId ? [fallbackProjectId] : []),
+          })),
+          notes,
+          tasks,
+          decisions: data.decisions.map((d: any) => upgradeDecision({ ...d, projectId: d.projectId || fallbackProjectId || '' })),
+          followUps,
+          activeProjectId: null,
+          openTabs: [],
+          activeTabId: null,
+          activeNoteId: null,
+          settings: get().settings,
         });
-
-        const hasProjects = data.version >= 2 && !!data.projects;
-        if (hasProjects) {
-          set({
-            projects: data.projects!,
-            suppliers: data.suppliers,
-            notes: data.notes.map((n: any) => normaliseNote(n)),
-            tasks: data.tasks,
-            decisions: data.decisions.map(upgradeDecision),
-            followUps: data.followUps || [],
-          });
-        } else {
-          const defaultProject: Project = {
-            id: 'imported-default-' + uid(),
-            name: 'Imported Project',
-            color: '#6366f1',
-            archived: false,
-            createdAt: Date.now(),
-          };
-          set({
-            projects: [defaultProject],
-            activeProjectId: defaultProject.id,
-            suppliers: data.suppliers.map((s: any) => ({
-              ...s,
-              projectIds: s.projectIds || [defaultProject.id],
-            })),
-            notes: data.notes.map((n: any) => normaliseNote(n, defaultProject.id)),
-            tasks: data.tasks.map((t: any) => ({
-              ...t,
-              projectId: t.projectId || defaultProject.id,
-            })),
-            decisions: data.decisions.map((d: any) => upgradeDecision({
-              ...d,
-              projectId: d.projectId || defaultProject.id,
-            })),
-            followUps: (data.followUps || []).map((f: any) => ({
-              ...f,
-              projectId: f.projectId || defaultProject.id,
-            })),
-          });
-        }
+        set({
+          ...imported,
+          activeView: 'dashboard',
+          previousView: null,
+          editingTaskId: null,
+          editingDecisionId: null,
+          viewingDecisionId: null,
+          focusedFollowUpId: null,
+        });
       },
 
       getExportData: () => {
@@ -842,7 +905,10 @@ export const useStore = create<AppState>()(
     {
       name: 'Combobulator-data',
       version: 11,
-      storage: createJSONStorage(() => appStorage),
+      storage: persistStorage,
+      merge: (persisted, current) => persisted
+        ? { ...current, ...sanitizeWorkspace(persisted as Partial<PersistedState>) }
+        : current,
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
         if (version < 2) {

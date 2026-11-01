@@ -205,6 +205,14 @@ export default function App() {
     };
   }, []);
 
+  // Tell the desktop app whether to watch for Teams meetings — only once the stored setting has
+  // loaded, so a user who turned detection off never sees the overlay at startup.
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+  useEffect(() => useStore.persist.onFinishHydration(() => setHydrated(true)), []);
+  useEffect(() => {
+    if (hydrated) (window as any).electronTeams?.setEnabled?.(teamsEnabled);
+  }, [hydrated, teamsEnabled]);
+
   // When the overlay's "Start Recording" is clicked, show the recording
   // destination prompt as a modal so the user can choose which note to use.
   useEffect(() => {
@@ -213,10 +221,7 @@ export default function App() {
     if (!electronTeams) return;
 
     const onJoined = () => {
-      // #region agent log
       const s = useStore.getState();
-      try { (window as any).electronDebug?.log({sessionId:'6cf3ea',location:'App.tsx:onJoined',message:'teams:meeting-joined fired',data:{transcriptRecording:s.transcriptRecording,teamsPromptOpen:s.teamsPromptOpen,activeNoteId:s.activeNoteId,activeTabId:s.activeTabId},timestamp:Date.now(),hypothesisId:'H-RENDERER'}); } catch {}
-      // #endregion
       if (!s.transcriptRecording) s.setTeamsPromptOpen(true);
     };
 
