@@ -177,6 +177,34 @@ Verification:
 Unchanged on purpose: Tab inside a table cell inserts spaces (as before) rather than moving to the
 next cell, because the app's own Tab handling takes precedence.
 
+### Follow-up: build tools (Vite 6 → 8, electron-builder 26.8 → 26.18)
+
+`npm audit`: 37 findings (1 critical, 19 high) → 15 moderate, all one advisory (below).
+
+1. **Within the existing version lines:** electron-builder 26.18.1 and refreshed transitive packages
+   (tar, postcss, nanoid, lodash, form-data, tmp, @xmldom/xmldom, …) cleared all critical and high
+   findings. electron-builder 26.18 also fixes a gap in the Electron 45 upgrade: Electron looks for its
+   Windows Error Reporting helper as `<executable>_wer.dll`, so the `electron_wer.dll` shipped next to
+   `HiveMind.exe` was never found and some hard crashes went unrecorded; it is now named
+   `HiveMind_wer.dll`.
+2. **Vite 6 → 8** (with `@vitejs/plugin-react` 6): Vite 6 only receives security patches until Vite 9
+   ships. Vite 8 bundles with Rolldown/Oxc instead of Rollup/esbuild. Changes needed: the config uses
+   `import.meta.dirname`; the store unit test, which bundles with esbuild and relied on Vite 6
+   installing it, now declares `esbuild` itself. Node.js 22.12+ is required.
+
+Compared before/after: the web build has the same files, the same Content-Security-Policy and the
+same `index.html` (only its inline style is now minified); the main bundle is 1.41 → 1.36 MB; the
+packaged app archive has the same 382 entries; the Windows build has the same files (apart from the
+renamed WER helper), the same executable metadata and the same unsigned-build behaviour; builds take
+1.6 s instead of 7.5 s. Typecheck, unit tests, Electron (12), browser (13) and editor (25) checks pass;
+the Vite dev server renders the app; the packaged Linux app starts and saves; the demo site builds and
+its editor works.
+
+Remaining: one moderate `minimatch` advisory (pattern-matching denial of service), reached only
+through electron-builder's packaging libraries (`@electron/asar`, `@electron/universal`, `ejs`). They
+only match the app's own file patterns at build time, never untrusted input. The newest stable
+electron-builder still pins these libraries; only the electron-builder 27 alpha moves on.
+
 ## 3. Test results
 
 | Check | Result |
@@ -188,7 +216,7 @@ next cell, because the app's own Tab handling takes precedence.
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
 | `node scripts/e2e-editor.mjs` (Chromium, TipTap 3.32) | 25/25 pass: stored notes open unchanged, and every editor feature (see the TipTap follow-up above) |
 | CSP | No violations: app build, demo site, Electron |
-| `npm audit` | 37 findings, none in shipped code: no Electron advisories since 45.2.1, no editor advisories since TipTap 3. `--omit=dev` reports 0 (the bundled renderer libraries are devDependencies, see #19). The remaining high/critical advisories are in build tools (electron-builder, Vite and their dependencies), which are not shipped. |
+| `npm audit` | 15 moderate findings, all one `minimatch` advisory inside electron-builder's packaging libraries (build time only); no critical or high findings; no Electron, editor or Vite advisories. `--omit=dev` reports 0 (the bundled renderer libraries are devDependencies, see #19). |
 | `electron-builder --win --x64 --dir` (on Linux, Electron 45.2.1) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
 | Packaged app smoke (Linux `--dir` build, same files config, Electron 45.2.1) | Starts from app.asar, renders, saves over IPC, writes its log |
 | CI Windows job | Builds the NSIS installer, runs the Electron E2E and launches the packaged app (`scripts/smoke-electron.cjs`) |
@@ -207,11 +235,11 @@ AI calls in tests are intercepted locally.
   machine (ideally at 125–150 % display scaling) and confirm the visualizer moves; check that API keys
   saved by the previous version are still shown in Settings, and that the Teams overlay and an update
   from the previous release work.
-- **P3 — Build-tool advisories.** Vite and electron-builder (and their dependencies) carry the remaining
-  `npm audit` findings; they are not shipped, but newer majors would clear them.
+- **P3 — `minimatch` advisory in electron-builder's packaging libraries** (15 moderate `npm audit`
+  findings, build time only). Clears when a stable electron-builder (27) updates them.
 - **P3 — Unused settings.** `releaseVersionDraft`, `releaseNotesDraft` and `releaseHistory` are no
   longer used by any screen (kept so older data files round-trip unchanged).
-- **P3 — Bundle size.** One 1.4 MB JS chunk; irrelevant for the desktop app, could be split for the web demo.
+- **P3 — Bundle size.** One 1.36 MB JS chunk; irrelevant for the desktop app, could be split for the web demo.
 
 ## 5. Product decisions (alternatives documented, not changed)
 
