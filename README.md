@@ -42,7 +42,7 @@ If you used an earlier version of the app, your existing data is kept in the sam
 
 ## Develop locally
 
-Requires Node.js 22 or newer. From the [`supplier-notes`](supplier-notes) directory:
+Requires Node.js 22.12 or newer (Vite 8). From the [`supplier-notes`](supplier-notes) directory:
 
 ```bash
 npm install
