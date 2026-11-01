@@ -96,6 +96,27 @@ outcome:
 | Browser load failures were invisible. | Fixed with the recovery screen. Browser test. |
 | Global shortcuts (search) worked while the task dialog was open and could switch tasks, discarding edits. | Fixed: app shortcuts are ignored while a dialog is open; editor Alt-shortcuts need editor focus. |
 
+### Follow-up: Electron 40.10.6 → 45.2.1
+
+Moves the app to a supported Electron major and clears the 14 Electron advisories `npm audit` still
+reported for 40.x. Electron 41–45 breaking changes were reviewed against the code; two affect HiveMind:
+
+| Change | Effect on HiveMind | Outcome |
+|--------|--------------------|---------|
+| Screen capture permission is requested as `display-capture` (Electron 45). | System-audio recording would fail: the capture window's `getUserMedia` was denied (`NotAllowedError`) because the permission allowlist only knew `desktopCapture`. **Verified**: granted on 40.10.6, denied on 45 with the old code. | `display-capture` added to the allowlist. New E2E check fails against the old `main.cjs` on 45, passes now. |
+| Synchronous `safeStorage` deprecated (45; removed in 46). | API keys used the sync API, which printed deprecation warnings and would break on 46. On Linux the sync API reported encryption as unavailable, so any save that carried an API key failed there. | Moved to the asynchronous API (`isAsyncEncryptionAvailable`, `encryptStringAsync`, `decryptStringAsync`, re-encrypts when `shouldReEncrypt` is set). Electron documents that it decrypts data written by the sync API; **verified on Linux**: a key file written by Electron 40 is read by 45. A key file that cannot be decrypted is now kept instead of being overwritten with empty keys on the next save. |
+
+Other changes checked and not applicable: sandboxed preloads lose the `events`/`timers`/`url`/`Buffer`
+shims (HiveMind's preloads only use `contextBridge`/`ipcRenderer`); `npm install` no longer downloads
+the Electron binary — `require('electron')` fetches it (checksum-verified) the first time it is used.
+
+New Electron E2E checks: desktop capture stream opens; a key file that cannot be decrypted survives
+a save; an API key typed in Settings is stored encrypted (not in the data file, not in plain text in
+the key file) and shown again after a restart; Electron prints no deprecation warnings. Each new
+check was confirmed to fail against the code it guards against (old permission list, removed
+key-file guard, a deprecated API call). The
+Electron E2E now also runs in the Windows CI job, against Windows' key store (DPAPI) and screen capture.
+
 ## 3. Test results
 
 | Check | Result |
@@ -103,30 +124,28 @@ outcome:
 | `npm run typecheck` | Pass (0 errors) |
 | `npm test` | 38 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
 | `npm run build` | Pass (Vite production build with CSP) |
-| `node scripts/e2e-electron.cjs` (Electron 40.7, Linux/Xvfb) | 6/6 pass: navigation guard, IPC allowlists, app-image under CSP, single instance, save-on-close, reload |
+| `node scripts/e2e-electron.cjs` (Electron 45.2.1; Linux/Xvfb locally and in CI, Windows in CI) | 11/11 pass: navigation guard, IPC allowlists, app-image under CSP, desktop capture permission, single instance, save-on-close, undecryptable key file kept, reload, API key stored encrypted, API key read back after restart, no deprecation warnings |
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
 | CSP | No violations: app build, demo site, Electron |
-| `npm audit` | `--omit=dev` reports 0, but only because the bundled renderer libraries became devDependencies (see #19) — the 41 moderate TipTap 2.x advisories still apply to the shipped editor, and Electron advisories fixed only in 41.10.6+/42.11.16 remain (see §4). The other remaining high advisories are in build tools (electron-builder, Vite and their dependencies). |
-| `electron-builder --win --x64 --dir` (on Linux) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
-| Packaged app smoke (Linux `--dir` build, same files config) | Starts from app.asar, renders, saves over IPC, writes its log |
+| `npm audit` | No Electron advisories since the upgrade to 45.2.1. `--omit=dev` reports 0, but only because the bundled renderer libraries became devDependencies (see #19) — the 41 moderate TipTap 2.x advisories still apply to the shipped editor. The remaining high/critical advisories are in build tools (electron-builder, Vite and their dependencies), which are not shipped. |
+| `electron-builder --win --x64 --dir` (on Linux, Electron 45.2.1) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
+| Packaged app smoke (Linux `--dir` build, same files config, Electron 45.2.1) | Starts from app.asar, renders, saves over IPC, writes its log |
+| CI Windows job | Builds the NSIS installer, runs the Electron E2E and launches the packaged app (`scripts/smoke-electron.cjs`) |
 
-**Not tested (environment limits):** Windows-specific behaviour — the NSIS installer itself and
-running the Windows executable (only the unpacked Windows build was produced here), `scripts/smoke-electron.cjs`, real desktop
-audio capture and the hidden-window frame behaviour (known #1a), Outlook draft opening, Teams local
-API, electron-updater download/install and code signing. No real provider requests were made; all
+**Not tested (environment limits):** installing with the NSIS installer, recording real system
+audio and the hidden-window frame behaviour on Windows (known #1a), Outlook draft opening, Teams
+local API, electron-updater download/install and code signing. The Windows executable itself is
+launched in CI. No real provider requests were made; all
 AI calls in tests are intercepted locally.
 
 ## 4. Remaining issues (prioritized)
 
 - **Decided — releases stay unsigned (open source, MIT).** Expect SmartScreen warnings and occasional
   antivirus flags; mitigations and the free SignPath option are in `docs/RELEASING.md`.
-- **P1 — Upgrade Electron to a currently supported major (40 → 42+).** 40.10.6 is the newest 40.x;
-  advisories fixed only in 41.10.6/42.11.16 remain. Most concern features HiveMind does not use or
-  blocks (iframes, popups, `<webview>`, extensions, off-screen rendering), but the CA-certificate
-  mitigation (eMudhra intermediates) affects all HTTPS calls. Needs Windows testing of capture,
-  overlay and updater.
-- **P1 — Verify known #1 on Windows.** Record system audio on a Windows machine (ideally at 125–150 %
-  display scaling) and confirm the visualizer moves.
+- **P1 — Verify known #1 and the Electron 45 upgrade on Windows.** Record system audio on a Windows
+  machine (ideally at 125–150 % display scaling) and confirm the visualizer moves; check that API keys
+  saved by the previous version are still shown in Settings, and that the Teams overlay and an update
+  from the previous release work.
 - **P2 — TipTap 2 → 3 migration** to clear 41 moderate advisories (breaking API changes in the editor).
 - **P2 — Backup disk usage.** Each backup copies all images and attachments (up to ~24 backups);
   large attachment folders multiply. Consider hard links or content-addressed storage.
@@ -152,4 +171,4 @@ AI calls in tests are intercepted locally.
 2. Use that installer for the Windows checks in §3 (visualizer with system audio, update flow).
 3. Report false positives to Heimdal for each release (or apply for free signing via SignPath).
 4. Decide on the summary provider/endpoint question for NDA meetings.
-5. Plan the Electron 42+ and TipTap 3 upgrades.
+5. Plan the TipTap 3 upgrade; keep Electron on a supported major (Electron supports the latest three).

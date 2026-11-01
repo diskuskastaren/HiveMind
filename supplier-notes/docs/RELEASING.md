@@ -84,9 +84,10 @@ The `CI` workflow (`.github/workflows/ci.yml`) runs on every push and pull reque
 
 - **Linux:** typecheck, unit tests, production build, Electron end-to-end checks (Xvfb) and browser
   end-to-end checks (Playwright, AI providers mocked).
-- **Windows:** builds the unsigned installer with `--publish never`, launches the packaged app with
-  `scripts/smoke-electron.cjs`, and attaches the installer to the run as the `HiveMind-installer`
-  artifact (kept 7 days) for manual testing.
+- **Windows:** runs the Electron end-to-end checks (incl. API keys in the Windows key store and the
+  screen-capture permission), builds the unsigned installer with `--publish never`, launches the
+  packaged app with `scripts/smoke-electron.cjs`, and attaches the installer to the run as the
+  `HiveMind-installer` artifact (kept 7 days) for manual testing.
 
 To release:
 

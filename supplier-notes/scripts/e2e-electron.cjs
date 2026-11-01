@@ -1,6 +1,7 @@
 // End-to-end checks against the real Electron app (build the renderer first: `npm run build`).
 // Uses an isolated, temporary profile — never the user's data. On Linux CI run under Xvfb:
 //   xvfb-run -a node scripts/e2e-electron.cjs
+// (on Windows: node scripts/e2e-electron.cjs). No AI provider is contacted.
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,13 +14,18 @@ const root = path.resolve(__dirname, '..');
 const electron = process.env.ELECTRON_PATH || require('electron');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hivemind-e2e-'));
 const dataFile = path.join(profile, 'Combobulator-data.json');
+const keyFile = path.join(profile, 'api-keys.bin');
+// A made-up key: it is only typed into Settings and saved, never tested against OpenAI.
+const fakeApiKey = 'sk-e2e-not-a-real-key-0123456789';
 const children = new Set();
+let stderr = '';
 
 function launch() {
   const port = 20000 + Math.floor(Math.random() * 30000);
   const args = ['.', `--remote-debugging-port=${port}`];
   if (process.platform === 'linux') args.push('--no-sandbox');
-  const child = spawn(electron, args, { cwd: root, env: { ...process.env, HIVEMIND_TEST_USER_DATA: profile }, stdio: 'ignore' });
+  const child = spawn(electron, args, { cwd: root, env: { ...process.env, HIVEMIND_TEST_USER_DATA: profile }, stdio: ['ignore', 'ignore', 'pipe'] });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
   children.add(child);
   child.on('exit', () => children.delete(child));
   return { child, port };
@@ -64,6 +70,14 @@ async function connect(target) {
   return { socket, evaluate, waitFor };
 }
 
+// Opens Settings → AI & Summarization and returns once the OpenAI key field is shown.
+async function openAiSettings(page) {
+  await page.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true })); true`);
+  await page.waitFor(`[...document.querySelectorAll('nav[aria-label="Settings sections"] button')].some((b) => b.textContent.includes('AI & Summarization'))`, 'settings dialog');
+  await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Settings sections"] button')].find((b) => b.textContent.includes('AI & Summarization')).click(); true`);
+  await page.waitFor(`!!document.getElementById('openai-key')`, 'OpenAI key field');
+}
+
 const exited = (child, ms) => new Promise((resolve) => {
   if (child.exitCode !== null) return resolve(true);
   const timer = setTimeout(() => resolve(false), ms);
@@ -74,7 +88,10 @@ async function main() {
   const results = [];
   const check = async (name, fn) => { await fn(); results.push(name); console.log(`ok - ${name}`); };
 
-  // 1. First launch: create a project through the UI and close immediately.
+  // 1. First launch: create a project through the UI and close immediately. The profile starts with
+  // a key file that cannot be decrypted (as when data is copied from another computer).
+  const unreadableKeyFile = Buffer.concat([Buffer.from('v10'), Buffer.alloc(48, 7)]);
+  fs.writeFileSync(keyFile, unreadableKeyFile);
   const first = launch();
   const page = await connect(await pageTarget(first.port));
   await page.waitFor(`document.body && document.body.innerText.includes('Welcome to HiveMind')`, 'welcome screen');
@@ -83,7 +100,8 @@ async function main() {
     await page.evaluate(`location.href = 'file://' + ${JSON.stringify(path.join(profile, 'evil.html').replace(/\\/g, '/'))}; true`);
     await new Promise((resolve) => setTimeout(resolve, 800));
     assert.match(await page.evaluate('location.href'), /dist\/index\.html/);
-    assert.equal(await page.evaluate(`window.open('https://example.com') === null`), true);
+    // A local URL: refused like any other, but never handed to the system browser.
+    assert.equal(await page.evaluate(`window.open('file:///etc/hosts') === null`), true);
   });
 
   await check('IPC refuses to open non-web links and files outside the attachments folder', async () => {
@@ -106,6 +124,20 @@ async function main() {
     assert.equal(result.loaded, true);
     assert.equal(result.width, 1);
     assert.deepEqual(result.violations, []);
+  });
+
+  await check('system-audio capture is permitted (desktop capture stream opens)', async () => {
+    const result = await page.evaluate(`(async () => {
+      const sources = await window.electronCapture.getSources();
+      if (!sources.length) return { error: 'no capture sources' };
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxWidth: 1, maxHeight: 1 } } });
+        const kinds = stream.getTracks().map((track) => track.kind);
+        stream.getTracks().forEach((track) => track.stop());
+        return { kinds };
+      } catch (error) { return { error: error.name + ': ' + error.message }; }
+    })()`);
+    assert.deepEqual(result, { kinds: ['video'] });
   });
 
   await check('a second launch hands over to the running window instead of opening the data file again', async () => {
@@ -131,6 +163,10 @@ async function main() {
     assert.deepEqual(leftovers, [], 'no temp or lock files left behind');
   });
 
+  await check('a key file that cannot be decrypted is kept, not overwritten by the save', async () => {
+    assert.deepEqual(fs.readFileSync(keyFile), unreadableKeyFile);
+  });
+
   // 2. Relaunch: data loads and the app opens on the project.
   const relaunch = launch();
   const reopened = await connect(await pageTarget(relaunch.port));
@@ -139,14 +175,55 @@ async function main() {
     const status = await reopened.evaluate('window.electronStore.status()');
     assert.equal(status.error, null);
   });
-  reopened.socket.close();
-  relaunch.child.kill();
-  await exited(relaunch.child, 5000);
+
+  await check('an API key entered in Settings replaces it, stored encrypted and not in the data file', async () => {
+    await openAiSettings(reopened);
+    await reopened.evaluate(`(() => {
+      const input = document.getElementById('openai-key');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      input.focus();
+      setter.call(input, ${JSON.stringify(fakeApiKey)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.blur();
+      return true;
+    })()`);
+    await reopened.waitFor(`document.body.innerText.includes('API key saved')`, 'saved key status');
+    await reopened.evaluate('window.close(); true').catch(() => { /* the page may go away before replying */ });
+    assert.equal(await exited(relaunch.child, 15000), true, 'app should quit after its window closes');
+    const raw = fs.readFileSync(dataFile, 'utf8');
+    assert.equal(raw.includes(fakeApiKey), false, 'key must not be written to the data file');
+    assert.equal(JSON.parse(raw).state.settings.openaiApiKey, '');
+    const encrypted = fs.readFileSync(keyFile);
+    assert.notDeepEqual(encrypted, unreadableKeyFile, 'key file replaced');
+    assert.equal(encrypted.includes(Buffer.from(fakeApiKey)), false, 'key file must not contain the plain key');
+  });
+
+  // 3. Third launch: the encrypted key is read back.
+  const third = launch();
+  const restarted = await connect(await pageTarget(third.port));
+  await check('the stored API key is decrypted and shown after a restart', async () => {
+    await restarted.waitFor(`document.body && document.body.innerText.includes('E2E Project')`, 'project after restart');
+    await openAiSettings(restarted);
+    assert.equal(await restarted.evaluate(`document.getElementById('openai-key').value`), fakeApiKey);
+  });
+  restarted.socket.close();
+  third.child.kill();
+  await exited(third.child, 5000);
+
+  await check('Electron printed no deprecation warnings', async () => {
+    const warnings = stderr.split('\n').filter((line) => /deprecat/i.test(line));
+    assert.deepEqual(warnings, []);
+  });
   console.log(`\n${results.length} Electron checks passed`);
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
   for (const child of children) child.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
-  fs.rmSync(profile, { recursive: true, force: true });
+  // On Windows a just-killed process can keep its files locked for a moment.
+  try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }
+  catch (error) { console.warn(`Could not remove the temporary profile ${profile}: ${error.message}`); }
+  // Helper processes Electron started (e.g. crashpad, xdg-open) can outlive it and hold the stderr
+  // pipe open, which would keep this script running after the checks finished.
+  process.exit();
 });

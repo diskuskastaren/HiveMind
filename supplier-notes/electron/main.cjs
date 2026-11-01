@@ -68,22 +68,49 @@ function getDataDir() {
 let DATA_FILE = path.join(getDataDir(), 'Combobulator-data.json');
 let IMAGES_DIR = path.join(getDataDir(), 'images');
 const SECRET_FILE = path.join(app.getPath('userData'), 'api-keys.bin');
-// Decrypted keys are cached: every save passes the keys along, and decrypting the
-// key file on each keystroke-triggered save is wasted work.
+// API keys are encrypted with the OS key store (DPAPI on Windows) via the asynchronous
+// safeStorage API (the synchronous one is deprecated in Electron 45 and removed in 46; the async
+// API decrypts data written by the old one). Decrypted keys are cached: every save passes the keys
+// along, and decrypting the key file on each keystroke-triggered save is wasted work.
 let cachedSecrets = null;
-function readSecrets() {
+// Set when a key file exists but cannot be decrypted (e.g. the OS key store is unavailable). The
+// renderer then has empty keys, and its next save must not replace the stored keys with nothing.
+let secretsUnreadable = false;
+async function readSecrets() {
   if (cachedSecrets) return { ...cachedSecrets };
-  if (!fs.existsSync(SECRET_FILE) || !safeStorage.isEncryptionAvailable()) return {};
-  try { cachedSecrets = JSON.parse(safeStorage.decryptString(fs.readFileSync(SECRET_FILE))); return { ...cachedSecrets }; }
-  catch (error) { log.error('Unable to read API keys', { message: error.message }); return {}; }
+  // Retried on the next start; retrying on every save would only repeat the error.
+  if (secretsUnreadable || !fs.existsSync(SECRET_FILE)) return {};
+  try {
+    if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+      secretsUnreadable = true;
+      log.error('Unable to read API keys: secure storage is unavailable');
+      return {};
+    }
+    const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(await fs.promises.readFile(SECRET_FILE));
+    cachedSecrets = JSON.parse(result);
+    // The OS asks for re-encryption when its key changed; keep the stored copy current.
+    if (shouldReEncrypt) {
+      await atomicWrite(SECRET_FILE, await safeStorage.encryptStringAsync(result))
+        .catch((error) => log.warn('Could not re-encrypt API keys', { message: error.message }));
+    }
+    return { ...cachedSecrets };
+  } catch (error) {
+    secretsUnreadable = true;
+    log.error('Unable to read API keys', { message: error.message });
+    return {};
+  }
 }
 async function writeSecrets(keys) {
   if (!keys.openaiApiKey && !keys.groqApiKey && !fs.existsSync(SECRET_FILE)) return;
-  const current = readSecrets();
+  const current = await readSecrets();
   if (current.openaiApiKey === keys.openaiApiKey && current.groqApiKey === keys.groqApiKey) return;
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure API key storage is unavailable');
-  await atomicWrite(SECRET_FILE, safeStorage.encryptString(JSON.stringify(keys)));
+  // Keep a key file we could not read rather than overwrite it with empty keys; entering a new key
+  // replaces it.
+  if (secretsUnreadable && !keys.openaiApiKey && !keys.groqApiKey) return;
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error('Secure API key storage is unavailable');
+  await atomicWrite(SECRET_FILE, await safeStorage.encryptStringAsync(JSON.stringify(keys)));
   cachedSecrets = { openaiApiKey: keys.openaiApiKey, groqApiKey: keys.groqApiKey };
+  secretsUnreadable = false;
 }
 const storage = new StorageService(getDataDir(), { readSecret: readSecrets, writeSecret: writeSecrets });
 // Ensure images directory exists
@@ -799,8 +826,10 @@ app.whenReady().then(() => {
   app.setAppUserModelId('com.fractal.supplier-notes');
   log.info('Starting HiveMind', { version: app.getVersion(), packaged: app.isPackaged, platform: process.platform });
 
-  // Grant microphone and media permissions so Web Speech API and getUserMedia work
-  const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
+  // Grant microphone and media permissions so Web Speech API and getUserMedia work.
+  // Since Electron 45, desktop capture (system-audio recording) is requested as 'display-capture';
+  // without it the capture window's getUserMedia call is denied.
+  const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture', 'display-capture'];
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(allowed.includes(permission));
   });
