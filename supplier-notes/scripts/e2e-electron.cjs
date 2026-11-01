@@ -100,7 +100,8 @@ async function main() {
     await page.evaluate(`location.href = 'file://' + ${JSON.stringify(path.join(profile, 'evil.html').replace(/\\/g, '/'))}; true`);
     await new Promise((resolve) => setTimeout(resolve, 800));
     assert.match(await page.evaluate('location.href'), /dist\/index\.html/);
-    assert.equal(await page.evaluate(`window.open('https://example.com') === null`), true);
+    // A local URL: refused like any other, but never handed to the system browser.
+    assert.equal(await page.evaluate(`window.open('file:///etc/hosts') === null`), true);
   });
 
   await check('IPC refuses to open non-web links and files outside the attachments folder', async () => {
@@ -222,4 +223,7 @@ main().catch((error) => { console.error(error); process.exitCode = 1; }).finally
   // On Windows a just-killed process can keep its files locked for a moment.
   try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }
   catch (error) { console.warn(`Could not remove the temporary profile ${profile}: ${error.message}`); }
+  // Helper processes Electron started (e.g. crashpad, xdg-open) can outlive it and hold the stderr
+  // pipe open, which would keep this script running after the checks finished.
+  process.exit();
 });
