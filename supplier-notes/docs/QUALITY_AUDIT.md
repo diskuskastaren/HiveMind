@@ -14,7 +14,7 @@ HiveMind's architecture is sound — local-first storage with atomic writes, val
 fail-closed recovery was already in place — but several everyday workflows could silently lose or
 corrupt data, the desktop shell trusted its renderer too much, and four of the six reported issues
 had concrete root causes in code. All P0 and P1 items found were fixed and covered by automated
-checks; the remaining work needs product or purchasing decisions (code signing, TipTap 3) or is low
+checks; the remaining work needs product decisions or Windows verification, or is low
 priority.
 
 Most important fixes:
@@ -137,6 +137,46 @@ Notes: Windows Explorer's folder size counts every link, so the backups folder s
 as before. Moving the data folder copies backups without links (as before); new backups share files
 again. Editing a file inside a backup folder by hand would change every backup that shares it.
 
+### Follow-up: note editor TipTap 2.27 → 3.32
+
+Clears the 41 moderate TipTap/ProseMirror advisories (`npm audit`: 78 → 37 findings; none of the
+remaining ones are in the editor). Changes needed beyond new package names (tables, lists,
+Placeholder/CharacterCount moved; Link and Underline now come from StarterKit):
+
+| TipTap 3 change | Effect on HiveMind if left alone | Outcome |
+|-----------------|----------------------------------|---------|
+| The React editor no longer re-renders on every change by default. | Toolbar active states, table tools, template picker, word count and the find counter would stop updating. | `shouldRerenderOnTransaction: true` (TipTap 2 behaviour). |
+| `setContent` emits an update by default. | Opening a note would count as an edit: saved again and marked as changed. | `emitUpdate: false` when loading a note or a template. |
+| StarterKit adds TrailingNode and ListKeymap. | Notes ending in a list or table would get an extra empty paragraph (saved on open); Backspace/Delete in lists would change. | Both disabled; behaviour identical to before. |
+| The selection menu uses Floating UI instead of tippy. | The menu re-registered on every render — an endless render loop that crashed the editor (found by the new checks) — and, without tippy's z-index, it sat behind the sticky toolbar for text near the top of a note. | Menu options defined once; menu placed above the toolbar. |
+| Stricter typings. | Revealed a pre-existing bug: collapsible sections declared their attributes in a way TipTap ignores, so every section was saved without its title, as closed, with its content hidden; text typed into a new section was not visible. | Attributes registered (same `data-title`/`data-open` HTML); sections saved by the broken version open again so their content is visible. |
+
+Verification:
+
+- New `scripts/e2e-editor.mjs` (25 checks, also in CI): 20 kinds of stored note — demo notes, every
+  mark and block, nested and task lists, tables, mentions, images, collapsibles (incl. ones saved by
+  the broken version), inserted summaries and
+  transcripts, templates, legacy HTML — open without being rewritten or marked as edited, and keep
+  their text; every editor feature is exercised through the UI (toolbar and its active states,
+  shortcuts, markdown and typography input rules, Tab/Shift+Tab, Backspace/Delete in lists, task
+  checkboxes, links incl. autolink and a blocked `javascript:` URL, tables, slash commands,
+  collapsibles, mentions, image and HTML paste, find & replace, selection menu, Alt+T/D/F, undo/redo,
+  word count, templates, placeholder).
+- The same script was run against TipTap 2 (`main`): 23/25 there (both failures are the collapsible
+  bug), 25/25 now. Of 61 recorded outputs (the HTML the editor produced), 49 are identical; the
+  differences are the
+  collapsible fix and table cells, which TipTap 3 writes without the default `colspan="1" rowspan="1"`
+  (column widths kept; older HTML loads unchanged; nothing in the app reads these attributes).
+- Screenshots (TipTap 2 vs 3): the selection menu, slash menu and mention list are pixel-identical;
+  a rich note differs only by the now-visible collapsible content; the empty-note view differs in two
+  pixel rows of the header line above the editor.
+- The desktop app: a new Electron check opens a note and pastes an image (saved as an `app-image:`
+  file and shown under the CSP); the demo site builds and its editor works.
+- Bundle: +25 KB gzipped (Floating UI).
+
+Unchanged on purpose: Tab inside a table cell inserts spaces (as before) rather than moving to the
+next cell, because the app's own Tab handling takes precedence.
+
 ## 3. Test results
 
 | Check | Result |
@@ -144,10 +184,11 @@ again. Editing a file inside a backup folder by hand would change every backup t
 | `npm run typecheck` | Pass (0 errors) |
 | `npm test` | 40 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
 | `npm run build` | Pass (Vite production build with CSP) |
-| `node scripts/e2e-electron.cjs` (Electron 45.2.1; Linux/Xvfb locally and in CI, Windows in CI) | 11/11 pass: navigation guard, IPC allowlists, app-image under CSP, desktop capture permission, single instance, save-on-close, undecryptable key file kept, reload, API key stored encrypted, API key read back after restart, no deprecation warnings |
+| `node scripts/e2e-electron.cjs` (Electron 45.2.1; Linux/Xvfb locally and in CI, Windows in CI) | 12/12 pass: navigation guard, IPC allowlists, app-image under CSP, desktop capture permission, single instance, save-on-close, undecryptable key file kept, reload, API key stored encrypted, note editor with image paste, API key read back after restart, no deprecation warnings |
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |
+| `node scripts/e2e-editor.mjs` (Chromium, TipTap 3.32) | 25/25 pass: stored notes open unchanged, and every editor feature (see the TipTap follow-up above) |
 | CSP | No violations: app build, demo site, Electron |
-| `npm audit` | No Electron advisories since the upgrade to 45.2.1. `--omit=dev` reports 0, but only because the bundled renderer libraries became devDependencies (see #19) — the 41 moderate TipTap 2.x advisories still apply to the shipped editor. The remaining high/critical advisories are in build tools (electron-builder, Vite and their dependencies), which are not shipped. |
+| `npm audit` | 37 findings, none in shipped code: no Electron advisories since 45.2.1, no editor advisories since TipTap 3. `--omit=dev` reports 0 (the bundled renderer libraries are devDependencies, see #19). The remaining high/critical advisories are in build tools (electron-builder, Vite and their dependencies), which are not shipped. |
 | `electron-builder --win --x64 --dir` (on Linux, Electron 45.2.1) | Pass: afterPack edits icon/version resources and logs "not signed (no signing configuration)" |
 | Packaged app smoke (Linux `--dir` build, same files config, Electron 45.2.1) | Starts from app.asar, renders, saves over IPC, writes its log |
 | CI Windows job | Builds the NSIS installer, runs the Electron E2E and launches the packaged app (`scripts/smoke-electron.cjs`) |
@@ -166,10 +207,11 @@ AI calls in tests are intercepted locally.
   machine (ideally at 125–150 % display scaling) and confirm the visualizer moves; check that API keys
   saved by the previous version are still shown in Settings, and that the Teams overlay and an update
   from the previous release work.
-- **P2 — TipTap 2 → 3 migration** to clear 41 moderate advisories (breaking API changes in the editor).
+- **P3 — Build-tool advisories.** Vite and electron-builder (and their dependencies) carry the remaining
+  `npm audit` findings; they are not shipped, but newer majors would clear them.
 - **P3 — Unused settings.** `releaseVersionDraft`, `releaseNotesDraft` and `releaseHistory` are no
   longer used by any screen (kept so older data files round-trip unchanged).
-- **P3 — Bundle size.** One 1.3 MB JS chunk; irrelevant for the desktop app, could be split for the web demo.
+- **P3 — Bundle size.** One 1.4 MB JS chunk; irrelevant for the desktop app, could be split for the web demo.
 
 ## 5. Product decisions (alternatives documented, not changed)
 
@@ -189,4 +231,4 @@ AI calls in tests are intercepted locally.
 2. Use that installer for the Windows checks in §3 (visualizer with system audio, update flow).
 3. Report false positives to Heimdal for each release (or apply for free signing via SignPath).
 4. Decide on the summary provider/endpoint question for NDA meetings.
-5. Plan the TipTap 3 upgrade; keep Electron on a supported major (Electron supports the latest three).
+5. Keep Electron on a supported major (Electron supports the latest three).

@@ -43,6 +43,8 @@ jobs:
         run: xvfb-run -a node scripts/e2e-electron.cjs
       - name: Browser end-to-end checks
         run: node scripts/e2e-browser.mjs
+      - name: Note editor end-to-end checks
+        run: node scripts/e2e-editor.mjs
 
   windows:
     name: Windows end-to-end checks, installer and smoke test

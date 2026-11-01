@@ -198,9 +198,33 @@ async function main() {
     assert.equal(encrypted.includes(Buffer.from(fakeApiKey)), false, 'key file must not contain the plain key');
   });
 
-  // 3. Third launch: the encrypted key is read back.
+  // 3. Third launch, with a supplier and an open note added to the saved workspace: the editor works
+  // in the desktop app, and the encrypted key is read back.
+  const workspace = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  const projectId = workspace.state.projects[0].id;
+  workspace.state.suppliers = [{ id: 'sup-e2e', name: 'E2E Supplier', color: '#3b82f6', pinned: false, defaultTemplate: null, projectIds: [projectId], createdAt: Date.now() }];
+  workspace.state.notes = [{ id: 'note-e2e', projectIds: [projectId], supplierIds: ['sup-e2e'], title: 'E2E Note', attendees: '', createdAt: Date.now(), updatedAt: Date.now(), transcripts: [],
+    content: '<h2>Agenda</h2><ul data-type="taskList"><li data-checked="true" data-type="taskItem"><label><input type="checkbox" checked="checked"><span></span></label><div><p>Desktop check</p></div></li></ul><p>Hello from E2E</p>' }];
+  Object.assign(workspace.state, { activeProjectId: projectId, openTabs: ['sup-e2e'], activeTabId: 'sup-e2e', activeNoteId: 'note-e2e' });
+  fs.writeFileSync(dataFile, JSON.stringify(workspace));
   const third = launch();
   const restarted = await connect(await pageTarget(third.port));
+  await check('the note editor works in the desktop app; pasted images are saved as app-image files', async () => {
+    await restarted.waitFor(`document.querySelector('.ProseMirror')?.innerText.includes('Hello from E2E')`, 'note in the editor');
+    assert.equal(await restarted.evaluate(`document.querySelector('.ProseMirror ul[data-type="taskList"] input').checked`), true);
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await restarted.evaluate(`(() => {
+      const editor = document.querySelector('.ProseMirror');
+      editor.focus();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([Uint8Array.from(atob('${png}'), (c) => c.charCodeAt(0))], 'shot.png', { type: 'image/png' }));
+      editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+    await restarted.waitFor(`[...document.querySelectorAll('.ProseMirror img')].some((img) => img.src.startsWith('app-image://') && img.complete && img.naturalWidth === 1)`, 'pasted image shown');
+    const saved = fs.readdirSync(path.join(profile, 'images')).filter((name) => name.endsWith('.png'));
+    assert.ok(saved.length >= 2, 'pasted image written to the images folder');
+  });
   await check('the stored API key is decrypted and shown after a restart', async () => {
     await restarted.waitFor(`document.body && document.body.innerText.includes('E2E Project')`, 'project after restart');
     await openAiSettings(restarted);
