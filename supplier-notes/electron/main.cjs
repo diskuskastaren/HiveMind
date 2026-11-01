@@ -1,9 +1,12 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen, dialog, crashReporter, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, protocol, net, desktopCapturer, shell, screen, dialog, crashReporter, safeStorage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { pathToFileURL } = require('url');
 const { StorageService, validateData, atomicWrite, rebaseManagedAttachments } = require('./storage.cjs');
+const { createLogger } = require('./logger.cjs');
+const { isSafeExternalUrl, isInsideDirectory, isAppUrl, encodeMimeHeader } = require('./security.cjs');
 const { WebSocket } = require('ws');
-const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 // Keep the existing profile when the visible product name changes to HiveMind.
@@ -12,40 +15,26 @@ const USER_DATA_DIR = process.env.HIVEMIND_TEST_USER_DATA || path.join(app.getPa
 fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 app.setPath('userData', USER_DATA_DIR);
 
-// #region agent log — native crash reporter (captures GPU/C++ crashes JS handlers miss)
+const log = createLogger(path.join(USER_DATA_DIR, 'logs'));
+const RELEASES_URL = 'https://github.com/diskuskastaren/HiveMind/releases/latest';
+const INDEX_FILE = path.join(__dirname, '..', 'dist', 'index.html');
+
+// Only one process may own the data file. A second launch would trip the
+// "changed outside this app" protection and lock saving, so focus the first window instead.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+
+// Native crash dumps stay on this computer (uploadToServer: false).
 crashReporter.start({ uploadToServer: false });
-// #endregion
 
-
-// #region agent log
-// Writable log paths — userData is always writable in both dev and packaged app.
-// __dirname inside an ASAR is read-only, so we MUST use app.getPath('userData').
-function _dbgLogPath() {
-  try { return path.join(app.getPath('userData'), 'debug-6cf3ea.log'); } catch { return path.join(require('os').homedir(), 'debug-6cf3ea.log'); }
-}
-function _dbgWrite(obj) {
-  try { fs.appendFileSync(_dbgLogPath(), JSON.stringify(obj) + '\n'); } catch {}
-}
-
-// Global crash handlers — catch the exact error before the process dies.
-process.on('uncaughtException', (err) => {
-  _dbgWrite({sessionId:'6cf3ea',type:'uncaughtException',error:err?.message,stack:err?.stack,timestamp:Date.now()});
-  try { dialog.showErrorBox('[HiveMind debug] Uncaught exception — please screenshot', String(err?.stack || err)); } catch {}
+process.on('uncaughtException', (error) => {
+  log.error('Uncaught exception in main process', error);
+  try {
+    dialog.showErrorBox('HiveMind ran into an unexpected problem',
+      `${error?.message || error}\n\nDetails were written to ${log.file}`);
+  } catch { /* dialog unavailable before ready */ }
 });
-process.on('unhandledRejection', (reason) => {
-  const msg = reason instanceof Error ? reason.message : String(reason);
-  const stack = reason instanceof Error ? reason.stack : '';
-  _dbgWrite({sessionId:'6cf3ea',type:'unhandledRejection',error:msg,stack,timestamp:Date.now()});
-  try { dialog.showErrorBox('[HiveMind debug] Unhandled rejection — please screenshot', String(stack || msg)); } catch {}
-});
-
-// IPC debug log forwarding (renderer → file)
-const DEBUG_LOG = path.join(__dirname, '..', 'debug-0a018f.log');
-ipcMain.on('debug:log', (_event, payload) => {
-  if (payload && payload.sessionId === '6cf3ea') { _dbgWrite(payload); return; }
-  try { fs.appendFileSync(DEBUG_LOG, JSON.stringify(payload) + '\n'); } catch {}
-});
-// #endregion
+process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection in main process', reason));
 
 // --- Configurable data directory ---
 // app-config.json lives permanently in the default userData folder and acts as
@@ -66,7 +55,7 @@ async function saveAppConfig(cfg) {
     await atomicWrite(APP_CONFIG_FILE, JSON.stringify(cfg, null, 2));
     return true;
   } catch (e) {
-    console.error('Failed to save app config:', e);
+    log.error('Failed to save app config', { message: e.message });
     return false;
   }
 }
@@ -79,17 +68,22 @@ function getDataDir() {
 let DATA_FILE = path.join(getDataDir(), 'Combobulator-data.json');
 let IMAGES_DIR = path.join(getDataDir(), 'images');
 const SECRET_FILE = path.join(app.getPath('userData'), 'api-keys.bin');
+// Decrypted keys are cached: every save passes the keys along, and decrypting the
+// key file on each keystroke-triggered save is wasted work.
+let cachedSecrets = null;
 function readSecrets() {
+  if (cachedSecrets) return { ...cachedSecrets };
   if (!fs.existsSync(SECRET_FILE) || !safeStorage.isEncryptionAvailable()) return {};
-  try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(SECRET_FILE))); }
-  catch (error) { console.error('Unable to read API keys:', error); return {}; }
+  try { cachedSecrets = JSON.parse(safeStorage.decryptString(fs.readFileSync(SECRET_FILE))); return { ...cachedSecrets }; }
+  catch (error) { log.error('Unable to read API keys', { message: error.message }); return {}; }
 }
 async function writeSecrets(keys) {
   if (!keys.openaiApiKey && !keys.groqApiKey && !fs.existsSync(SECRET_FILE)) return;
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure API key storage is unavailable');
   const current = readSecrets();
   if (current.openaiApiKey === keys.openaiApiKey && current.groqApiKey === keys.groqApiKey) return;
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure API key storage is unavailable');
   await atomicWrite(SECRET_FILE, safeStorage.encryptString(JSON.stringify(keys)));
+  cachedSecrets = { openaiApiKey: keys.openaiApiKey, groqApiKey: keys.groqApiKey };
 }
 const storage = new StorageService(getDataDir(), { readSecret: readSecrets, writeSecret: writeSecrets });
 // Ensure images directory exists
@@ -107,6 +101,8 @@ ipcMain.handle('store:backups', () => storage.listBackups());
 ipcMain.handle('store:backup', () => storage.backup());
 ipcMain.handle('store:restore', async (_event, id) => {
   const result = await storage.restore(id);
+  storage.closeForRestart();
+  log.info('Backup restored; relaunching', { id });
   app.relaunch();
   app.exit(0);
   return result;
@@ -135,7 +131,7 @@ ipcMain.handle('store:changeDataDir', async () => {
   const oldDataFile = DATA_FILE;
   const newDataFile = path.join(newDir, 'Combobulator-data.json');
   try {
-    await storage.queue;
+    await storage.flush();
     if (fs.existsSync(newDataFile)) return { changed: false, error: 'The selected folder already contains data. Choose an empty folder to avoid replacing it.' };
     const migrated = fs.existsSync(oldDataFile)
       ? rebaseManagedAttachments(fs.readFileSync(oldDataFile, 'utf8'), path.dirname(oldDataFile), newDir) : null;
@@ -145,7 +141,7 @@ ipcMain.handle('store:changeDataDir', async () => {
     }
     if (migrated) await atomicWrite(newDataFile, migrated);
   } catch (e) {
-    console.error('Failed to move data folder:', e);
+    log.error('Failed to move data folder', { message: e.message });
     return { changed: false, error: 'Could not copy or validate data in the new location.' };
   }
 
@@ -153,6 +149,8 @@ ipcMain.handle('store:changeDataDir', async () => {
   const cfg = loadAppConfig();
   cfg.customDataDir = newDir;
   if (!await saveAppConfig(cfg)) return { changed: false, error: 'Could not save the new data folder setting.' };
+  storage.closeForRestart();
+  log.info('Data folder changed; relaunching');
 
   // Relaunch so all paths are re-resolved from the new location
   app.relaunch();
@@ -165,7 +163,7 @@ ipcMain.handle('store:resetDataDir', async () => {
   const defaultFile = path.join(defaultDir, 'Combobulator-data.json');
   if (path.resolve(defaultDir) !== path.resolve(path.dirname(DATA_FILE))) {
     try {
-      await storage.queue;
+      await storage.flush();
       if (fs.existsSync(defaultFile)) {
         validateData(fs.readFileSync(defaultFile, 'utf8'));
         return { changed: false, error: 'The default folder already contains data. Open it and choose which copy to keep before resetting.' };
@@ -184,13 +182,15 @@ ipcMain.handle('store:resetDataDir', async () => {
   const cfg = loadAppConfig();
   delete cfg.customDataDir;
   if (!await saveAppConfig(cfg)) return { changed: false, error: 'Could not reset the data folder setting.' };
+  storage.closeForRestart();
   app.relaunch();
   app.exit(0);
   return { changed: true };
 });
 
-ipcMain.handle('updater:check', () =>
-  new Promise((resolve, reject) => {
+ipcMain.handle('updater:check', () => !app.isPackaged
+  ? { status: 'unavailable', message: 'Updates are only available in the installed app.' }
+  : new Promise((resolve, reject) => {
     const timer = setTimeout(() => { cleanup(); reject(new Error('Update check timed out')); }, 30_000);
 
     const onAvailable    = (info) => { cleanup(); resolve({ status: 'available', version: info.version }); };
@@ -211,9 +211,13 @@ ipcMain.handle('updater:check', () =>
   })
 );
 ipcMain.handle('updater:install', async () => {
+  await storage.flush();
   if (fs.existsSync(DATA_FILE)) await storage.backup();
+  log.info('Installing downloaded update');
   autoUpdater.quitAndInstall();
 });
+// Fallback when an update cannot be downloaded or installed (e.g. blocked by antivirus).
+ipcMain.handle('updater:openReleases', () => shell.openExternal(RELEASES_URL));
 
 // Return screen source IDs so the renderer can capture system audio
 ipcMain.handle('desktop:getSources', async () => {
@@ -221,21 +225,24 @@ ipcMain.handle('desktop:getSources', async () => {
     const sources = await desktopCapturer.getSources({ types: ['screen'] });
     return sources.map((s) => ({ id: s.id, name: s.name }));
   } catch (e) {
-    console.error('Failed to get desktop sources:', e);
+    log.error('Failed to get desktop sources', { message: e.message });
     return [];
   }
 });
 
 // Save an image buffer to the images folder, return the filename
-ipcMain.handle('image:save', (_event, buffer, ext) => {
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+ipcMain.handle('image:save', async (_event, buffer, ext) => {
   try {
+    const bytes = Buffer.from(buffer);
+    if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('Image is empty or larger than 50 MB');
     const safeExt = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) ? ext : 'png';
-    const filename = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
-    const filepath = path.join(IMAGES_DIR, filename);
-    fs.writeFileSync(filepath, Buffer.from(buffer));
+    const filename = `img-${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+    await fs.promises.mkdir(IMAGES_DIR, { recursive: true });
+    await fs.promises.writeFile(path.join(IMAGES_DIR, filename), bytes);
     return filename;
   } catch (e) {
-    console.error('Failed to save image:', e);
+    log.error('Failed to save image', { message: e.message });
     return null;
   }
 });
@@ -247,7 +254,7 @@ ipcMain.handle('image:delete', (_event, filename) => {
     const filepath = path.join(IMAGES_DIR, filename);
     if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
   } catch (e) {
-    console.error('Failed to delete image:', e);
+    log.error('Failed to delete image', { message: e.message });
   }
 });
 
@@ -261,21 +268,32 @@ ipcMain.handle('dialog:openFiles', async (_event) => {
   await fs.promises.mkdir(storage.attachmentsDir, { recursive: true });
   const managed = [];
   for (const source of result.filePaths) {
-    const destination = path.join(storage.attachmentsDir, `${require('crypto').randomUUID()}-${path.basename(source)}`);
+    const destination = path.join(storage.attachmentsDir, `${crypto.randomUUID()}-${path.basename(source)}`);
     await fs.promises.copyFile(source, destination);
     managed.push(destination);
   }
   return managed;
 });
 
-// Open a referenced attachment from its original location
-ipcMain.handle('attachment:open', (_event, filePath) => {
+// Open a managed attachment with its default application. Only files inside HiveMind's own
+// attachments folder are opened, so the renderer cannot launch arbitrary programs.
+ipcMain.handle('attachment:open', async (_event, filePath) => {
+  if (!isInsideDirectory(filePath, storage.attachmentsDir)) {
+    log.warn('Refused to open a file outside the attachments folder');
+    return 'This attachment is not stored in HiveMind\u2019s attachments folder, so it was not opened.';
+  }
+  if (!fs.existsSync(filePath)) return 'The attachment file could not be found. Restore a backup to recover it.';
   return shell.openPath(filePath);
 });
 
-// Open URL in system default app (e.g. mailto: → Outlook)
-ipcMain.handle('shell:openExternal', (_event, url) => {
-  return shell.openExternal(url);
+// Open web and mail links in the system default app (e.g. mailto: → Outlook).
+ipcMain.handle('shell:openExternal', async (_event, url) => {
+  if (!isSafeExternalUrl(url)) {
+    log.warn('Refused to open a non-web link');
+    return false;
+  }
+  await shell.openExternal(url);
+  return true;
 });
 
 // Create a new Outlook email with HTML body via a temporary .eml file.
@@ -284,11 +302,11 @@ ipcMain.handle('shell:openExternal', (_event, url) => {
 ipcMain.handle('mail:openOutlook', async (_event, subject, htmlBody) => {
   try {
     const os = require('os');
-    const tmpFile = path.join(os.tmpdir(), `outlook-draft-${Date.now()}.eml`);
+    const tmpFile = path.join(os.tmpdir(), `outlook-draft-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.eml`);
     const eml = [
       'MIME-Version: 1.0',
       'X-Unsent: 1',
-      `Subject: ${subject}`,
+      `Subject: ${encodeMimeHeader(subject)}`,
       'Content-Type: text/html; charset=UTF-8',
       '',
       htmlBody,
@@ -298,7 +316,7 @@ ipcMain.handle('mail:openOutlook', async (_event, subject, htmlBody) => {
     setTimeout(() => { try { fs.unlinkSync(tmpFile); } catch {} }, 15000);
     return true;
   } catch (e) {
-    console.error('Failed to open Outlook draft:', e);
+    log.error('Failed to open Outlook draft', { message: e.message });
     return false;
   }
 });
@@ -306,8 +324,9 @@ ipcMain.handle('mail:openOutlook', async (_event, subject, htmlBody) => {
 // ── Teams overlay window ───────────────────────────────────────────────────────
 let overlayWindow = null;
 
-function showOverlay(mainWindow) {
-  if (overlayWindow && !overlayWindow.isDestroyed()) return;
+function showOverlay() {
+  // A hidden overlay from earlier in the session is reused (destroying it while Teams renders is unsafe).
+  if (overlayWindow && !overlayWindow.isDestroyed()) { overlayWindow.showInactive(); return; }
 
   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
   const overlayWidth = 500;
@@ -361,16 +380,8 @@ function destroyOverlay() {
 // are already at a safe moment (meeting end / app quit).
 function closeOverlay() { destroyOverlay(); }
 
-// #region agent log — track time of overlay click so we can correlate WS messages
-let _overlayClickedAt = 0;
-// #endregion
-
-ipcMain.on('overlay:start-recording', (_event) => {
-  // #region agent log
-  _overlayClickedAt = Date.now();
-  _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:overlay:start-recording',message:'overlay start-recording IPC received',data:{allWindowsCount:BrowserWindow.getAllWindows().length,overlayWindowExists:!!(overlayWindow&&!overlayWindow.isDestroyed())},timestamp:_overlayClickedAt,hypothesisId:'H-HIDE'});
-  // #endregion
-  const mainWindow = BrowserWindow.getAllWindows().find((w) => w !== overlayWindow);
+ipcMain.on('overlay:start-recording', () => {
+  const mainWindow = getMainWindow();
 
   // Hide (not destroy) the overlay. Teams is still actively rendering video, so
   // destroying the transparent/layered HWND here would crash the main process via
@@ -379,11 +390,9 @@ ipcMain.on('overlay:start-recording', (_event) => {
   hideOverlay();
 
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
-    // #region agent log
-    _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:overlay:start-recording',message:'sending teams:meeting-joined to renderer',data:{mainWindowDestroyed:mainWindow.isDestroyed()},timestamp:Date.now(),hypothesisId:'H-HIDE'});
-    // #endregion
     mainWindow.webContents.send('teams:meeting-joined');
   }
 });
@@ -400,6 +409,7 @@ ipcMain.on('overlay:dismiss', () => {
 
 let captureWindow     = null;
 let captureMainWindow = null; // main renderer that started the current capture
+let captureStartAbort = null; // rejects a pending desktop:startCapture if the window dies
 
 function createCaptureWindow() {
   if (captureWindow && !captureWindow.isDestroyed()) return captureWindow;
@@ -413,6 +423,9 @@ function createCaptureWindow() {
       preload:          path.join(__dirname, 'capture-preload.cjs'),
       nodeIntegration:  false,
       contextIsolation: true,
+      // The window is never shown. Without this Chromium throttles its timers and stops
+      // producing frames, which froze the system-audio visualizer.
+      backgroundThrottling: false,
     },
   });
 
@@ -421,6 +434,8 @@ function createCaptureWindow() {
   // If the GPU process inside the capture window crashes, notify the main renderer
   // but leave the main app running.
   captureWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error('Audio capture window stopped', { reason: details.reason, exitCode: details.exitCode });
+    captureStartAbort?.(new Error(`Audio capture process stopped unexpectedly (${details.reason}).`));
     if (captureMainWindow && !captureMainWindow.isDestroyed()) {
       captureMainWindow.webContents.send(
         'capture:error',
@@ -446,16 +461,20 @@ ipcMain.handle('desktop:startCapture', async (event, sourceId) => {
     await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
   }
 
-  // Ask the capture window to start, then wait for either success or failure.
+  // Ask the capture window to start, then wait for success, failure, a crash or a timeout —
+  // previously a capture window that never answered left "Start recording" hanging forever.
   return new Promise((resolve, reject) => {
-    const onReady = (_e, mimeType) => {
-      ipcMain.removeListener('capture:error', onError);
-      resolve(mimeType);
-    };
-    const onError = (_e, msg) => {
+    const finish = (error, mimeType) => {
+      clearTimeout(timer);
       ipcMain.removeListener('capture:ready', onReady);
-      reject(new Error(msg));
+      ipcMain.removeListener('capture:error', onError);
+      captureStartAbort = null;
+      if (error) reject(error); else resolve(mimeType);
     };
+    const onReady = (_e, mimeType) => finish(null, mimeType);
+    const onError = (_e, msg) => finish(new Error(msg));
+    const timer = setTimeout(() => finish(new Error('Audio capture did not start within 15 seconds. Try again.')), 15_000);
+    captureStartAbort = (error) => finish(error);
     ipcMain.once('capture:ready', onReady);
     ipcMain.once('capture:error', onError);
     win.webContents.send('capture:do-start', sourceId);
@@ -555,33 +574,32 @@ let teamsWs = null;
 let teamsRetryTimer = null;
 let teamsWasInMeeting = false;
 let teamsConnected = false;
+// Detection only runs after the renderer reports the "Teams meeting detection" setting,
+// so turning it off in Settings stops the connection and the overlay immediately.
+let teamsEnabled = false;
 
-function connectToTeams(mainWindow) {
-  if (teamsConnected) return;
+function connectToTeams() {
+  if (!teamsEnabled || teamsWs) return;
 
   const token = loadTeamsToken();
-  const url = `ws://localhost:8124?token=${token}&protocol-version=2.0.0&manufacturer=HiveMind&device=HiveMind&app=HiveMind&app-version=1.0`;
+  const url = `ws://localhost:8124?token=${encodeURIComponent(token)}&protocol-version=2.0.0&manufacturer=HiveMind&device=HiveMind&app=HiveMind&app-version=${encodeURIComponent(app.getVersion())}`;
 
   try {
     teamsWs = new WebSocket(url);
   } catch {
-    scheduleTeamsReconnect(mainWindow);
+    teamsWs = null;
+    scheduleTeamsReconnect();
     return;
   }
 
   teamsWs.on('open', () => {
     teamsConnected = true;
+    log.info('Connected to Teams local API');
   });
 
   teamsWs.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
-
-    // #region agent log — log WS messages in the 10s window after overlay click
-    if (_overlayClickedAt && (Date.now() - _overlayClickedAt) < 10000) {
-      _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:teamsWs:message',message:'Teams WS message received after overlay click',data:{msAfterClick:Date.now()-_overlayClickedAt,isInMeeting:msg.meetingUpdate?.meetingState?.isInMeeting,canPair:msg.meetingUpdate?.meetingPermissions?.canPair,hasTokenRefresh:!!msg.tokenRefresh,teamsWasInMeeting},timestamp:Date.now(),hypothesisId:'H-WS'});
-    }
-    // #endregion
 
     if (msg.tokenRefresh) {
       saveTeamsToken(msg.tokenRefresh);
@@ -599,7 +617,7 @@ function connectToTeams(mainWindow) {
 
     if (isInMeeting && !teamsWasInMeeting) {
       teamsWasInMeeting = true;
-      showOverlay(mainWindow);
+      showOverlay();
     } else if (!isInMeeting && teamsWasInMeeting) {
       teamsWasInMeeting = false;
       closeOverlay();
@@ -607,9 +625,10 @@ function connectToTeams(mainWindow) {
   });
 
   teamsWs.on('close', () => {
+    if (teamsConnected) log.info('Teams local API connection closed');
     teamsConnected = false;
     teamsWs = null;
-    scheduleTeamsReconnect(mainWindow);
+    scheduleTeamsReconnect();
   });
 
   teamsWs.on('error', () => {
@@ -617,12 +636,73 @@ function connectToTeams(mainWindow) {
   });
 }
 
-function scheduleTeamsReconnect(mainWindow) {
-  if (teamsRetryTimer) return;
+function scheduleTeamsReconnect() {
+  if (teamsRetryTimer || !teamsEnabled) return;
   teamsRetryTimer = setTimeout(() => {
     teamsRetryTimer = null;
-    connectToTeams(mainWindow);
+    connectToTeams();
   }, 10000);
+}
+
+function disconnectFromTeams() {
+  if (teamsRetryTimer) { clearTimeout(teamsRetryTimer); teamsRetryTimer = null; }
+  if (teamsWs) { const socket = teamsWs; teamsWs = null; socket.removeAllListeners(); socket.on('error', () => {}); socket.terminate(); }
+  teamsConnected = false;
+  teamsWasInMeeting = false;
+  hideOverlay();
+}
+
+ipcMain.on('teams:set-enabled', (_event, enabled) => {
+  teamsEnabled = enabled === true;
+  if (teamsEnabled) connectToTeams(); else disconnectFromTeams();
+});
+
+// ── Main window ───────────────────────────────────────────────────────────────
+let mainWindow = null;
+function getMainWindow() {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+
+const APP_URLS = { devServerUrl: process.env.VITE_DEV_SERVER_URL || '', indexFileUrl: pathToFileURL(INDEX_FILE).href };
+
+// Every window HiveMind creates only ever shows its own bundled pages. Dropping a file or
+// following a link must not replace the app (the page would keep the privileged preload API).
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (event, url) => {
+    if (contents === getMainWindow()?.webContents && isAppUrl(url, APP_URLS)) return;
+    if (contents !== getMainWindow()?.webContents && url.startsWith('file:')) return; // overlay/capture pages
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) shell.openExternal(url).catch(() => {});
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) shell.openExternal(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+});
+
+/**
+ * Ask the renderer to persist anything it has not sent yet. Resolves when it confirms,
+ * or after a timeout so a hung renderer can never block closing the app.
+ */
+function requestRendererFlush(win, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    const done = () => {
+      clearTimeout(timer);
+      ipcMain.removeListener('app:flushed', onFlushed);
+      resolve();
+    };
+    const onFlushed = (event, replyId) => {
+      if (event.sender === win.webContents && replyId === id) done();
+    };
+    const timer = setTimeout(() => {
+      log.warn('Renderer did not confirm saving before close');
+      done();
+    }, timeoutMs);
+    ipcMain.on('app:flushed', onFlushed);
+    try { win.webContents.send('app:flush', id); } catch { done(); }
+  });
 }
 
 function createWindow() {
@@ -638,8 +718,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
   });
+  mainWindow = win;
 
   win.setMenuBarVisibility(false);
 
@@ -664,78 +746,114 @@ function createWindow() {
     if (menu.items.length > 0) menu.popup();
   });
 
-  // #region agent log — renderer crash handler
-  win.webContents.on('render-process-gone', (_e, details) => {
-    _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:render-process-gone',message:'Renderer process gone',data:{reason:details.reason,exitCode:details.exitCode,msAfterOverlayClick:_overlayClickedAt ? Date.now()-_overlayClickedAt : null},timestamp:Date.now(),hypothesisId:'H-RENDERER'});
-    try { dialog.showErrorBox('[HiveMind debug] Renderer crashed — please screenshot', `Reason: ${details.reason}  ExitCode: ${details.exitCode}`); } catch {}
+  // Let the renderer save pending edits before the window goes away.
+  let closeConfirmed = false;
+  win.on('close', (event) => {
+    if (closeConfirmed || win.webContents.isCrashed()) return;
+    event.preventDefault();
+    requestRendererFlush(win).finally(() => {
+      closeConfirmed = true;
+      if (!win.isDestroyed()) win.close();
+    });
   });
-  // #endregion
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+
+  // A crashed renderer leaves a blank window; reload it (bounded, to avoid a crash loop).
+  const recentCrashes = [];
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error('Renderer process gone', { reason: details.reason, exitCode: details.exitCode });
+    if (details.reason === 'clean-exit') return;
+    const now = Date.now();
+    while (recentCrashes.length && now - recentCrashes[0] > 60_000) recentCrashes.shift();
+    recentCrashes.push(now);
+    if (recentCrashes.length <= 3 && !win.isDestroyed()) win.webContents.reload();
+    else dialog.showErrorBox('HiveMind stopped responding', `The window crashed repeatedly. Your saved data is safe. Restart HiveMind; details are in ${log.file}`);
+  });
 
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    win.loadFile(INDEX_FILE);
   }
 
   return win;
 }
 
+function sendToMainWindow(channel, payload) {
+  const win = getMainWindow();
+  if (win) win.webContents.send(channel, payload);
+}
+
+app.on('second-instance', () => {
+  const win = getMainWindow();
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
   app.setAppUserModelId('com.fractal.supplier-notes');
-  // #region agent log — write startup entry immediately so we can confirm build version + log path
-  _dbgWrite({sessionId:'6cf3ea',type:'startup',version:'1.2.2',userData:app.getPath('userData'),crashDumps:app.getPath('crashDumps'),timestamp:Date.now()});
-  // #endregion
+  log.info('Starting HiveMind', { version: app.getVersion(), packaged: app.isPackaged, platform: process.platform });
+
   // Grant microphone and media permissions so Web Speech API and getUserMedia work
-  const { session } = require('electron');
+  const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
     callback(allowed.includes(permission));
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    const allowed = ['media', 'microphone', 'audioCapture', 'desktopCapture'];
-    return allowed.includes(permission);
-  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => allowed.includes(permission));
 
   // Serve local image files via app-image:// protocol
   protocol.handle('app-image', (request) => {
     const filename = decodeURIComponent(new URL(request.url).hostname);
     if (!filename || filename !== path.basename(filename)) return new Response('Invalid image', { status: 400 });
-    const filepath = path.join(IMAGES_DIR, filename);
-    return net.fetch(`file://${filepath}`);
+    return net.fetch(pathToFileURL(path.join(IMAGES_DIR, filename)).href);
   });
 
-  const win = createWindow();
-  connectToTeams(win);
+  createWindow();
 
+  // electron-updater writes its own detailed log (download, signature check, installer
+  // launch) to hivemind.log — the first place to look when antivirus blocks an update.
+  autoUpdater.logger = log;
+  autoUpdater.on('checking-for-update', () => log.info('Checking for updates'));
   autoUpdater.on('update-available', (info) => {
-    win.webContents.send('updater:update-available', { version: info.version });
+    log.info('Update available', { version: info.version });
+    sendToMainWindow('updater:update-available', { version: info.version });
   });
   autoUpdater.on('update-downloaded', (info) => {
-    win.webContents.send('updater:update-downloaded', { version: info.version });
+    log.info('Update downloaded', { version: info.version });
+    sendToMainWindow('updater:update-downloaded', { version: info.version });
   });
   autoUpdater.on('update-not-available', () => {
-    win.webContents.send('updater:update-not-available');
+    sendToMainWindow('updater:update-not-available');
   });
   autoUpdater.on('error', (err) => {
-    win.webContents.send('updater:error', { message: err.message });
+    log.error('Updater error', { message: err?.message });
+    sendToMainWindow('updater:error', { message: err?.message || 'Unknown update error' });
   });
 
-  autoUpdater.checkForUpdates().catch((e) => {
-    _dbgWrite({sessionId:'6cf3ea',location:'main.cjs:autoUpdater.checkForUpdates',message:'checkForUpdates rejected',data:{error:String(e?.message||e)},timestamp:Date.now(),hypothesisId:'H-UPDATER'});
-  });
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdates().catch((e) => log.warn('Update check failed', { message: e?.message }));
+  }
+});
+
+// Queued data-file writes must finish before the process exits; otherwise the last edits are lost.
+let storageFlushedForQuit = false;
+app.on('before-quit', (event) => {
+  if (storageFlushedForQuit || storage.pending === 0) return;
+  event.preventDefault();
+  storage.flush().catch((error) => log.error('Saving before quit failed', { message: error.message }))
+    .finally(() => { storageFlushedForQuit = true; app.quit(); });
 });
 
 app.on('window-all-closed', () => {
-  if (teamsRetryTimer) { clearTimeout(teamsRetryTimer); teamsRetryTimer = null; }
-  if (teamsWs) { teamsWs.terminate(); teamsWs = null; }
+  disconnectFromTeams();
   closeOverlay();
   if (captureWindow && !captureWindow.isDestroyed()) { captureWindow.close(); captureWindow = null; }
   app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    const win = createWindow();
-    connectToTeams(win);
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

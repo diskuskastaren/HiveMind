@@ -102,6 +102,9 @@ class StorageService {
     this.readSecret = options.readSecret || (() => ({}));
     this.writeSecret = options.writeSecret || (() => {});
     this.queue = Promise.resolve();
+    this.pending = 0;
+    this.writeSequence = 0;
+    this.restartPending = false;
     this.lastHash = null;
     this.blocked = null;
     this.attachmentMap = new Map();
@@ -121,9 +124,20 @@ class StorageService {
   }
 
   run(operation) {
-    const result = this.queue.then(operation);
+    this.pending++;
+    const result = this.queue.then(operation).finally(() => { this.pending--; });
     this.queue = result.catch(() => {});
     return result;
+  }
+
+  /** Resolves once every queued read/write/backup has finished (used before quitting). */
+  async flush() {
+    while (this.pending > 0) await this.queue;
+  }
+
+  /** After a restore or data-folder move the app relaunches; later writes would clobber that result. */
+  closeForRestart() {
+    this.restartPending = true;
   }
 
   async withLock(operation) {
@@ -172,38 +186,49 @@ class StorageService {
   }
 
   async write(raw) {
-    return this.run(() => this.withLock(async () => {
-      if (this.blocked) throw new Error(`Storage is locked for recovery: ${this.blocked}`);
-      const envelope = validateData(raw);
-      const settings = envelope.state.settings || {};
-      envelope.state.settings = { ...settings, openaiApiKey: '', groqApiKey: '' };
-      const disk = await fs.promises.readFile(this.file, 'utf8').catch((error) => {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-      });
-      if (disk !== null) validateData(disk);
-      if (this.lastHash !== null && disk !== null && hash(disk) !== this.lastHash) {
-        this.blocked = 'The data file changed outside this app';
-        throw new Error(this.blocked);
-      }
-      if (this.lastHash === null && disk !== null) {
-        this.blocked = 'An existing data file appeared after startup';
-        throw new Error(this.blocked);
-      }
-      await this.copyExternalAttachments(envelope.state);
-      await this.writeSecret({ openaiApiKey: settings.openaiApiKey || '', groqApiKey: settings.groqApiKey || '' });
-      if (disk && !this.lastBackupAt) {
-        try { await this.createBackupLocked(); } catch (error) { this.backupError = error.message; }
-      }
-      const finalData = JSON.stringify(envelope);
-      await atomicWrite(this.file, finalData);
-      this.lastHash = hash(finalData);
-      this.lastSavedAt = Date.now();
-      if (!this.lastBackupAt || this.lastSavedAt - this.lastBackupAt >= BACKUP_INTERVAL_MS) {
-        try { await this.createBackupLocked(); } catch (error) { this.backupError = error.message; }
-      }
-      return this.status();
-    }));
+    // Each write carries the complete workspace, so a write that is still waiting in the queue
+    // when a newer one arrives is obsolete: skip it and let the newest snapshot land.
+    const ticket = ++this.writeSequence;
+    return this.run(() => {
+      if (this.restartPending) return this.status();
+      if (ticket !== this.writeSequence) return this.status();
+      return this.withLock(() => this.writeLocked(raw));
+    });
+  }
+
+  async writeLocked(raw) {
+    if (this.blocked) throw new Error(`Storage is locked for recovery: ${this.blocked}`);
+    const envelope = validateData(raw);
+    const settings = envelope.state.settings || {};
+    envelope.state.settings = { ...settings, openaiApiKey: '', groqApiKey: '' };
+    const disk = await fs.promises.readFile(this.file, 'utf8').catch((error) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    const diskHash = disk === null ? null : hash(disk);
+    // A file we wrote (or read and validated) ourselves needs no second validation pass.
+    if (disk !== null && diskHash !== this.lastHash) validateData(disk);
+    if (this.lastHash !== null && disk !== null && diskHash !== this.lastHash) {
+      this.blocked = 'The data file changed outside this app';
+      throw new Error(this.blocked);
+    }
+    if (this.lastHash === null && disk !== null) {
+      this.blocked = 'An existing data file appeared after startup';
+      throw new Error(this.blocked);
+    }
+    await this.copyExternalAttachments(envelope.state);
+    await this.writeSecret({ openaiApiKey: settings.openaiApiKey || '', groqApiKey: settings.groqApiKey || '' });
+    if (disk && !this.lastBackupAt) {
+      try { await this.createBackupLocked(); } catch (error) { this.backupError = error.message; }
+    }
+    const finalData = JSON.stringify(envelope);
+    await atomicWrite(this.file, finalData);
+    this.lastHash = hash(finalData);
+    this.lastSavedAt = Date.now();
+    if (!this.lastBackupAt || this.lastSavedAt - this.lastBackupAt >= BACKUP_INTERVAL_MS) {
+      try { await this.createBackupLocked(); } catch (error) { this.backupError = error.message; }
+    }
+    return this.status();
   }
 
   async copyExternalAttachments(state) {

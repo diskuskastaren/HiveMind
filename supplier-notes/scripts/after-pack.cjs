@@ -34,4 +34,12 @@ module.exports = async (context) => {
 
   resources.outputResource(exe);
   fs.writeFileSync(executablePath, Buffer.from(exe.generate()));
+
+  // `signAndEditExecutable: false` (needed for the resource edit above) also makes
+  // electron-builder skip signing HiveMind.exe. Sign it here instead, after editing, so the
+  // app binary is signed whenever a certificate (CSC_LINK / WIN_CSC_LINK) or
+  // `win.azureSignOptions` is configured. Without signing configuration this is a no-op.
+  // Unsigned self-updating executables are a common trigger for antivirus heuristics.
+  const signed = await context.packager.signIf(executablePath);
+  console.log(`  • ${signed ? 'signed' : 'not signed (no signing configuration)'}: ${path.basename(executablePath)}`);
 };
