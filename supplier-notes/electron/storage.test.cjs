@@ -184,3 +184,28 @@ test('backups fall back to copying where hard links are not supported', async (t
   assert.equal(b.nlink, 1);
   assert.equal(await fs.readFile(path.join(service.backupDir, second, 'images', 'img-b.png'), 'utf8'), 'pixels');
 });
+
+test('an unavailable key store does not stop the workspace from saving; the key is stored with a later save', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-keystore-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  let keyStoreUp = false;
+  let stored = null;
+  const service = new StorageService(dir, {
+    writeSecret: (keys) => {
+      if (!keyStoreUp) throw new Error('Secure API key storage is unavailable');
+      stored = keys;
+    },
+  });
+  await service.read();
+  const status = await service.write(envelope([{ id: 'one', title: 'Kept' }]));
+  assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.notes[0].title, 'Kept');
+  assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.settings.openaiApiKey, '');
+  assert.equal(status.keyError, 'Secure API key storage is unavailable');
+  assert.equal(status.error, null);
+  assert.equal(stored, null);
+
+  keyStoreUp = true;
+  const next = await service.write(envelope([{ id: 'one', title: 'Kept' }, { id: 'two', title: 'Later' }]));
+  assert.equal(next.keyError, null);
+  assert.deepEqual(stored, { openaiApiKey: 'secret', groqApiKey: '' });
+});

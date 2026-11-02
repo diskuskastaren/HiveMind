@@ -112,7 +112,13 @@ async function writeSecrets(keys) {
   cachedSecrets = { openaiApiKey: keys.openaiApiKey, groqApiKey: keys.groqApiKey };
   secretsUnreadable = false;
 }
-const storage = new StorageService(getDataDir(), { readSecret: readSecrets, writeSecret: writeSecrets });
+const storage = new StorageService(getDataDir(), {
+  readSecret: readSecrets,
+  writeSecret: (keys) => writeSecrets(keys).catch((error) => {
+    log.error('Unable to save API keys', { message: error.message });
+    throw error;
+  }),
+});
 // Ensure images directory exists
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 

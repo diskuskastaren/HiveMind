@@ -200,6 +200,17 @@ renamed WER helper), the same executable metadata and the same unsigned-build be
 the Vite dev server renders the app; the packaged Linux app starts and saves; the demo site builds and
 its editor works.
 
+### Follow-up: saving when the key store is unavailable
+
+After the build-tool merge, one CI run on `main` failed the Electron check that saves an API key
+(the same code passed in every other run and in 15 local runs). Saving wrote the API key to the OS key
+store *before* the workspace and aborted the whole save if that failed, so with the key store briefly
+unavailable no edit was saved until it recovered. Now the workspace is always saved (it never contains
+the keys); a failed key save is logged, reported once ("API key not stored", and in Settings → Data),
+and retried with each later save. A new unit test fails against the old code; checked in the desktop
+app with a simulated key-store failure. The Electron checks now print the app log and Electron's error
+output when they fail, so an intermittent failure names its cause.
+
 Remaining: one moderate `minimatch` advisory (pattern-matching denial of service), reached only
 through electron-builder's packaging libraries (`@electron/asar`, `@electron/universal`, `ejs`). They
 only match the app's own file patterns at build time, never untrusted input. The newest stable
@@ -210,7 +221,7 @@ electron-builder still pins these libraries; only the electron-builder 27 alpha 
 | Check | Result |
 |-------|--------|
 | `npm run typecheck` | Pass (0 errors) |
-| `npm test` | 40 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
+| `npm test` | 41 unit tests pass (storage, security helpers, persistence, links, dates, markdown, transcript import, search/AI validation, store) — up from 12 |
 | `npm run build` | Pass (Vite production build with CSP) |
 | `node scripts/e2e-electron.cjs` (Electron 45.2.1; Linux/Xvfb locally and in CI, Windows in CI) | 12/12 pass: navigation guard, IPC allowlists, app-image under CSP, desktop capture permission, single instance, save-on-close, undecryptable key file kept, reload, API key stored encrypted, note editor with image paste, API key read back after restart, no deprecation warnings |
 | `node scripts/e2e-browser.mjs` (Chromium) | 13/13 pass: undo isolation, inert HTML, unloadable data left untouched, follow-up editing, task dialog, decisions, undo delete, import confirm, transcript import, recording edge cases (late final result, double start), mic + system recording pipelines |

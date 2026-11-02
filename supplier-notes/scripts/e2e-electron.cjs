@@ -241,7 +241,19 @@ async function main() {
   console.log(`\n${results.length} Electron checks passed`);
 }
 
-main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
+// After a failure, show what the app itself recorded: its log file and Electron's error output.
+function printDiagnostics() {
+  const tail = (text, lines) => text.split('\n').filter((line) => line.trim()).slice(-lines).join('\n');
+  try {
+    const log = fs.readFileSync(path.join(profile, 'logs', 'hivemind.log'), 'utf8');
+    console.error(`\n--- app log (last 40 lines) ---\n${tail(log, 40)}`);
+  } catch (error) { console.error(`\n--- app log unavailable: ${error.message}`); }
+  // Chromium's D-Bus and NODE_OPTIONS notices are expected on CI and only add noise.
+  const output = stderr.split('\n').filter((line) => !/dbus|NODE_OPTION/i.test(line)).join('\n');
+  console.error(`--- Electron error output (last 40 lines) ---\n${tail(output, 40) || '(none)'}\n`);
+}
+
+main().catch((error) => { console.error(error); printDiagnostics(); process.exitCode = 1; }).finally(async () => {
   for (const child of children) child.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
   // On Windows a just-killed process can keep its files locked for a moment.

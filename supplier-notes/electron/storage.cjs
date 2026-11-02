@@ -262,7 +262,14 @@ class StorageService {
       throw new Error(this.blocked);
     }
     await this.copyExternalAttachments(envelope.state);
-    await this.writeSecret({ openaiApiKey: settings.openaiApiKey || '', groqApiKey: settings.groqApiKey || '' });
+    // API keys live in the OS key store, apart from the data file (which never contains them). If the
+    // key store is unavailable, the workspace is still saved; the key is retried with the next save.
+    try {
+      await this.writeSecret({ openaiApiKey: settings.openaiApiKey || '', groqApiKey: settings.groqApiKey || '' });
+      this.keyError = null;
+    } catch (error) {
+      this.keyError = error.message;
+    }
     if (disk && !this.lastBackupAt) {
       try { await this.createBackupLocked(); } catch (error) { this.backupError = error.message; }
     }
@@ -401,7 +408,8 @@ class StorageService {
 
   status() {
     return { lastSavedAt: this.lastSavedAt, lastBackupAt: this.lastBackupAt,
-      backupError: this.backupError || null, attachmentWarning: this.attachmentWarning || null, error: this.blocked };
+      backupError: this.backupError || null, attachmentWarning: this.attachmentWarning || null,
+      keyError: this.keyError || null, error: this.blocked };
   }
 }
 
