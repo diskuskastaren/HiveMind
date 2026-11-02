@@ -192,8 +192,17 @@ export default function App() {
     };
     let lastBackupError = '';
     let lastAttachmentWarning = '';
+    let lastKeyError = '';
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent<{ backupError?: string; attachmentWarning?: string }>).detail;
+      const detail = (event as CustomEvent<{ backupError?: string; attachmentWarning?: string; keyError?: string }>).detail;
+      const keyError = detail?.keyError;
+      if (keyError && keyError !== lastKeyError) {
+        toast.error('API key not stored', {
+          description: `${keyError}. Your notes are saved. The key works until you close HiveMind and is stored with your next change once the system key store is available.`,
+          duration: Infinity,
+        });
+      }
+      lastKeyError = keyError || '';
       const error = detail?.backupError;
       if (error && error !== lastBackupError) toast.error('Automatic backup failed', { description: error, duration: Infinity });
       lastBackupError = error || '';

@@ -171,7 +171,7 @@ export function SettingsModal() {
   const [currentDataDir, setCurrentDataDir] = useState<string>('');
   const [isCustomDataDir, setIsCustomDataDir] = useState(false);
   const [dataDirChanging, setDataDirChanging] = useState(false);
-  const [storageStatus, setStorageStatus] = useState<{ lastSavedAt: number | null; lastBackupAt: number | null; backupError: string | null; attachmentWarning?: string | null; error: string | null } | null>(null);
+  const [storageStatus, setStorageStatus] = useState<{ lastSavedAt: number | null; lastBackupAt: number | null; backupError: string | null; attachmentWarning?: string | null; keyError?: string | null; error: string | null } | null>(null);
   const [backups, setBackups] = useState<Array<{ id: string; createdAt: number }>>([]);
   const [backupBusy, setBackupBusy] = useState(false);
   const [githubReleases, setGithubReleases] = useState<Array<{ tag_name: string; body: string | null; published_at: string | null }>>([]);
@@ -835,6 +835,7 @@ export function SettingsModal() {
                       {storageStatus?.error && <p className="text-destructive">Storage error: {storageStatus.error}</p>}
                       {storageStatus?.backupError && <p className="text-destructive">Backup error: {storageStatus.backupError}</p>}
                       {storageStatus?.attachmentWarning && <p className="text-warning">{storageStatus.attachmentWarning}</p>}
+                      {storageStatus?.keyError && <p className="text-destructive">API keys not stored: {storageStatus.keyError}</p>}
                     </div>
                   )}
                   <p className="text-ui text-muted-foreground">
