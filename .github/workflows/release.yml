@@ -63,22 +63,23 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: supplier-notes/package-lock.json
-      - name: Check the tag matches the version and release notes exist
-        id: release
-        shell: bash
-        run: node scripts/release-notes.cjs check "$( [ "$RELEASE" = true ] && echo "$TAG" )"
-      - name: Tag this commit (manual run)
+      - name: Tag this commit, or build the commit the tag points at (manual run)
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           existing=$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)
           if [ -n "$existing" ]; then
-            [ "$existing" = "$GITHUB_SHA" ] || { echo "$TAG already exists on another commit ($existing)"; exit 1; }
-            echo "$TAG already points at $GITHUB_SHA"
+            echo "$TAG already exists ($existing): building that commit"
+            git fetch --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+            git checkout --detach "$TAG"
           else
             git tag "$TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$TAG"
           fi
+      - name: Check the tag matches the version and release notes exist
+        id: release
+        shell: bash
+        run: node scripts/release-notes.cjs check "$( [ "$RELEASE" = true ] && echo "$TAG" )"
       - run: npm ci
       - run: npm run build
       - name: Electron end-to-end checks
@@ -86,7 +87,26 @@ jobs:
       - name: Build the installer (pull request — nothing is uploaded)
         if: env.RELEASE != 'true'
         run: npx electron-builder --win --publish never
-      - name: Build the installer and upload it to a draft release
+      - name: Start a clean draft release
+        if: env.RELEASE == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        # electron-builder can start two GitHub publishers at once; when no release exists yet, each
+        # creates its own draft and the files end up split between them. Creating the draft first makes
+        # both upload into it. Drafts left by an earlier run for this tag are removed; a published release
+        # for the tag stops the run.
+        run: |
+          set -euo pipefail
+          releases() { gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\""; }
+          if releases | grep -q ' false$'; then echo "$TAG is already published"; exit 1; fi
+          for id in $(releases | cut -d' ' -f1); do
+            echo "Removing earlier draft $id"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "HiveMind $VERSION" --notes "Building HiveMind $VERSION…"
+      - name: Build the installer and upload it to the draft release
         if: env.RELEASE == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -135,6 +155,8 @@ jobs:
         run: |
           set -euo pipefail
           installer="HiveMind-Setup-$VERSION.exe"
+          count=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | wc -l)
+          [ "$count" -eq 1 ] || { echo "Expected exactly one release for $TAG, found $count"; exit 1; }
           release=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets,body)
           [ "$(jq -r '.isDraft' <<<"$release")" = true ] || { echo "$TAG is not a draft (already published?)"; exit 1; }
           for file in "$installer" "$installer.blockmap" latest.yml; do
