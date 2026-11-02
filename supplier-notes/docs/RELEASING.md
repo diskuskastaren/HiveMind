@@ -91,13 +91,39 @@ The `CI` workflow (`.github/workflows/ci.yml`) runs on every push and pull reque
 
 To release:
 
-1. Bump `version` in `supplier-notes/package.json` and push; wait for CI to pass.
-2. Install the CI artifact on a test machine: check recording (incl. the visualizer with system
-   audio), then quit and reopen.
-3. On a Windows machine with a GitHub token that may create releases: `npm run electron:publish`.
-4. Add the installer's SHA-256 checksum and the changes to the GitHub release notes.
-5. On a machine with the previous version, confirm the update arrives and installs; if not, read
-   `%APPDATA%\supplier-notes\logs\hivemind.log`.
+1. **Prepare.** In a pull request: bump `version` in `supplier-notes/package.json` (`npm version
+   <x.y.z> --no-git-tag-version`) and add `supplier-notes/docs/release-notes/<x.y.z>.md` (what changed,
+   for users). Merge once CI is green.
+2. **Test the build.** Install the `HiveMind-installer` artifact from the CI run on `main` on a Windows
+   machine that has the previous version and real data:
+   - existing notes open correctly (incl. tables and collapsible sections);
+   - API keys saved by the previous version are still shown in Settings;
+   - recording works, incl. the visualizer with system audio; the Teams overlay appears;
+   - Settings → Data lists the backups; quit and reopen.
+3. **Build the release.** Tag the merged commit and push the tag:
+   ```bash
+   git fetch origin main
+   git tag v<x.y.z> origin/main
+   git push origin v<x.y.z>
+   ```
+   The `Release` workflow (`.github/workflows/release.yml`) checks that the tag matches the version,
+   runs the Electron checks, builds the installer and uploads it, its `.blockmap` and `latest.yml` to a
+   **draft** release, launches the packaged app, and adds the notes and the installer's SHA-256 to the
+   draft. Drafts are invisible to users and to the in-app updater; if any step fails, leave the draft
+   unpublished.
+4. **Publish.** Review the draft on GitHub (Releases → the draft → Edit) and click **Publish release**.
+   From then on, installed copies offer the update.
+5. **Confirm.** On a machine with the previous version, check that the update arrives and installs; if
+   not, read `%APPDATA%\supplier-notes\logs\hivemind.log`.
+
+The workflow never publishes by itself: it always creates a draft (`EP_DRAFT`). Pull requests that change
+the workflow, the release notes or `scripts/release-notes.cjs` run it without uploading anything. A draft
+with a failed run can be deleted on GitHub; delete its tag too (`git push --delete origin v<x.y.z>`) before
+tagging again.
+
+Without the workflow (fallback): on a Windows machine with a GitHub token that may create releases, run
+`npm run electron:publish` (also creates a draft), then add the notes and checksum
+(`node scripts/release-notes.cjs write` prints both) and publish the draft.
 
 The same checks locally:
 

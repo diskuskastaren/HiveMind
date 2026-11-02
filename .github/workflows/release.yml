@@ -1,0 +1,84 @@
+name: Release
+
+# Pushing a version tag (e.g. v1.7.0) builds the Windows installer and uploads it, with latest.yml for
+# the in-app updater, to a *draft* GitHub release with the release notes and the installer's SHA-256.
+# Drafts are invisible to users and to the updater: test the installer, then publish the draft by hand
+# (see supplier-notes/docs/RELEASING.md). Pull requests that change this workflow, the release notes
+# or the release script run the same steps without uploading anything.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - supplier-notes/docs/release-notes/**
+      - supplier-notes/scripts/release-notes.cjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: supplier-notes
+
+jobs:
+  windows:
+    name: Windows installer → draft release
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # create the draft release and upload the installer
+    env:
+      IS_TAG: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: supplier-notes/package-lock.json
+      - name: Check the tag matches the version and release notes exist
+        id: release
+        shell: bash
+        run: node scripts/release-notes.cjs check "$( [ "$IS_TAG" = true ] && echo "$TAG" )"
+      - run: npm ci
+      - run: npm run build
+      - name: Electron end-to-end checks
+        run: node scripts/e2e-electron.cjs
+      - name: Build the installer (pull request — nothing is uploaded)
+        if: env.IS_TAG != 'true'
+        run: npx electron-builder --win --publish never
+      - name: Build the installer and upload it to a draft release
+        if: env.IS_TAG == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_DRAFT: 'true'
+        run: npx electron-builder --win --publish always
+      - name: Launch the packaged app (isolated profile)
+        run: node scripts/smoke-electron.cjs
+      - name: Release notes with the installer checksum
+        run: node scripts/release-notes.cjs write
+      - name: Put the release notes on the draft
+        if: env.IS_TAG == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        # Edits only the title and notes; the release stays a draft until it is published by hand.
+        run: gh release edit "$TAG" --title "HiveMind $VERSION" --notes-file release/RELEASE_NOTES.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HiveMind-release-${{ steps.release.outputs.version }}
+          path: |
+            supplier-notes/release/HiveMind-Setup-*.exe
+            supplier-notes/release/HiveMind-Setup-*.exe.blockmap
+            supplier-notes/release/latest.yml
+            supplier-notes/release/RELEASE_NOTES.md
+          retention-days: 14
+          if-no-files-found: error
