@@ -1,10 +1,17 @@
 name: Release
 
-# Pushing a version tag (e.g. v1.7.0) builds the Windows installer and uploads it, with latest.yml for
-# the in-app updater, to a *draft* GitHub release with the release notes and the installer's SHA-256.
-# Drafts are invisible to users and to the updater: test the installer, then publish the draft by hand
-# (see supplier-notes/docs/RELEASING.md). Pull requests that change this workflow, the release notes
-# or the release script run the same steps without uploading anything.
+# Builds the Windows installer and uploads it, with latest.yml for the in-app updater, to a *draft*
+# GitHub release with the release notes and the installer's SHA-256. Drafts are invisible to users and to
+# the updater; publishing is a separate, explicit step. See supplier-notes/docs/RELEASING.md.
+#
+# Start a release either way:
+#   - push a version tag (e.g. v1.7.0), or
+#   - run this workflow from the Actions tab with step "draft" and the version: it tags the current
+#     commit of the chosen branch and builds the draft.
+# Publish with step "publish": it checks the draft (installer, blockmap and latest.yml present, version
+# and checksum match) and publishes it.
+# Pull requests that change this workflow, the release notes or the release script run the build without
+# uploading anything.
 
 on:
   push:
@@ -14,12 +21,23 @@ on:
       - .github/workflows/release.yml
       - supplier-notes/docs/release-notes/**
       - supplier-notes/scripts/release-notes.cjs
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'draft = tag this branch and build a draft release; publish = check and publish the draft'
+        type: choice
+        options: [draft, publish]
+        default: draft
+      version:
+        description: 'Version, e.g. 1.7.0 (must match package.json)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
   cancel-in-progress: false
 
 defaults:
@@ -29,13 +47,15 @@ defaults:
 jobs:
   windows:
     name: Windows installer → draft release
+    if: github.event_name != 'workflow_dispatch' || inputs.step == 'draft'
     runs-on: windows-latest
     timeout-minutes: 40
     permissions:
-      contents: write # create the draft release and upload the installer
+      contents: write # tag, create the draft release and upload the installer
     env:
-      IS_TAG: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
-      TAG: ${{ github.ref_name }}
+      # Upload only for a pushed tag or a manual "draft" run; pull requests only build.
+      RELEASE: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || github.event_name == 'workflow_dispatch' }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -46,16 +66,28 @@ jobs:
       - name: Check the tag matches the version and release notes exist
         id: release
         shell: bash
-        run: node scripts/release-notes.cjs check "$( [ "$IS_TAG" = true ] && echo "$TAG" )"
+        run: node scripts/release-notes.cjs check "$( [ "$RELEASE" = true ] && echo "$TAG" )"
+      - name: Tag this commit (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          existing=$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)
+          if [ -n "$existing" ]; then
+            [ "$existing" = "$GITHUB_SHA" ] || { echo "$TAG already exists on another commit ($existing)"; exit 1; }
+            echo "$TAG already points at $GITHUB_SHA"
+          else
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
+          fi
       - run: npm ci
       - run: npm run build
       - name: Electron end-to-end checks
         run: node scripts/e2e-electron.cjs
       - name: Build the installer (pull request — nothing is uploaded)
-        if: env.IS_TAG != 'true'
+        if: env.RELEASE != 'true'
         run: npx electron-builder --win --publish never
       - name: Build the installer and upload it to a draft release
-        if: env.IS_TAG == 'true'
+        if: env.RELEASE == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: 'true'
@@ -65,12 +97,12 @@ jobs:
       - name: Release notes with the installer checksum
         run: node scripts/release-notes.cjs write
       - name: Put the release notes on the draft
-        if: env.IS_TAG == 'true'
+        if: env.RELEASE == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.release.outputs.version }}
-        # Edits only the title and notes; the release stays a draft until it is published by hand.
+        # Edits only the title and notes; the release stays a draft.
         run: gh release edit "$TAG" --title "HiveMind $VERSION" --notes-file release/RELEASE_NOTES.md
       - uses: actions/upload-artifact@v7
         with:
@@ -82,3 +114,37 @@ jobs:
             supplier-notes/release/RELEASE_NOTES.md
           retention-days: 14
           if-no-files-found: error
+
+  publish:
+    name: Check and publish the draft release
+    if: github.event_name == 'workflow_dispatch' && inputs.step == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # publish the release
+    defaults:
+      run:
+        working-directory: .
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ inputs.version }}
+      TAG: v${{ inputs.version }}
+    steps:
+      - name: Check the draft and publish it
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer="HiveMind-Setup-$VERSION.exe"
+          release=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets,body)
+          [ "$(jq -r '.isDraft' <<<"$release")" = true ] || { echo "$TAG is not a draft (already published?)"; exit 1; }
+          for file in "$installer" "$installer.blockmap" latest.yml; do
+            jq -e --arg f "$file" '.assets | map(.name) | index($f) != null' <<<"$release" >/dev/null || { echo "Missing from the draft: $file"; exit 1; }
+          done
+          mkdir -p check
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir check --pattern "$installer" --pattern latest.yml
+          grep -qx "version: $VERSION" check/latest.yml || { echo "latest.yml does not name version $VERSION"; exit 1; }
+          sha=$(sha256sum "check/$installer" | cut -d' ' -f1)
+          jq -r '.body' <<<"$release" | grep -q "$sha" || { echo "The installer's SHA-256 ($sha) is not in the release notes"; exit 1; }
+          echo "Draft checked: $installer (SHA-256 $sha), blockmap, latest.yml (version $VERSION)"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "Published $TAG" | tee -a "$GITHUB_STEP_SUMMARY"

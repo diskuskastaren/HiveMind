@@ -100,7 +100,9 @@ To release:
    - API keys saved by the previous version are still shown in Settings;
    - recording works, incl. the visualizer with system audio; the Teams overlay appears;
    - Settings → Data lists the backups; quit and reopen.
-3. **Build the release.** Tag the merged commit and push the tag:
+3. **Build the release.** Either run the `Release` workflow from GitHub's Actions tab (*Run workflow*
+   on `main`, step **draft**, version `<x.y.z>`), which tags that commit itself, or tag it and push the
+   tag:
    ```bash
    git fetch origin main
    git tag v<x.y.z> origin/main
@@ -111,12 +113,16 @@ To release:
    **draft** release, launches the packaged app, and adds the notes and the installer's SHA-256 to the
    draft. Drafts are invisible to users and to the in-app updater; if any step fails, leave the draft
    unpublished.
-4. **Publish.** Review the draft on GitHub (Releases → the draft → Edit) and click **Publish release**.
-   From then on, installed copies offer the update.
+4. **Publish.** Run the `Release` workflow with step **publish** and the same version: it checks that
+   the draft has the installer, blockmap and `latest.yml`, that `latest.yml` names that version and that
+   the downloaded installer's SHA-256 matches the notes, then publishes it as the latest release. (Or
+   review the draft on GitHub and click **Publish release**.) From then on, installed copies offer the
+   update.
 5. **Confirm.** On a machine with the previous version, check that the update arrives and installs; if
    not, read `%APPDATA%\supplier-notes\logs\hivemind.log`.
 
-The workflow never publishes by itself: it always creates a draft (`EP_DRAFT`). Pull requests that change
+Building never publishes: it always creates a draft (`EP_DRAFT`), and only the explicit **publish** step
+(or the button on GitHub) makes a release visible. Pull requests that change
 the workflow, the release notes or `scripts/release-notes.cjs` run it without uploading anything. A draft
 with a failed run can be deleted on GitHub; delete its tag too (`git push --delete origin v<x.y.z>`) before
 tagging again.
