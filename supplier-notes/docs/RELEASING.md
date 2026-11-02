@@ -123,9 +123,10 @@ To release:
 
 Building never publishes: it always creates a draft (`EP_DRAFT`), and only the explicit **publish** step
 (or the button on GitHub) makes a release visible. Pull requests that change
-the workflow, the release notes or `scripts/release-notes.cjs` run it without uploading anything. A draft
-with a failed run can be deleted on GitHub; delete its tag too (`git push --delete origin v<x.y.z>`) before
-tagging again.
+the workflow, the release notes or `scripts/release-notes.cjs` run it without uploading anything. Running the
+**draft** step again for the same version replaces any draft an earlier run left behind and builds the
+commit the tag points at; to release a different commit under the same version, delete the tag first
+(`git push --delete origin v<x.y.z>`).
 
 Without the workflow (fallback): on a Windows machine with a GitHub token that may create releases, run
 `npm run electron:publish` (also creates a draft), then add the notes and checksum
