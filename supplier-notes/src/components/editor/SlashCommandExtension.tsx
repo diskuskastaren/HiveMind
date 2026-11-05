@@ -14,7 +14,9 @@ import {
   Table,
   Minus,
   ChevronRight,
+  PanelsTopLeft,
 } from 'lucide-react';
+import { useStore } from '../../store/store';
 
 type CommandItem = {
   title: string;
@@ -106,6 +108,17 @@ function getItems({ query }: { query: string }): CommandItem[] {
       icon: <ChevronRight className="size-4" />,
       command: ({ editor, range }) =>
         (editor.chain().focus().deleteRange(range) as any).setCollapsible().run(),
+    },
+    {
+      // Not "Tab": "/tab" + Enter has always inserted a table.
+      title: 'New tab',
+      description: 'Split this note into tabs',
+      icon: <PanelsTopLeft className="size-4" />,
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).run();
+        const { activeNoteId, activeSectionByNote, addNoteSection } = useStore.getState();
+        if (activeNoteId) addNoteSection(activeNoteId, { afterId: activeSectionByNote[activeNoteId] });
+      },
     },
   ];
 

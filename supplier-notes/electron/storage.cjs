@@ -41,6 +41,7 @@ function validateData(raw) {
   for (const note of envelope.state.notes || []) {
     if (note.transcripts != null && !Array.isArray(note.transcripts)) throw new Error('Invalid transcripts');
     if (note.attachments != null && !Array.isArray(note.attachments)) throw new Error('Invalid note attachments');
+    if (note.sections != null && !Array.isArray(note.sections)) throw new Error('Invalid note tabs');
   }
   return envelope;
 }

@@ -180,6 +180,22 @@ function NotesSection() {
         'Use Ctrl+Shift+F to search across all notes in the project.',
       ]} />
 
+      <SubHeading>Tabs inside a note</SubHeading>
+      <P>
+        Split a long meeting note into named tabs — one per sub-project, topic or agenda point —
+        with the dashed <strong>+ Tab</strong> chip under the title or the /new tab command. A note with
+        a single tab looks like any other note.
+      </P>
+      <Ul items={[
+        'Each tab has its own text and its own undo history.',
+        'Double-click a tab to rename it; drag it, or use its menu (▾ or right-click), to reorder it.',
+        'Ctrl+PageDown and Ctrl+PageUp switch to the next and previous tab.',
+        'Deleting a tab can be undone from the notice that appears. Removing all but one tab makes it a plain note again.',
+        'Search, exports and AI features read every tab; each tab becomes a heading in the Markdown export.',
+        'Find & replace (Ctrl+F) works in the tab being shown.',
+        'Tasks, decisions, transcripts and attachments belong to the whole note.',
+      ]} />
+
       <SubHeading>Attachments</SubHeading>
       <P>
         Attach files to any note using the paperclip button in the editor toolbar. Attachments

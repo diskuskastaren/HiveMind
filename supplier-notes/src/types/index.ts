@@ -56,6 +56,14 @@ export interface Attachment {
   attachedAt: number;
 }
 
+/** One tab of a meeting note. See utils/noteSections.ts. */
+export interface NoteSection {
+  id: string;
+  title: string;
+  /** The tab's text as HTML. */
+  content: string;
+}
+
 export interface Note {
   id: string;
   projectIds: string[];
@@ -63,7 +71,10 @@ export interface Note {
   internal?: boolean;
   archived?: boolean;
   title: string;
+  /** The note's HTML. For a note with tabs, a mirror of all tabs (each under an <h2> with its name). */
   content: string;
+  /** Tabs of the note; absent (or fewer than two) for a plain note. Source of truth when present. */
+  sections?: NoteSection[];
   attendees: string;
   createdAt: number;
   updatedAt: number;

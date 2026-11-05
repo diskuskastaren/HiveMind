@@ -41,3 +41,13 @@ export function revokeDecisionWithUndo(decisionId: string) {
     action: { label: 'Undo', onClick: () => useStore.getState().updateDecision(decisionId, { status: previous }) },
   });
 }
+
+/** Delete a tab of a note immediately and offer "Undo" (puts it back where it was). */
+export function deleteNoteSectionWithUndo(noteId: string, sectionId: string) {
+  const removed = useStore.getState().deleteNoteSection(noteId, sectionId);
+  if (!removed) return;
+  toast('Tab deleted', {
+    description: removed.section.title,
+    action: { label: 'Undo', onClick: () => useStore.getState().restoreNoteSection(noteId, removed) },
+  });
+}

@@ -4,6 +4,10 @@ import { TEMPLATES } from '../utils/templates';
 import { upgradeDecision } from '../utils/decisionMigration';
 import { linkFollowUp, normalizeFollowUpLinks, unlinkFollowUp } from '../utils/followUpLinks';
 import { createWriteBehindStorage, type PersistBackend } from './persistence';
+import {
+  addSection, appendToSection, applyContentWrite, hasSections, moveSection, normalizeNoteSections, removeSection,
+  restoreSection, updateSection, type RemovedSection,
+} from '../utils/noteSections';
 import type { Project, Supplier, Note, Task, Decision, FollowUp, Transcript, Attachment, RightPanelTab, ActiveView, DashboardSection } from '../types';
 
 export interface AppSettings {
@@ -88,8 +92,8 @@ export function sanitizeWorkspace<T extends Partial<PersistedState>>(state: T): 
   const projects = list(state.projects);
   const suppliers = list(state.suppliers).map((supplier) =>
     Array.isArray(supplier.projectIds) ? supplier : { ...supplier, projectIds: [] });
-  const notes = list(state.notes).map((note) => Array.isArray(note.projectIds) && Array.isArray(note.supplierIds)
-    ? note : { ...note, projectIds: Array.isArray(note.projectIds) ? note.projectIds : [], supplierIds: Array.isArray(note.supplierIds) ? note.supplierIds : [] });
+  const notes = list(state.notes).map((note) => normalizeNoteSections(Array.isArray(note.projectIds) && Array.isArray(note.supplierIds)
+    ? note : { ...note, projectIds: Array.isArray(note.projectIds) ? note.projectIds : [], supplierIds: Array.isArray(note.supplierIds) ? note.supplierIds : [] }));
   const links = normalizeFollowUpLinks(list(state.tasks), list(state.followUps));
   const projectIds = new Set(projects.map((project) => project.id));
   const activeProjectId = state.activeProjectId && projectIds.has(state.activeProjectId)
@@ -149,6 +153,10 @@ interface AppState {
   openTabs: string[];
   activeTabId: string | null;
   activeNoteId: string | null;
+  /** The tab shown for each note with tabs (not saved; the first tab is shown by default). */
+  activeSectionByNote: Record<string, string>;
+  /** A tab whose name is being edited in the tab bar (a new tab starts with its name selected). */
+  renamingSectionId: string | null;
   rightPanelOpen: boolean;
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
@@ -182,6 +190,24 @@ interface AppState {
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   setActiveNote: (id: string | null) => void;
+
+  /** Show a tab of a note. */
+  setActiveSection: (noteId: string, sectionId: string) => void;
+  setRenamingSection: (sectionId: string | null) => void;
+  /**
+   * Add a tab (a plain note is split: its text becomes the first tab) and show it. Without a
+   * title, the new tab's name is selected for editing. Returns its id.
+   */
+  addNoteSection: (noteId: string, options?: { title?: string; content?: string; afterId?: string }) => string | null;
+  /** Rename a tab or change its text (on a plain note, the text is the note's content). */
+  updateNoteSection: (noteId: string, sectionId: string, updates: { title?: string; content?: string }) => void;
+  moveNoteSection: (noteId: string, sectionId: string, toIndex: number) => void;
+  /** Remove a tab; returns what "Undo" needs to put it back. */
+  deleteNoteSection: (noteId: string, sectionId: string) => RemovedSection | null;
+  restoreNoteSection: (noteId: string, removed: RemovedSection) => void;
+  /** Add HTML at the end of the tab being shown (or of a plain note). */
+  appendToNote: (noteId: string, html: string) => void;
+
   addAttachment: (noteId: string, attachment: Attachment) => void;
   removeAttachment: (noteId: string, attachmentId: string) => void;
   addTaskAttachment: (taskId: string, attachment: Attachment) => void;
@@ -277,6 +303,8 @@ export const useStore = create<AppState>()(
       openTabs: [],
       activeTabId: null,
       activeNoteId: null,
+      activeSectionByNote: {},
+      renamingSectionId: null,
       rightPanelOpen: true,
       rightPanelTab: 'tasks',
       commandPaletteOpen: false,
@@ -579,7 +607,80 @@ export const useStore = create<AppState>()(
 
       updateNote: (id, updates) =>
         set((s) => ({
-          notes: s.notes.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)),
+          notes: s.notes.map((n) => {
+            if (n.id !== id) return n;
+            // The content of a note with tabs is a mirror of its tabs; a direct write to it would
+            // be lost on the next tab edit. Route it into the tabs instead.
+            if (hasSections(n) && updates.content !== undefined && updates.sections === undefined) {
+              const { content, ...rest } = updates;
+              if (content !== n.content) console.warn('updateNote: content of a note with tabs was written directly; added to its tabs');
+              return { ...applyContentWrite(n, s.activeSectionByNote[id], content), ...rest, updatedAt: Date.now() };
+            }
+            return { ...n, ...updates, updatedAt: Date.now() };
+          }),
+        })),
+
+      setActiveSection: (noteId, sectionId) =>
+        set((s) => ({ activeSectionByNote: { ...s.activeSectionByNote, [noteId]: sectionId } })),
+
+      setRenamingSection: (sectionId) => set({ renamingSectionId: sectionId }),
+
+      addNoteSection: (noteId, options) => {
+        const note = get().notes.find((n) => n.id === noteId);
+        if (!note) return null;
+        const { note: next, sectionId } = addSection(note, options);
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === noteId ? { ...next, updatedAt: Date.now() } : n)),
+          activeSectionByNote: { ...s.activeSectionByNote, [noteId]: sectionId },
+          renamingSectionId: options?.title ? s.renamingSectionId : sectionId,
+        }));
+        return sectionId;
+      },
+
+      updateNoteSection: (noteId, sectionId, updates) =>
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === noteId ? { ...updateSection(n, sectionId, updates), updatedAt: Date.now() } : n)),
+        })),
+
+      moveNoteSection: (noteId, sectionId, toIndex) =>
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === noteId ? { ...moveSection(n, sectionId, toIndex), updatedAt: Date.now() } : n)),
+        })),
+
+      deleteNoteSection: (noteId, sectionId) => {
+        const note = get().notes.find((n) => n.id === noteId);
+        if (!note) return null;
+        const { note: next, removed } = removeSection(note, sectionId);
+        if (!removed) return null;
+        set((s) => {
+          const remaining = hasSections(next) ? next.sections : [];
+          const shown = s.activeSectionByNote[noteId];
+          const activeSectionByNote = { ...s.activeSectionByNote };
+          // Show the neighbouring tab when the one being shown is removed.
+          if (shown === sectionId || !shown) {
+            const neighbour = remaining[Math.min(removed.index, remaining.length - 1)] ?? remaining[removed.index - 1];
+            if (neighbour) activeSectionByNote[noteId] = neighbour.id;
+            else delete activeSectionByNote[noteId];
+          }
+          return {
+            notes: s.notes.map((n) => (n.id === noteId ? { ...next, updatedAt: Date.now() } : n)),
+            activeSectionByNote,
+          };
+        });
+        return removed;
+      },
+
+      restoreNoteSection: (noteId, removed) =>
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === noteId ? { ...restoreSection(n, removed), updatedAt: Date.now() } : n)),
+          activeSectionByNote: { ...s.activeSectionByNote, [noteId]: removed.section.id },
+        })),
+
+      appendToNote: (noteId, html) =>
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === noteId
+            ? { ...appendToSection(n, s.activeSectionByNote[noteId], html), updatedAt: Date.now() }
+            : n)),
         })),
 
       deleteNote: (id) =>

@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useStore, INTERNAL_TAB_ID, SUPPLIER_COLORS } from '../store/store';
 import { TEMPLATES } from '../utils/templates';
+import { hasSections, sectionsBodyHtml } from '../utils/noteSections';
 import { format } from 'date-fns';
 import {
   Archive,
@@ -26,6 +27,7 @@ import {
   Sun,
   Trash2,
   Unlink,
+  PanelsTopLeft,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
@@ -52,7 +54,8 @@ const previewCache = new Map<string, { updatedAt: number; text: string }>();
 function notePreview(note: Note): string {
   const cached = previewCache.get(note.id);
   if (cached && cached.updatedAt === note.updatedAt) return cached.text;
-  const text = htmlToText(note.content, { separateBlocks: true }).replace(/\s+/g, ' ').trim();
+  // Text of the note's tabs without their names (a plain note: its content).
+  const text = htmlToText(sectionsBodyHtml(note), { separateBlocks: true }).replace(/\s+/g, ' ').trim();
   const preview = text.length > 60 ? text.slice(0, 60) + '…' : text;
   if (previewCache.size > 500) previewCache.clear();
   previewCache.set(note.id, { updatedAt: note.updatedAt, text: preview });
@@ -223,7 +226,17 @@ export function Sidebar() {
           <div className={cn('truncate text-ui', on ? 'font-medium text-foreground' : 'text-subtle-foreground')}>
             {note.title || 'Untitled'}
           </div>
-          {note.content && !archived && <div className="truncate text-2xs text-muted-foreground">{notePreview(note)}</div>}
+          {note.content && !archived && (
+            <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
+              {hasSections(note) && (
+                <span className="inline-flex shrink-0 items-center gap-0.5" title={note.sections.map((section) => section.title).join(' · ')}>
+                  <PanelsTopLeft className="size-3" />
+                  {note.sections.length}
+                </span>
+              )}
+              <span className="truncate">{notePreview(note)}</span>
+            </div>
+          )}
         </div>
         <span className="mt-0.5 shrink-0 text-2xs text-muted-foreground tabular-nums group-hover/note:hidden">
           {format(new Date(note.createdAt), 'MMM d')}

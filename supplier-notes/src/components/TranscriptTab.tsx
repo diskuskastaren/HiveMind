@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Pencil,
   Sparkles,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -126,7 +127,8 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
   const projects = useStore((s) => s.projects);
   const updateTranscript = useStore((s) => s.updateTranscript);
   const deleteTranscript = useStore((s) => s.deleteTranscript);
-  const updateNote = useStore((s) => s.updateNote);
+  const appendToNote = useStore((s) => s.appendToNote);
+  const addNoteSection = useStore((s) => s.addNoteSection);
   const openConfirmDialog = useStore((s) => s.openConfirmDialog);
   const autoSummarize = useStore((s) => s.settings.autoSummarize);
 
@@ -150,15 +152,29 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
     if (!transcript.rawText || !note) return;
     // Escaped: the transcript is plain text and must never be interpreted as HTML.
     const paragraphs = transcript.rawText.trim().split(/\n+/).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
-    updateNote(noteId, { content: `${note.content || ''}<h2>Meeting Transcript</h2>${paragraphs}` });
+    // Added to the tab being shown (or the end of a plain note).
+    appendToNote(noteId, `<h2>Meeting Transcript</h2>${paragraphs}`);
     toast.success('Transcript added to the note');
-  }, [transcript, note, noteId, updateNote]);
+  }, [transcript, note, noteId, appendToNote]);
+
+  const handleInsertAsTab = useCallback(() => {
+    if (!transcript.rawText || !note) return;
+    const paragraphs = transcript.rawText.trim().split(/\n+/).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+    addNoteSection(noteId, { title: 'Transcript', content: paragraphs });
+    toast.success('Transcript added as a new tab');
+  }, [transcript, note, noteId, addNoteSection]);
 
   const handleAddSummaryToNote = useCallback(() => {
     if (!transcript.summary || !note) return;
-    updateNote(noteId, { content: `${note.content || ''}<h2>Meeting Summary</h2>${summaryToNoteHtml(transcript.summary)}` });
+    appendToNote(noteId, `<h2>Meeting Summary</h2>${summaryToNoteHtml(transcript.summary)}`);
     toast.success('Summary added to the note');
-  }, [transcript, note, noteId, updateNote]);
+  }, [transcript, note, noteId, appendToNote]);
+
+  const handleAddSummaryAsTab = useCallback(() => {
+    if (!transcript.summary || !note) return;
+    addNoteSection(noteId, { title: 'Summary', content: summaryToNoteHtml(transcript.summary) });
+    toast.success('Summary added as a new tab');
+  }, [transcript, note, noteId, addNoteSection]);
 
   const handleEmailSummary = useCallback(() => {
     if (!transcript.summary || !note) return;
@@ -285,6 +301,9 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
             <Button variant="outline" size="xs" className="flex-1" onClick={handleAddSummaryToNote}>
               <FileText /> Add to note
             </Button>
+            <Button variant="outline" size="xs" onClick={handleAddSummaryAsTab} title="Add the summary to the note as a new tab">
+              <Plus /> As tab
+            </Button>
             <Button variant="outline" size="xs" className="flex-1" onClick={handleEmailSummary} title="Open default mail app with summary in body">
               <Mail /> Email summary
             </Button>
@@ -304,6 +323,9 @@ function TranscriptDetail({ transcript, noteId, apiKey, onBack, onStartNew, isRe
               <CopyButton text={transcript.rawText} />
               <Button variant="ghost" size="xs" onClick={handleInsertIntoNote}>
                 <FileText /> Insert into note
+              </Button>
+              <Button variant="ghost" size="xs" onClick={handleInsertAsTab} title="Add the transcript to the note as a new tab">
+                <Plus /> As tab
               </Button>
               <Button
                 variant="ghost"

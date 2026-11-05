@@ -14,7 +14,7 @@ const REQUIRED_TEXT: Record<string, string> = {
 
 const ARRAY_FIELDS: Record<string, string[]> = {
   suppliers: ['projectIds'],
-  notes: ['projectIds', 'supplierIds', 'transcripts', 'attachments'],
+  notes: ['projectIds', 'supplierIds', 'transcripts', 'attachments', 'sections'],
   tasks: ['attachments', 'updates'],
   decisions: ['relatedTaskIds', 'history'],
 };

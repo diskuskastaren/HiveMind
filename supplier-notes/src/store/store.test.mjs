@@ -117,3 +117,59 @@ test('a stored workspace with malformed records still loads instead of aborting'
   assert.equal(s.loadError, null);
   assert.equal(persistStorage.canWrite, true);
 });
+
+test('tabs: split a note, edit tabs, route direct writes and undo a delete', () => {
+  useStore.setState({
+    projects: [{ id: 'p', name: 'Project', color: '#000', archived: false, createdAt: 1 }],
+    suppliers: [], tasks: [], decisions: [], followUps: [], activeProjectId: 'p', activeSectionByNote: {},
+    notes: [{ id: 'n', projectIds: ['p'], supplierIds: [], title: 'Sync', content: '<p>Agenda</p>', attendees: '', createdAt: 1, updatedAt: 1 }],
+  });
+  const note = () => useStore.getState().notes[0];
+  const second = useStore.getState().addNoteSection('n');
+  assert.equal(useStore.getState().activeSectionByNote.n, second);
+  assert.equal(useStore.getState().renamingSectionId, second, 'a new tab starts with its name being edited');
+  const first = note().sections[0].id;
+  assert.equal(note().sections[0].content, '<p>Agenda</p>');
+
+  useStore.getState().updateNoteSection('n', second, { content: '<p>Valves</p>', title: 'Valves' });
+  assert.equal(note().content, '<h2>Notes</h2><p>Agenda</p><h2>Valves</h2><p>Valves</p>');
+
+  // Code that appends to `content` directly ends up in the tab being shown.
+  useStore.getState().updateNote('n', { content: `${note().content}<p>Summary</p>`, title: 'Weekly sync' });
+  assert.equal(note().sections[1].content, '<p>Valves</p><p>Summary</p>');
+  assert.equal(note().title, 'Weekly sync');
+
+  useStore.getState().appendToNote('n', '<p>More</p>');
+  assert.equal(note().sections[1].content, '<p>Valves</p><p>Summary</p><p>More</p>');
+
+  const removed = useStore.getState().deleteNoteSection('n', second);
+  assert.equal(note().sections, undefined, 'one tab left: a plain note again');
+  assert.equal(note().content, '<p>Agenda</p>');
+  assert.equal(useStore.getState().activeSectionByNote.n, undefined);
+  useStore.getState().restoreNoteSection('n', removed);
+  assert.deepEqual(note().sections.map((s) => s.title), ['Notes', 'Valves']);
+  assert.equal(useStore.getState().activeSectionByNote.n, second);
+  assert.notEqual(first, undefined);
+
+  useStore.getState().moveNoteSection('n', second, 0);
+  assert.deepEqual(note().sections.map((s) => s.title), ['Valves', 'Notes']);
+});
+
+test('tabs: importing keeps tabs and recovers text edited outside them', () => {
+  useStore.getState().importData({
+    version: 5, exportedAt: 1,
+    projects: [{ id: 'p', name: 'Project', color: '#000', archived: false, createdAt: 1 }],
+    suppliers: [], tasks: [], decisions: [], followUps: [],
+    notes: [
+      { id: 'plain', projectIds: ['p'], supplierIds: [], title: 'Old', content: '<p>Untouched</p>', attendees: '', createdAt: 1, updatedAt: 1 },
+      { id: 'tabs', projectIds: ['p'], supplierIds: [], title: 'Tabs', attendees: '', createdAt: 1, updatedAt: 1,
+        content: '<h2>A</h2><p>a</p><h2>B</h2><p>b</p><p>typed in an older version</p>',
+        sections: [{ id: 'a', title: 'A', content: '<p>a</p>' }, { id: 'b', title: 'B', content: '<p>b</p>' }] },
+    ],
+  });
+  const [plain, tabs] = useStore.getState().notes;
+  assert.equal(plain.content, '<p>Untouched</p>');
+  assert.equal('sections' in plain, false);
+  assert.deepEqual(tabs.sections.map((s) => s.title), ['A', 'B', 'Recovered']);
+  assert.match(tabs.sections[2].content, /typed in an older version/);
+});

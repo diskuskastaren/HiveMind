@@ -81,6 +81,8 @@ import { CollapsibleExtension } from './editor/CollapsibleExtension';
 import { SlashCommandExtension } from './editor/SlashCommandExtension';
 import { FindReplaceExtension, FindReplacePanel } from './editor/FindReplace';
 import { createMentionSuggestion, type MentionItem } from './editor/MentionSuggestion';
+import { NoteSectionTabs } from './NoteSectionTabs';
+import { hasSections, noteSections, resolveSection } from '../utils/noteSections';
 
 const TAB_CHAR = '\u00A0\u00A0\u00A0\u00A0';
 
@@ -245,6 +247,10 @@ export function NoteEditor() {
   const tasks = useStore((s) => s.tasks);
   const decisions = useStore((s) => s.decisions);
   const updateNote = useStore((s) => s.updateNote);
+  const updateNoteSection = useStore((s) => s.updateNoteSection);
+  const addNoteSection = useStore((s) => s.addNoteSection);
+  const setActiveSection = useStore((s) => s.setActiveSection);
+  const rememberedSectionId = useStore((s) => (s.activeNoteId ? s.activeSectionByNote[s.activeNoteId] : undefined));
   const addAttachment = useStore((s) => s.addAttachment);
   const removeAttachment = useStore((s) => s.removeAttachment);
   const addTask = useStore((s) => s.addTask);
@@ -263,6 +269,8 @@ export function NoteEditor() {
 
   const switchingRef = useRef(false);
   const noteIdRef = useRef(activeNoteId);
+  // The tab whose text the editor holds (set when that text is loaded).
+  const sectionIdRef = useRef<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const selectionTextRef = useRef('');
@@ -277,6 +285,13 @@ export function NoteEditor() {
   useEffect(() => {
     noteIdRef.current = activeNoteId;
   }, [activeNoteId]);
+
+  // A note shows one tab at a time; a plain note has a single implicit tab holding its content.
+  const sections = note ? noteSections(note) : [];
+  const activeSection = note ? resolveSection(note, rememberedSectionId) : null;
+  const tabbed = !!note && hasSections(note);
+  const editorKey = note && activeSection ? `${note.id}:${activeSection.id}` : null;
+  const sectionContent = activeSection?.content ?? '';
 
   const editor = useEditor({
     // The toolbar, selection menu, find panel, template picker and word count read the editor's
@@ -359,10 +374,10 @@ export function NoteEditor() {
       CollapsibleExtension,
       FindReplaceExtension,
     ],
-    content: note?.content || '',
+    content: sectionContent,
     onUpdate: ({ editor }) => {
-      if (!switchingRef.current && noteIdRef.current) {
-        updateNote(noteIdRef.current, { content: editor.getHTML() });
+      if (!switchingRef.current && noteIdRef.current && sectionIdRef.current) {
+        updateNoteSection(noteIdRef.current, sectionIdRef.current, { content: editor.getHTML() });
       }
     },
     onSelectionUpdate: ({ editor }) => {
@@ -373,34 +388,49 @@ export function NoteEditor() {
     },
   });
 
-  // The editor instance is shared by all notes. Load the active note's content when it changes
-  // (another note opened, or text added from the transcript panel).
-  const loadedNoteIdRef = useRef<string | null>(null);
+  // The editor instance is shared by all notes and their tabs. Load the shown tab's text when it
+  // changes (another note or tab opened, or text added from the transcript panel).
+  const loadedKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!editor || !note || editor.isDestroyed) return;
-    const storeContent = note.content || '';
-    const switchedNote = loadedNoteIdRef.current !== note.id;
-    if (!switchedNote && editor.getHTML() === storeContent) return;
+    if (!editor || !note || !activeSection || !editorKey || editor.isDestroyed) return;
+    const storeContent = sectionContent;
+    const switched = loadedKeyRef.current !== editorKey;
+    sectionIdRef.current = activeSection.id;
+    if (!switched && editor.getHTML() === storeContent) return;
     switchingRef.current = true;
     // Loading a note is not an edit: don't emit an update (TipTap 3 emits one by default).
     editor.commands.setContent(storeContent, { emitUpdate: false });
-    if (switchedNote) {
-      // Undo history belongs to one note. Without a fresh history, Ctrl+Z right after
-      // opening a note restored the previous note's text — and saved it into this note.
+    if (switched) {
+      // Undo history belongs to one note (and one tab). Without a fresh history, Ctrl+Z right
+      // after opening a note restored the previous note's text — and saved it into this note.
       const { state } = editor;
       editor.view.updateState(EditorState.create({ schema: state.schema, doc: state.doc, plugins: state.plugins }));
-      loadedNoteIdRef.current = note.id;
+      loadedKeyRef.current = editorKey;
     }
     requestAnimationFrame(() => {
       switchingRef.current = false;
     });
-  }, [activeNoteId, editor, note?.content]);
+  }, [editorKey, editor, sectionContent]);
 
   useEffect(() => {
     if (activeNoteId && note && !note.title) {
       requestAnimationFrame(() => titleRef.current?.focus());
     }
   }, [activeNoteId]);
+
+  // Ctrl+PageDown / Ctrl+PageUp: next / previous tab of the note
+  useEffect(() => {
+    if (!tabbed || !note || !activeSection) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey || (e.key !== 'PageDown' && e.key !== 'PageUp')) return;
+      e.preventDefault();
+      const index = sections.findIndex((section) => section.id === activeSection.id);
+      const next = sections[(index + (e.key === 'PageDown' ? 1 : -1) + sections.length) % sections.length];
+      setActiveSection(note.id, next.id);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [tabbed, note?.id, activeSection?.id, sections, setActiveSection]);
 
   // Ctrl+F to open/close find & replace
   useEffect(() => {
@@ -559,7 +589,7 @@ export function NoteEditor() {
     if (!editor || !activeNoteId) return;
     const content = TEMPLATES[key]?.content || '';
     editor.commands.setContent(content, { emitUpdate: false });
-    updateNote(activeNoteId, { content });
+    updateNoteSection(activeNoteId, sectionIdRef.current ?? activeSection?.id ?? '', { content });
   };
 
   const electronAttachments = typeof window !== 'undefined' && (window as any).electronAttachments;
@@ -750,12 +780,40 @@ export function NoteEditor() {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {!tabbed && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => addNoteSection(note.id)}
+                      className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <Plus className="size-3" />
+                      Tab
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Split this note into tabs</TooltipContent>
+                </Tooltip>
+              )}
             </div>
           </div>
 
           {/* Toolbar */}
           {editor && (
             <div className="sticky top-0 z-10 -mx-2 bg-background/95 px-2 py-2 backdrop-blur-sm">
+              {tabbed && activeSection && (
+                <div className="mb-2">
+                  <NoteSectionTabs
+                    noteId={note.id}
+                    sections={sections}
+                    activeId={activeSection.id}
+                    onSelected={() => requestAnimationFrame(() => {
+                      // Not while a tab name is being edited (a double-click starts renaming).
+                      if (!useStore.getState().renamingSectionId) editor.commands.focus();
+                    })}
+                  />
+                </div>
+              )}
               <div role="toolbar" aria-label="Formatting" className="flex flex-wrap items-center gap-0.5 rounded-lg border bg-card p-1 shadow-xs">
                 <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold" shortcut="Ctrl B">
                   <Bold />

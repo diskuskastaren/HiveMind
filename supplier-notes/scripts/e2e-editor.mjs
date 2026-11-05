@@ -127,6 +127,11 @@ async function cursorAt(page, text, offset = 0) {
 const toolbar = (page) => page.getByRole('toolbar', { name: 'Formatting' });
 const popup = (page, text) => page.locator('body > div[style*="z-index: 9999"] button', { hasText: text });
 const tool = (page, name) => toolbar(page).getByRole('button', { name, exact: true });
+async function openTabMenu(page, label) {
+  const button = page.getByRole('button', { name: label });
+  await page.getByRole('tablist', { name: 'Note tabs' }).getByRole('tab', { selected: true }).hover();
+  await button.click();
+}
 async function typeSlow(page, text) { await page.keyboard.type(text, { delay: 15 }); }
 
 try {
@@ -584,6 +589,125 @@ try {
     await page.getByLabel('Meeting title').click();
     await page.getByLabel('Meeting title').press('Enter');
     await page.waitForFunction(() => document.activeElement?.classList.contains('ProseMirror'), null, { timeout: 2000 });
+  });
+
+  await check('tabs: split a note, separate text and undo per tab, switch, rename, reorder, delete with Undo', async () => {
+    const tabs = () => page.getByRole('tablist', { name: 'Note tabs' }).getByRole('tab');
+    const titles = async () => (await tabs().allInnerTexts()).map((t) => t.trim());
+    // Menus hide the rest of the page from assistive tech until they have closed: poll.
+    async function expectTitles(expected) {
+      let actual;
+      for (let i = 0; i < 30; i++) {
+        actual = await titles();
+        if (JSON.stringify(actual) === JSON.stringify(expected)) return;
+        await page.waitForTimeout(100);
+      }
+      assert.deepEqual(actual, expected);
+    }
+    async function waitForNote(predicate, label) {
+      for (let i = 0; i < 30; i++) {
+        const note = await storedNote(page, NOTE);
+        if (predicate(note)) return note;
+        await page.waitForTimeout(100);
+      }
+      throw new Error(`stored note never matched: ${label}\n  stored: ${JSON.stringify(await storedNote(page, NOTE))}`);
+    }
+    await clear(page);
+    await typeSlow(page, 'main text');
+    await waitForStored(page, NOTE, (c) => c === '<p>main text</p>', 'main text');
+    assert.equal(await page.getByRole('tablist', { name: 'Note tabs' }).count(), 0, 'a plain note shows no tab bar');
+
+    // Split: the dashed "+ Tab" chip. The new tab's name is selected for typing.
+    await page.getByRole('button', { name: 'Tab', exact: true }).click();
+    const nameInput = page.getByLabel('Tab name');
+    await nameInput.waitFor();
+    await page.keyboard.type('Valves');
+    await page.keyboard.press('Enter');
+    await nameInput.waitFor({ state: 'detached' });
+    await expectTitles(['Notes', 'Valves']);
+    assert.equal(await tabs().nth(1).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.getByRole('button', { name: 'Tab', exact: true }).count(), 0, 'the chip is replaced by the tab bar');
+    assert.equal(await editorHTML(page), '<p></p>', 'a new tab starts empty');
+
+    await page.locator('.ProseMirror').click();
+    await typeSlow(page, 'valve text');
+    let note = await waitForNote((n) => n.sections?.[1]?.content === '<p>valve text</p>', 'text in the second tab');
+    assert.equal(note.sections[0].content, '<p>main text</p>', 'the first tab keeps the note text unchanged');
+    assert.equal(note.content, '<h2>Notes</h2><p>main text</p><h2>Valves</h2><p>valve text</p>', 'content mirrors all tabs');
+
+    // Undo stays within the tab.
+    for (let i = 0; i < 6; i++) await page.keyboard.press('Control+z');
+    assert.equal(await editorHTML(page), '<p></p>', 'undo never brings in another tab\'s text');
+    // One redo: with nothing left to redo, ProseMirror treats Ctrl+Shift+Z as Ctrl+Z.
+    await page.keyboard.press('Control+Shift+z');
+    assert.equal(await editorHTML(page), '<p>valve text</p>');
+
+    // Switch by click and by Ctrl+PageDown.
+    await tabs().nth(0).click();
+    await page.waitForFunction(() => document.querySelector('.ProseMirror').editor.getHTML() === '<p>main text</p>');
+    await page.keyboard.press('Control+PageDown');
+    await page.waitForFunction(() => document.querySelector('.ProseMirror').editor.getHTML() === '<p>valve text</p>');
+
+    // Rename by double-click; Escape cancels, Enter saves.
+    await tabs().nth(1).dblclick();
+    await page.getByLabel('Tab name').fill('Discarded');
+    await page.getByLabel('Tab name').press('Escape');
+    await expectTitles(['Notes', 'Valves']);
+    await tabs().nth(1).dblclick();
+    await page.getByLabel('Tab name').fill('Valve delivery');
+    await page.getByLabel('Tab name').press('Enter');
+    await expectTitles(['Notes', 'Valve delivery']);
+
+    // A third tab from the "+" button, then reorder from the context menu.
+    await page.getByRole('button', { name: 'Add tab' }).click();
+    await page.getByLabel('Tab name').press('Enter');
+    await expectTitles(['Notes', 'Valve delivery', 'Tab 3']);
+    await tabs().nth(1).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Move left' }).click();
+    await expectTitles(['Valve delivery', 'Notes', 'Tab 3']);
+    note = await waitForNote((n) => n.content.startsWith('<h2>Valve delivery</h2>'), 'reordered mirror');
+
+    // Reorder by dragging.
+    await tabs().nth(2).dragTo(tabs().nth(0));
+    await expectTitles(['Tab 3', 'Valve delivery', 'Notes']);
+
+    // Delete from the tab menu, with Undo.
+    await tabs().nth(0).click();
+    await openTabMenu(page, 'Options for tab Tab 3');
+    await page.getByRole('menuitem', { name: 'Delete tab' }).click();
+    await expectTitles(['Valve delivery', 'Notes']);
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expectTitles(['Tab 3', 'Valve delivery', 'Notes']);
+    await openTabMenu(page, 'Options for tab Tab 3');
+    await page.getByRole('menuitem', { name: 'Delete tab' }).click();
+
+    // Removing all but one tab makes the note plain again.
+    await tabs().nth(0).click();
+    await openTabMenu(page, 'Options for tab Valve delivery');
+    await page.getByRole('menuitem', { name: 'Delete tab' }).click();
+    await page.getByRole('tablist', { name: 'Note tabs' }).waitFor({ state: 'detached' });
+    note = await waitForNote((n) => !n.sections, 'a plain note again');
+    assert.equal(note.content, '<p>main text</p>');
+    await page.waitForFunction(() => document.querySelector('.ProseMirror').editor.getHTML() === '<p>main text</p>');
+  });
+
+  await check('tabs: the /new tab command adds a tab after the text typed so far', async () => {
+    await clear(page);
+    await typeSlow(page, 'first');
+    await page.keyboard.press('Enter');
+    await typeSlow(page, '/new');
+    await popup(page, 'New tab').first().waitFor();
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Tab name').waitFor();
+    await page.keyboard.press('Enter');
+    const note = await storedNote(page, NOTE);
+    assert.equal(note.sections.length, 2);
+    assert.doesNotMatch(note.sections[0].content, /\/new/, 'the typed command is removed');
+    assert.match(note.sections[0].content, /<p>first<\/p>/);
+    // Clean up: back to a plain note for the checks that follow.
+    await openTabMenu(page, /Options for tab/);
+    await page.getByRole('menuitem', { name: 'Delete tab' }).click();
+    await page.getByRole('tablist', { name: 'Note tabs' }).waitFor({ state: 'detached' });
   });
 
   await check('no editor warnings or errors while editing', async () => { assert.deepEqual(errors, []); });
