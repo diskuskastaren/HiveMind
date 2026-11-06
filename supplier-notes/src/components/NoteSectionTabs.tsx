@@ -240,13 +240,14 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
                       <span className="truncate">{section.title}</span>
                     </button>
                   )}
+                  {/* Its space is kept while hidden, so hovering doesn't change the bar's width. */}
                   {active && !renaming && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           aria-label={`Options for tab ${section.title}`}
-                          className="-ml-1.5 flex h-5 w-0 shrink-0 items-center justify-center overflow-hidden rounded text-muted-foreground opacity-0 transition-[width,opacity] group-hover/tab:mr-1 group-hover/tab:w-5 group-hover/tab:opacity-100 hover:bg-accent hover:text-foreground focus-visible:mr-1 focus-visible:w-5 focus-visible:opacity-100 data-[state=open]:mr-1 data-[state=open]:w-5 data-[state=open]:bg-accent data-[state=open]:opacity-100 [&_svg]:size-3.5 [&_svg]:shrink-0"
+                          className="-ml-1.5 mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/tab:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 [&_svg]:size-3.5 [&_svg]:shrink-0"
                         >
                           <ChevronDown />
                         </button>
