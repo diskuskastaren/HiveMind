@@ -237,16 +237,22 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
                           : 'text-subtle-foreground hover:text-foreground after:bg-transparent',
                       )}
                     >
-                      <span className="truncate">{section.title}</span>
+                      {/* The bold copy reserves the width of the bold text, so a tab keeps its width when chosen. */}
+                      <span className="grid min-w-0">
+                        <span aria-hidden className="invisible col-start-1 row-start-1 h-0 truncate font-medium">{section.title}</span>
+                        <span className="col-start-1 row-start-1 truncate">{section.title}</span>
+                      </span>
                     </button>
                   )}
-                  {/* Its space is kept while hidden, so hovering doesn't change the bar's width. */}
-                  {active && !renaming && (
+                  {/* Every tab keeps the space of its menu button, shown on hover, so tabs never move when one is
+                      chosen or hovered. */}
+                  {!renaming && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           aria-label={`Options for tab ${section.title}`}
+                          tabIndex={active ? 0 : -1}
                           className="-ml-1.5 mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/tab:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 [&_svg]:size-3.5 [&_svg]:shrink-0"
                         >
                           <ChevronDown />
