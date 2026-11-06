@@ -705,7 +705,7 @@ try {
     assert.doesNotMatch(note.sections[0].content, /\/new/, 'the typed command is removed');
     assert.match(note.sections[0].content, /<p>first<\/p>/);
     // Clean up: back to a plain note for the checks that follow.
-    await openTabMenu(page, /Options for tab/);
+    await openTabMenu(page, 'Options for tab Tab 2');
     await page.getByRole('menuitem', { name: 'Delete tab' }).click();
     await page.getByRole('tablist', { name: 'Note tabs' }).waitFor({ state: 'detached' });
   });

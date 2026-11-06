@@ -217,7 +217,7 @@ export function Sidebar() {
           }
         }}
         className={cn(
-          'group/note flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
+          'group/note relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
           on && 'bg-sidebar-accent',
           archived && !on && 'opacity-60',
         )}
@@ -238,10 +238,11 @@ export function Sidebar() {
             </div>
           )}
         </div>
-        <span className="mt-0.5 shrink-0 text-2xs text-muted-foreground tabular-nums group-hover/note:hidden">
+        <span className="mt-0.5 shrink-0 text-2xs text-muted-foreground tabular-nums group-hover/note:invisible">
           {format(new Date(note.createdAt), 'MMM d')}
         </span>
-        <div className="hidden shrink-0 items-center gap-0.5 group-hover/note:flex">
+        {/* Laid over the row's corner, so showing them doesn't move or resize anything. */}
+        <div className="absolute top-1 right-1 hidden items-center gap-0.5 rounded-md bg-sidebar-accent before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-4 before:bg-linear-to-l before:from-sidebar-accent group-hover/note:flex">
           <IconButton
             label={archived ? 'Unarchive note' : 'Archive note'}
             size="icon-xs"
@@ -418,8 +419,11 @@ export function Sidebar() {
           </span>
           <span className="flex-1 truncate text-left">{supplier.name}</span>
           {supplier.pinned && <Pin className="size-3 text-muted-foreground" aria-label="Pinned" />}
-          <span className="text-2xs text-muted-foreground tabular-nums group-hover/sup:hidden">{noteCountFor(supplier.id)}</span>
-          {renderSupplierMenu(supplier)}
+          {/* The count and the menu button share one place, so hovering doesn't move the row's contents. */}
+          <span className="grid place-items-center *:col-start-1 *:row-start-1">
+            <span className="text-2xs text-muted-foreground tabular-nums group-hover/sup:invisible group-has-[[data-state=open]]/sup:invisible">{noteCountFor(supplier.id)}</span>
+            {renderSupplierMenu(supplier)}
+          </span>
         </div>
         {on && renderNotesTree()}
       </Fragment>
