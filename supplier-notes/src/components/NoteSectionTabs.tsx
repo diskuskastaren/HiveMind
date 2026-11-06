@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, List, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { NoteSection } from '../types';
 import { cn } from '@/lib/utils';
@@ -92,6 +92,37 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
     pendingRename.current = null;
   };
 
+  // The bar scrolls sideways (wheel, trackpad, keyboard) without a visible scrollbar; faded
+  // edges show that there are more tabs, and a menu lists them all once they don't fit.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+  const updateOverflow = () => {
+    const list = listRef.current;
+    if (!list) return;
+    const left = list.scrollLeft > 1;
+    const right = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+    setOverflow((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  };
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(list);
+    for (const child of Array.from(list.children)) observer.observe(child);
+    // A vertical mouse wheel scrolls the bar sideways.
+    const onWheel = (event: WheelEvent) => {
+      if (list.scrollWidth <= list.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      list.scrollLeft += event.deltaY;
+    };
+    list.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      observer.disconnect();
+      list.removeEventListener('wheel', onWheel);
+    };
+  }, [sections, renamingId]);
+
   // Keep the tab being shown in view when the bar scrolls.
   useEffect(() => {
     tabRefs.current.get(activeId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -128,7 +159,14 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
 
   return (
     <div className="-mx-1 flex min-w-0 items-end gap-1 border-b">
-      <div role="tablist" aria-label="Note tabs" className="flex min-w-0 items-end gap-0.5 overflow-x-auto [scrollbar-width:thin]">
+      <div
+        ref={listRef}
+        role="tablist"
+        aria-label="Note tabs"
+        onScroll={updateOverflow}
+        className="flex min-w-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={fadeMask(overflow)}
+      >
         {sections.map((section, index) => {
           const active = section.id === activeId;
           const renaming = renamingId === section.id;
@@ -192,8 +230,8 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
                       onKeyDown={(event) => onTabKeyDown(event, index, section)}
                       className={cn(
                         'relative flex h-8 max-w-56 items-center px-2.5 text-ui whitespace-nowrap outline-none transition-colors',
-                        'focus-visible:rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        'after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full',
+                        'focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60',
+                        'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full',
                         active
                           ? 'font-medium text-foreground after:bg-primary'
                           : 'text-subtle-foreground hover:text-foreground after:bg-transparent',
@@ -231,6 +269,23 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
           );
         })}
       </div>
+      {(overflow.left || overflow.right) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton label="All tabs" size="icon-xs" className="mb-1 shrink-0">
+              <List />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+            {sections.map((section) => (
+              <DropdownMenuItem key={section.id} onSelect={() => { select(section.id); onSelected?.(); }}>
+                <Check className={cn(section.id !== activeId && 'invisible')} />
+                <span className="truncate">{section.title}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       <IconButton
         label="Add tab"
         size="icon-xs"
@@ -241,6 +296,13 @@ export function NoteSectionTabs({ noteId, sections, activeId, onSelected }: {
       </IconButton>
     </div>
   );
+}
+
+/** Fades the edge(s) of the tab bar that have more tabs beyond them. */
+function fadeMask({ left, right }: { left: boolean; right: boolean }): React.CSSProperties | undefined {
+  if (!left && !right) return undefined;
+  const mask = `linear-gradient(to right, ${left ? 'transparent, #000 1.5rem' : '#000'}, ${right ? '#000 calc(100% - 1.5rem), transparent' : '#000'})`;
+  return { maskImage: mask, WebkitMaskImage: mask };
 }
 
 function MenuEntry({ action, kind }: { action: MenuAction; kind: 'dropdown' | 'context' }) {
