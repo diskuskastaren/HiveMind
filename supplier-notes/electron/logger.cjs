@@ -14,7 +14,8 @@ function createLogger(logDir) {
     try {
       fs.mkdirSync(logDir, { recursive: true });
       const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
-      if (size > MAX_LOG_BYTES) fs.renameSync(file, `${file}.1`);
+      // If the old log cannot be moved aside (e.g. it is open in another program), keep logging.
+      if (size > MAX_LOG_BYTES) { try { fs.renameSync(file, `${file}.1`); } catch { /* try again later */ } }
       const suffix = details === undefined ? '' : ` ${safeJson(details)}`;
       fs.appendFileSync(file, `${new Date().toISOString()} [${level}] ${message}${suffix}\n`);
     } catch { /* Logging must never break the app. */ }

@@ -71,22 +71,28 @@ function rebaseManagedAttachments(raw, oldDir, newDir) {
   return JSON.stringify(envelope);
 }
 
-// On Windows a rename fails with EPERM/EACCES/EBUSY while another program (antivirus, search
-// indexer, a sync or backup tool) briefly holds the target open. Such holds last milliseconds, so
-// the rename is retried for a few seconds before the save is reported as failed.
-const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
-const RENAME_RETRY_MS = 5000;
+// On Windows a file operation fails with EPERM/EACCES/EBUSY while another program (antivirus, search
+// indexer, a sync or backup tool) briefly holds the file open, or while a file that was just deleted
+// has not disappeared yet. Such holds last milliseconds, so the operation is retried for a few
+// seconds before it is reported as failed.
+const BUSY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const BUSY_RETRY_MS = 5000;
 
-async function renameWithRetry(from, to, rename = fs.promises.rename) {
-  const deadline = Date.now() + RENAME_RETRY_MS;
+async function retryWhileBusy(operation, retryMs = BUSY_RETRY_MS) {
+  const deadline = Date.now() + retryMs;
   for (let delay = 10; ; delay = Math.min(delay * 2, 250)) {
-    try { return await rename(from, to); }
+    try { return await operation(); }
     catch (error) {
-      if (!RENAME_RETRY_CODES.has(error.code) || Date.now() + delay > deadline) throw error;
+      if (!BUSY_CODES.has(error.code) || Date.now() + delay > deadline) throw error;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 }
+
+const renameWithRetry = (from, to, rename = fs.promises.rename) => retryWhileBusy(() => rename(from, to));
+const readTextWithRetry = (file) => retryWhileBusy(() => fs.promises.readFile(file, 'utf8'));
+// fs.rm retries EBUSY/EPERM/ENOTEMPTY itself when asked to.
+const RM_RETRY = { maxRetries: 10, retryDelay: 100 };
 
 async function atomicWrite(file, content) {
   const dir = path.dirname(file);
@@ -170,6 +176,8 @@ class StorageService {
     this.restartPending = false;
     this.lastHash = null;
     this.blocked = null;
+    // Why the most recent save failed, or null once a save has worked (checked before closing).
+    this.lastWriteError = null;
     this.attachmentMap = new Map();
     this.setDataDir(dataDir);
   }
@@ -181,9 +189,11 @@ class StorageService {
     this.imagesDir = path.join(dir, 'images');
     this.attachmentsDir = path.join(dir, 'attachments');
     this.lastSavedAt = fs.existsSync(this.file) ? fs.statSync(this.file).mtimeMs : null;
+    // An entry that cannot be read (e.g. a folder Windows is still deleting) is skipped, not fatal.
+    const stat = (entry) => { try { return fs.statSync(path.join(this.backupDir, entry)); } catch { return null; } };
     const backups = fs.existsSync(this.backupDir) ? fs.readdirSync(this.backupDir)
-      .filter((entry) => !entry.startsWith('.') && fs.statSync(path.join(this.backupDir, entry)).isDirectory()) : [];
-    this.lastBackupAt = backups.length ? Math.max(...backups.map((entry) => fs.statSync(path.join(this.backupDir, entry)).mtimeMs)) : null;
+      .filter((entry) => !entry.startsWith('.')).map(stat).filter((entry) => entry?.isDirectory()) : [];
+    this.lastBackupAt = backups.length ? Math.max(...backups.map((entry) => entry.mtimeMs)) : null;
   }
 
   run(operation) {
@@ -207,29 +217,39 @@ class StorageService {
     const lockPath = `${this.file}.lock`;
     await fs.promises.mkdir(this.dir, { recursive: true });
     let handle;
-    for (let attempt = 0; attempt < 30; attempt++) {
+    let lastError;
+    for (let attempt = 0; attempt < 50; attempt++) {
       try { handle = await fs.promises.open(lockPath, 'wx'); break; }
       catch (error) {
-        if (error.code !== 'EEXIST') throw error;
+        lastError = error;
+        // On Windows a lock file that was just removed can linger while another program still has
+        // it open; creating it again then fails with EPERM/EACCES rather than EEXIST.
+        if (error.code !== 'EEXIST' && !BUSY_CODES.has(error.code)) throw error;
         const stat = await fs.promises.stat(lockPath).catch(() => null);
-        if (stat && Date.now() - stat.mtimeMs > 30_000) await fs.promises.rm(lockPath, { force: true }).catch(() => {});
+        // A lock this process could not remove after its own operation is not a competing writer.
+        if (this.lockLeftBehind || (stat && Date.now() - stat.mtimeMs > 30_000)) {
+          await fs.promises.rm(lockPath, { force: true }).catch(() => {});
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    if (!handle) throw new Error('Data file is locked by another process');
+    // A lock that exists means another writer; anything else (e.g. a read-only folder) is reported as is.
+    if (!handle) throw lastError.code === 'EEXIST' ? new Error('Data file is locked by another process') : lastError;
+    this.lockLeftBehind = false;
     const heartbeat = setInterval(() => fs.promises.utimes(lockPath, new Date(), new Date()).catch(() => {}), 10_000);
     heartbeat.unref?.();
     try { return await operation(); }
     finally {
       clearInterval(heartbeat);
-      await handle.close();
-      await fs.promises.rm(lockPath, { force: true });
+      await handle.close().catch(() => {});
+      // Failing to remove the lock must not turn a finished save into a failed one.
+      await fs.promises.rm(lockPath, { force: true, ...RM_RETRY }).catch(() => { this.lockLeftBehind = true; });
     }
   }
 
   async read() {
     try {
-      const raw = await fs.promises.readFile(this.file, 'utf8');
+      const raw = await readTextWithRetry(this.file);
       const envelope = validateData(raw);
       this.lastHash = hash(raw);
       this.blocked = null;
@@ -252,10 +272,17 @@ class StorageService {
     // Each write carries the complete workspace, so a write that is still waiting in the queue
     // when a newer one arrives is obsolete: skip it and let the newest snapshot land.
     const ticket = ++this.writeSequence;
-    return this.run(() => {
+    return this.run(async () => {
       if (this.restartPending) return this.status();
       if (ticket !== this.writeSequence) return this.status();
-      return this.withLock(() => this.writeLocked(raw));
+      try {
+        const status = await this.withLock(() => this.writeLocked(raw));
+        this.lastWriteError = null;
+        return status;
+      } catch (error) {
+        this.lastWriteError = error.message;
+        throw error;
+      }
     });
   }
 
@@ -264,7 +291,7 @@ class StorageService {
     const envelope = validateData(raw);
     const settings = envelope.state.settings || {};
     envelope.state.settings = { ...settings, openaiApiKey: '', groqApiKey: '' };
-    const disk = await fs.promises.readFile(this.file, 'utf8').catch((error) => {
+    const disk = await readTextWithRetry(this.file).catch((error) => {
       if (error.code === 'ENOENT') return null;
       throw error;
     });
@@ -322,7 +349,7 @@ class StorageService {
   }
 
   async createBackupLocked() {
-    const raw = await fs.promises.readFile(this.file, 'utf8');
+    const raw = await readTextWithRetry(this.file);
     const envelope = validateData(raw);
     if (envelope.state.settings) {
       envelope.state.settings.openaiApiKey = '';
@@ -340,9 +367,8 @@ class StorageService {
       await renameWithRetry(stage, target);
       this.lastBackupAt = Date.now();
       this.backupError = null;
-      const backups = await Promise.all((await fs.promises.readdir(this.backupDir, { withFileTypes: true }))
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && !entry.name.startsWith('pre-restore-'))
-        .map(async (entry) => ({ name: entry.name, createdAt: (await fs.promises.stat(path.join(this.backupDir, entry.name))).mtimeMs })));
+      const backups = (await this.listBackups()).filter((entry) => !entry.id.startsWith('pre-restore-'))
+        .map((entry) => ({ name: entry.id, createdAt: entry.createdAt }));
       backups.sort((a, b) => b.createdAt - a.createdAt);
       const keep = new Set(backups.slice(0, RECENT_BACKUPS).map((entry) => entry.name));
       const daily = new Set();
@@ -351,8 +377,10 @@ class StorageService {
         const day = new Date(entry.createdAt).toISOString().slice(0, 10);
         if (!daily.has(day)) { daily.add(day); keep.add(entry.name); }
       }
+      // The new backup exists at this point; an old one that cannot be removed yet is tried again
+      // after the next backup.
       for (const old of backups.filter((entry) => !keep.has(entry.name))) {
-        await fs.promises.rm(path.join(this.backupDir, old.name), { recursive: true, force: true });
+        await fs.promises.rm(path.join(this.backupDir, old.name), { recursive: true, force: true, ...RM_RETRY }).catch(() => {});
       }
       return { id, createdAt: this.lastBackupAt };
     } finally { await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {}); }
@@ -376,11 +404,14 @@ class StorageService {
 
   async listBackups() {
     const entries = await fs.promises.readdir(this.backupDir, { withFileTypes: true }).catch(() => []);
-    return Promise.all(entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map(async (entry) => ({
-        id: entry.name,
-        createdAt: (await fs.promises.stat(path.join(this.backupDir, entry.name))).mtimeMs,
-      })));
+    // A folder that cannot be read (e.g. one Windows is still deleting) is left out, so it cannot
+    // make every later backup fail.
+    const backups = await Promise.all(entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(async (entry) => {
+        const stat = await fs.promises.stat(path.join(this.backupDir, entry.name)).catch(() => null);
+        return stat && { id: entry.name, createdAt: stat.mtimeMs };
+      }));
+    return backups.filter(Boolean);
   }
 
   restore(id) {
@@ -400,7 +431,7 @@ class StorageService {
         const previous = await this.latestBackupDir();
         const emergency = path.join(this.backupDir, `pre-restore-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`);
         await fs.promises.mkdir(emergency, { recursive: true });
-        let current = await fs.promises.readFile(this.file, 'utf8');
+        let current = await readTextWithRetry(this.file);
         try {
           const parsed = validateData(current);
           if (parsed.state.settings) {
@@ -431,4 +462,4 @@ class StorageService {
   }
 }
 
-module.exports = { StorageService, validateData, atomicWrite, renameWithRetry, rebaseManagedAttachments };
+module.exports = { StorageService, validateData, atomicWrite, renameWithRetry, retryWhileBusy, rebaseManagedAttachments };
