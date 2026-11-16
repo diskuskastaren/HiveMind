@@ -182,7 +182,9 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: Event) => {
+      // One toast for save failures: a repeated failure updates it instead of stacking another.
       toast.error('Could not save data', {
+        id: 'storage-error',
         description: (event as CustomEvent<string>).detail || 'Open Settings → Data to restore a backup.',
         duration: Infinity,
       });
@@ -194,7 +196,9 @@ export default function App() {
     let lastAttachmentWarning = '';
     let lastKeyError = '';
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent<{ backupError?: string; attachmentWarning?: string; keyError?: string }>).detail;
+      const detail = (event as CustomEvent<{ backupError?: string; attachmentWarning?: string; keyError?: string; error?: string | null }>).detail;
+      // A status arrives after a save that worked, so an earlier "Could not save data" is out of date.
+      if (!detail?.error) toast.dismiss('storage-error');
       const keyError = detail?.keyError;
       if (keyError && keyError !== lastKeyError) {
         toast.error('API key not stored', {
@@ -259,7 +263,7 @@ export default function App() {
       {viewingDecisionId && <DecisionDetailDialog key={viewingDecisionId} id={viewingDecisionId} onClose={() => setViewingDecision(null)} />}
       <ConfirmDialog />
       <UpdateDialog />
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-right" closeButton />
     </>
   );
 
