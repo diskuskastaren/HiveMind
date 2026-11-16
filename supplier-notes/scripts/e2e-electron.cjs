@@ -20,12 +20,12 @@ const fakeApiKey = 'sk-e2e-not-a-real-key-0123456789';
 const children = new Set();
 let stderr = '';
 
-function launch() {
+function launch(extraEnv = {}) {
   // Port 0 lets the system choose a free port; Electron prints the one it got. A fixed or random
   // port can fall in a range Windows reserves, where the debugging server cannot start.
   const args = ['.', '--remote-debugging-port=0'];
   if (process.platform === 'linux') args.push('--no-sandbox');
-  const child = spawn(electron, args, { cwd: root, env: { ...process.env, HIVEMIND_TEST_USER_DATA: profile }, stdio: ['ignore', 'ignore', 'pipe'] });
+  const child = spawn(electron, args, { cwd: root, env: { ...process.env, HIVEMIND_TEST_USER_DATA: profile, ...extraEnv }, stdio: ['ignore', 'ignore', 'pipe'] });
   let output = '';
   const port = new Promise((resolve) => {
     child.stderr.on('data', (chunk) => {
@@ -244,6 +244,27 @@ async function main() {
   restarted.socket.close();
   third.child.kill();
   await exited(third.child, 5000);
+
+  // 4. A save that fails must not be lost silently when the window closes. The window has to be
+  // closed the way a user closes it (window.close() in the page skips the main process's close
+  // handling); a termination signal does that, and Windows has no such signal, so this runs elsewhere.
+  if (process.platform !== 'win32') await check('closing after a failed save keeps the app open until the save works', async () => {
+    const fourth = launch({ HIVEMIND_TEST_CLOSE_CHOICE: 'keep' });
+    const unsaved = await connect(await pageTarget(fourth.port));
+    await unsaved.waitFor(`document.body && document.body.innerText.includes('E2E Project')`, 'project before the failed save');
+    // A lock that never goes away stands in for a data file another program keeps busy.
+    const lock = `${dataFile}.lock`;
+    fs.mkdirSync(lock);
+    const rewrite = `window.electronStore.read().then((raw) => window.electronStore.write(raw))`;
+    assert.equal(await unsaved.evaluate(`${rewrite}.then(() => 'saved', () => 'failed')`), 'failed');
+    fourth.child.kill('SIGTERM');
+    assert.equal(await exited(fourth.child, 4000), false, 'app stays open while the last save has failed');
+    assert.equal(await unsaved.evaluate(`document.body.innerText.includes('E2E Project')`), true, 'window is still usable');
+    fs.rmdirSync(lock);
+    assert.equal(await unsaved.evaluate(`${rewrite}.then(() => 'saved', () => 'failed')`), 'saved');
+    fourth.child.kill('SIGTERM');
+    assert.equal(await exited(fourth.child, 15000), true, 'app closes once the save has worked');
+  });
 
   await check('Electron printed no deprecation warnings', async () => {
     const warnings = stderr.split('\n').filter((line) => /deprecat/i.test(line));

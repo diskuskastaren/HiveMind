@@ -176,6 +176,8 @@ class StorageService {
     this.restartPending = false;
     this.lastHash = null;
     this.blocked = null;
+    // Why the most recent save failed, or null once a save has worked (checked before closing).
+    this.lastWriteError = null;
     this.attachmentMap = new Map();
     this.setDataDir(dataDir);
   }
@@ -215,9 +217,11 @@ class StorageService {
     const lockPath = `${this.file}.lock`;
     await fs.promises.mkdir(this.dir, { recursive: true });
     let handle;
+    let lastError;
     for (let attempt = 0; attempt < 50; attempt++) {
       try { handle = await fs.promises.open(lockPath, 'wx'); break; }
       catch (error) {
+        lastError = error;
         // On Windows a lock file that was just removed can linger while another program still has
         // it open; creating it again then fails with EPERM/EACCES rather than EEXIST.
         if (error.code !== 'EEXIST' && !BUSY_CODES.has(error.code)) throw error;
@@ -229,7 +233,8 @@ class StorageService {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    if (!handle) throw new Error('Data file is locked by another process');
+    // A lock that exists means another writer; anything else (e.g. a read-only folder) is reported as is.
+    if (!handle) throw lastError.code === 'EEXIST' ? new Error('Data file is locked by another process') : lastError;
     this.lockLeftBehind = false;
     const heartbeat = setInterval(() => fs.promises.utimes(lockPath, new Date(), new Date()).catch(() => {}), 10_000);
     heartbeat.unref?.();
@@ -267,10 +272,17 @@ class StorageService {
     // Each write carries the complete workspace, so a write that is still waiting in the queue
     // when a newer one arrives is obsolete: skip it and let the newest snapshot land.
     const ticket = ++this.writeSequence;
-    return this.run(() => {
+    return this.run(async () => {
       if (this.restartPending) return this.status();
       if (ticket !== this.writeSequence) return this.status();
-      return this.withLock(() => this.writeLocked(raw));
+      try {
+        const status = await this.withLock(() => this.writeLocked(raw));
+        this.lastWriteError = null;
+        return status;
+      } catch (error) {
+        this.lastWriteError = error.message;
+        throw error;
+      }
     });
   }
 

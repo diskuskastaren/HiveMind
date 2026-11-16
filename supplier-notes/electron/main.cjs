@@ -743,6 +743,26 @@ function requestRendererFlush(win, timeoutMs = 4000) {
   });
 }
 
+/** Asks whether to close although the last save failed. Resolves true to close, false to stay open. */
+async function confirmCloseWithoutSaving(win, reason) {
+  log.error('Closing with unsaved changes', { message: reason });
+  // The end-to-end checks cannot click a native dialog; they answer through this variable.
+  const testChoice = process.env.HIVEMIND_TEST_USER_DATA && process.env.HIVEMIND_TEST_CLOSE_CHOICE;
+  if (testChoice) return testChoice === 'close';
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: 'HiveMind',
+    message: 'Your latest changes could not be saved',
+    detail: `${reason}\n\nKeep HiveMind open and try closing again in a moment; closing tries to save once more. ` +
+      'If you close without saving, the changes since the last successful save are lost.',
+    buttons: ['Keep HiveMind open', 'Close without saving'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return response === 1;
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -784,15 +804,25 @@ function createWindow() {
     if (menu.items.length > 0) menu.popup();
   });
 
-  // Let the renderer save pending edits before the window goes away.
+  // Let the renderer save pending edits before the window goes away. If the last save did not
+  // work, ask before closing: closing would lose the changes since the last successful save.
   let closeConfirmed = false;
+  let closing = false;
   win.on('close', (event) => {
     if (closeConfirmed || win.webContents.isCrashed()) return;
     event.preventDefault();
-    requestRendererFlush(win).finally(() => {
-      closeConfirmed = true;
-      if (!win.isDestroyed()) win.close();
-    });
+    if (closing) return;
+    closing = true;
+    requestRendererFlush(win)
+      .then(() => storage.flush())
+      .then(() => (storage.lastWriteError && !win.isDestroyed() ? confirmCloseWithoutSaving(win, storage.lastWriteError) : true))
+      .catch((error) => { log.error('Saving before close failed', { message: error.message }); return true; })
+      .then((close) => {
+        closing = false;
+        if (!close) return;
+        closeConfirmed = true;
+        if (!win.isDestroyed()) win.close();
+      });
   });
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
