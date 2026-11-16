@@ -208,7 +208,9 @@ export default function App() {
       }
       lastKeyError = keyError || '';
       const error = detail?.backupError;
-      if (error && error !== lastBackupError) toast.error('Automatic backup failed', { description: error, duration: Infinity });
+      if (error && error !== lastBackupError) toast.error('Automatic backup failed', { id: 'backup-error', description: error, duration: Infinity });
+      // A later backup that works makes the message out of date.
+      if (!error && lastBackupError) toast.dismiss('backup-error');
       lastBackupError = error || '';
       const warning = detail?.attachmentWarning;
       if (warning && warning !== lastAttachmentWarning) toast.warning('Some attachments are not in the backup', { description: warning, duration: Infinity });

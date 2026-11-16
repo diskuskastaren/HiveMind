@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { StorageService, validateData, renameWithRetry, rebaseManagedAttachments } = require('./storage.cjs');
+const { StorageService, validateData, renameWithRetry, retryWhileBusy, rebaseManagedAttachments } = require('./storage.cjs');
 
 const envelope = (notes = []) => JSON.stringify({ version: 11, state: {
   projects: [], suppliers: [], notes, tasks: [], decisions: [], followUps: [],
@@ -220,4 +220,42 @@ test('retries a rename that is briefly blocked by another program', async () => 
   calls = 0;
   await assert.rejects(renameWithRetry('a', 'b', async () => { calls++; throw blocked('ENOSPC'); }), { code: 'ENOSPC' });
   assert.equal(calls, 1);
+});
+
+test('gives up on a file that stays busy and reports the original error', async () => {
+  let calls = 0;
+  await assert.rejects(retryWhileBusy(async () => { calls++; throw Object.assign(new Error('busy'), { code: 'EBUSY' }); }, 60), { code: 'EBUSY' });
+  assert.ok(calls > 1);
+});
+
+test('a lock file this app could not remove does not block the next save', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-storage-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const service = new StorageService(dir);
+  assert.equal(await service.read(), null);
+  await service.write(envelope([{ id: 'one', title: 'First' }]));
+  // As if removing the lock had failed after the previous save.
+  await fs.writeFile(`${service.file}.lock`, '');
+  service.lockLeftBehind = true;
+  await service.write(envelope([{ id: 'two', title: 'Second' }]));
+  assert.equal(JSON.parse(await fs.readFile(service.file, 'utf8')).state.notes[0].id, 'two');
+  await assert.rejects(fs.stat(`${service.file}.lock`), { code: 'ENOENT' });
+});
+
+test('a backup folder that cannot be read does not stop backups', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hivemind-storage-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const service = new StorageService(dir);
+  assert.equal(await service.read(), null);
+  await service.write(envelope([{ id: 'one', title: 'First' }]));
+  await service.backup();
+  const realStat = fs.stat;
+  t.mock.method(fs, 'stat', async (file, ...rest) => {
+    if (String(file).endsWith('unreadable')) throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+    return realStat(file, ...rest);
+  });
+  await fs.mkdir(path.join(service.backupDir, 'unreadable'));
+  const before = (await service.listBackups()).length;
+  await service.backup();
+  assert.equal((await service.listBackups()).length, before + 1);
 });

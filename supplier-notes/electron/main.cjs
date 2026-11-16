@@ -128,7 +128,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 ipcMain.handle('store:read', () => storage.read());
-ipcMain.handle('store:write', (_event, data) => storage.write(data));
+ipcMain.handle('store:write', (_event, data) => storage.write(data).catch((error) => {
+  log.error('Saving the data file failed', { message: error.message, code: error.code });
+  throw error;
+}));
 ipcMain.handle('store:status', () => storage.status());
 ipcMain.handle('store:backups', () => storage.listBackups());
 ipcMain.handle('store:backup', () => storage.backup());
