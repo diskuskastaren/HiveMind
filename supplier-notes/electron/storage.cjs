@@ -71,6 +71,23 @@ function rebaseManagedAttachments(raw, oldDir, newDir) {
   return JSON.stringify(envelope);
 }
 
+// On Windows a rename fails with EPERM/EACCES/EBUSY while another program (antivirus, search
+// indexer, a sync or backup tool) briefly holds the target open. Such holds last milliseconds, so
+// the rename is retried for a few seconds before the save is reported as failed.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_MS = 5000;
+
+async function renameWithRetry(from, to, rename = fs.promises.rename) {
+  const deadline = Date.now() + RENAME_RETRY_MS;
+  for (let delay = 10; ; delay = Math.min(delay * 2, 250)) {
+    try { return await rename(from, to); }
+    catch (error) {
+      if (!RENAME_RETRY_CODES.has(error.code) || Date.now() + delay > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function atomicWrite(file, content) {
   const dir = path.dirname(file);
   await fs.promises.mkdir(dir, { recursive: true });
@@ -82,7 +99,7 @@ async function atomicWrite(file, content) {
     await handle.sync();
     await handle.close();
     handle = null;
-    await fs.promises.rename(temp, file);
+    await renameWithRetry(temp, file);
   } finally {
     if (handle) await handle.close().catch(() => {});
     await fs.promises.rm(temp, { force: true }).catch(() => {});
@@ -320,7 +337,7 @@ class StorageService {
       await fs.promises.mkdir(stage);
       await fs.promises.writeFile(path.join(stage, 'Combobulator-data.json'), JSON.stringify(envelope), 'utf8');
       await this.snapshotFiles(stage, previous);
-      await fs.promises.rename(stage, target);
+      await renameWithRetry(stage, target);
       this.lastBackupAt = Date.now();
       this.backupError = null;
       const backups = await Promise.all((await fs.promises.readdir(this.backupDir, { withFileTypes: true }))
@@ -414,4 +431,4 @@ class StorageService {
   }
 }
 
-module.exports = { StorageService, validateData, atomicWrite, rebaseManagedAttachments };
+module.exports = { StorageService, validateData, atomicWrite, renameWithRetry, rebaseManagedAttachments };

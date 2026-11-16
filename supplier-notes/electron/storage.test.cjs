@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { StorageService, validateData, rebaseManagedAttachments } = require('./storage.cjs');
+const { StorageService, validateData, renameWithRetry, rebaseManagedAttachments } = require('./storage.cjs');
 
 const envelope = (notes = []) => JSON.stringify({ version: 11, state: {
   projects: [], suppliers: [], notes, tasks: [], decisions: [], followUps: [],
@@ -208,4 +208,16 @@ test('an unavailable key store does not stop the workspace from saving; the key 
   const next = await service.write(envelope([{ id: 'one', title: 'Kept' }, { id: 'two', title: 'Later' }]));
   assert.equal(next.keyError, null);
   assert.deepEqual(stored, { openaiApiKey: 'secret', groqApiKey: '' });
+});
+
+test('retries a rename that is briefly blocked by another program', async () => {
+  const blocked = (code) => Object.assign(new Error(code), { code });
+  let calls = 0;
+  await renameWithRetry('a', 'b', async () => {
+    if (++calls < 4) throw blocked(calls === 1 ? 'EPERM' : 'EBUSY');
+  });
+  assert.equal(calls, 4);
+  calls = 0;
+  await assert.rejects(renameWithRetry('a', 'b', async () => { calls++; throw blocked('ENOSPC'); }), { code: 'ENOSPC' });
+  assert.equal(calls, 1);
 });
