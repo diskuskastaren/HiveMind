@@ -21,17 +21,28 @@ const children = new Set();
 let stderr = '';
 
 function launch() {
-  const port = 20000 + Math.floor(Math.random() * 30000);
-  const args = ['.', `--remote-debugging-port=${port}`];
+  // Port 0 lets the system choose a free port; Electron prints the one it got. A fixed or random
+  // port can fall in a range Windows reserves, where the debugging server cannot start.
+  const args = ['.', '--remote-debugging-port=0'];
   if (process.platform === 'linux') args.push('--no-sandbox');
   const child = spawn(electron, args, { cwd: root, env: { ...process.env, HIVEMIND_TEST_USER_DATA: profile }, stdio: ['ignore', 'ignore', 'pipe'] });
+  let output = '';
+  const port = new Promise((resolve) => {
+    child.stderr.on('data', (chunk) => {
+      output += chunk;
+      const match = output.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//);
+      if (match) resolve(Number(match[1]));
+    });
+  });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   children.add(child);
   child.on('exit', () => children.delete(child));
   return { child, port };
 }
 
-async function pageTarget(port) {
+async function pageTarget(launchedPort) {
+  const port = await Promise.race([launchedPort, new Promise((resolve) => setTimeout(resolve, 30000))]);
+  if (!port) throw new Error('App did not report its debugging port');
   for (let attempt = 0; attempt < 60; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {

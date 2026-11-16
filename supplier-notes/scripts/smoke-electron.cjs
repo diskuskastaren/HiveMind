@@ -8,7 +8,6 @@ const ResEdit = require('resedit');
 
 const root = path.resolve(__dirname, '..');
 const executable = path.join(root, 'release', 'win-unpacked', 'HiveMind.exe');
-const port = 20000 + Math.floor(Math.random() * 30000);
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hivemind-smoke-'));
 const environment = { ...process.env, HIVEMIND_TEST_USER_DATA: path.join(profile, 'userData') };
 let child;
@@ -42,13 +41,23 @@ async function main() {
   const icons = ResEdit.Resource.IconGroupEntry.fromEntries(entries);
   if (!icons.some((icon) => icon.id === 1 && icon.icons.length >= 2)) throw new Error('Packaged app icon is missing');
 
-  child = spawn(executable, [`--remote-debugging-port=${port}`], {
-    env: environment, stdio: 'ignore', windowsHide: true,
+  // Port 0 lets the system choose a free port; the app prints the one it got. A fixed or random port
+  // can fall in a range Windows reserves, where the debugging server cannot start.
+  child = spawn(executable, ['--remote-debugging-port=0'], {
+    env: environment, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true,
+  });
+  let port = null;
+  let output = '';
+  child.stderr.on('data', (chunk) => {
+    output += chunk;
+    const match = output.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//);
+    if (match) port = Number(match[1]);
   });
   let lastObservation = 'No DevTools response';
   for (let attempt = 0; attempt < 60; attempt++) {
     if (child.exitCode !== null) throw new Error(`Electron exited with code ${child.exitCode}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
+    if (!port) { lastObservation = 'App did not report its debugging port'; continue; }
     try {
       const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
       lastObservation = JSON.stringify(targets.map((item) => ({ type: item.type, url: item.url })));
